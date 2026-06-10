@@ -50,7 +50,7 @@ def main():
             current_group = match["group"]
             print(f"\n--- GROUP {current_group} ---")
         print(
-            f"Match {match['match_id']:>2} | {match['predicted_home_goals']} - {match['predicted_away_goals']} | Corners: {match['corners']:>2} | YC: {match['yellow_cards']} | RC: {match['red_cards']} | Winner: {match['winning_team']:<5} | {match['home_team']:>18} vs {match['away_team']}"
+            f"Match {match['match_id']:>2} | {match['predicted_home_goals']} - {match['predicted_away_goals']} | Corners: {match['corners']:>2} | YC: {match['yellow_cards']:>2} | RC: {match['red_cards']} | Winner: {match['winning_team']:<5} | {match['home_team']:>18} vs {match['away_team']}"
         )
     print("=" * 100)
 
@@ -79,7 +79,7 @@ def main():
         r_df = knockout_matrix[knockout_matrix["round"] == r_title]
         for _, match in r_df.iterrows():
             print(
-                f"Match {match['match_id']:>3} | {match['predicted_home_goals']}-{match['predicted_away_goals']} | Corners: {match['corners']:>2} | YC: {match['yellow_cards']} | PK Shootout: {str(match['penalties']):<5} -> ADVANCES: {match['winner_name_meta']:<16} ({match['predicted_home_team']} vs {match['predicted_away_team']})"
+                f"Match {match['match_id']:>3} | {match['predicted_home_goals']}-{match['predicted_away_goals']} | Corners: {match['corners']:>2} | YC: {match['yellow_cards']:>2} | PK Shootout: {str(match['penalties']):<5} -> ADVANCES: {match['winner_name_meta']:<16} ({match['predicted_home_team']} vs {match['predicted_away_team']})"
             )
         print("=" * 125)
 

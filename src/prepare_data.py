@@ -14,9 +14,12 @@ def prepare_historical_features():
     # Load Kaggle Raw Data
     results_df = pd.read_csv(os.path.join(raw_dir, "results.csv"))
 
-    # Apply Time Horizon Slice (Modern Era / Post 2018 World Cup)
-    results_df["date"] = pd.to_datetime(results_df["date"])
-    modern_df = results_df[results_df["date"] >= "2018-08-01"].copy()
+    # Apply Modern Era Time Slice (Post 2018 World Cup, Pre 2026 World Cup)
+    START_OF_TOURNAMENT = "2026-06-11"
+    modern_df = results_df[
+        (results_df["date"] >= "2018-08-01")
+        & (results_df["date"] < START_OF_TOURNAMENT)
+    ].copy()
 
     # Assign Dynamic Match Weights: Variable Friendly Weighting [consider 0.33-0.5]
     modern_df["match_weight"] = np.where(

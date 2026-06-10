@@ -6,9 +6,13 @@ __pycache__/
 __marimo__/
 .ipynb_checkpoints/
 
-# Project Caches and Optimization Models
+# Project Caches
 models/
 
 # Raw and Processed Datasets
-data/raw/
+data/raw/*
 data/processed/
+
+# WHITELIST:
+!data/raw/group_fixtures.csv
+!data/raw/knockout_slots.csv
