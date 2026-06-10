@@ -1,0 +1,14 @@
+# Virtual Environments and Python Caches
+.uv/
+.venv/
+__pycache__/
+*.pyc
+__marimo__/
+.ipynb_checkpoints/
+
+# Project Caches and Optimization Models
+models/
+
+# Raw and Processed Datasets
+data/raw/
+data/processed/

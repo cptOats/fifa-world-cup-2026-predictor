@@ -1,0 +1,13 @@
+[project]
+name = "fifa-world-cup-2026-predictor"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "kagglehub>=1.0.1",
+    "numpy>=2.4.6",
+    "pandas>=3.0.3",
+    "pandas-stubs>=3.0.3.260530",
+    "pyarrow>=24.0.0",
+]

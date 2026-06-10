@@ -1,0 +1,33 @@
+match_id,round,venue,predicted_home_team,predicted_away_team,predicted_home_goals,predicted_away_goals,corners,yellow_cards,red_cards,match_winner,penalties,winner_name_meta
+73,Round of 32,"SoFi Stadium, Los Angeles",South Korea,Bosnia and Herzegovina,2,0,10,6,0,home,False,South Korea
+74,Round of 32,"NRG Stadium, Houston",Morocco,Tunisia,0,0,7,5,0,home,True,Morocco
+75,Round of 32,"Gillette Stadium, Boston",Germany,Turkey,2,1,18,12,0,home,False,Germany
+76,Round of 32,"Estadio BBVA, Monterrey",Japan,Brazil,1,1,10,7,0,home,True,Japan
+77,Round of 32,"AT&T Stadium, Dallas",Curaçao,Norway,1,1,14,10,0,away,True,Norway
+78,Round of 32,"MetLife Stadium, East Rutherford",France,Netherlands,1,1,14,10,0,home,True,France
+79,Round of 32,"Estadio Azteca, Mexico City",Mexico,Haiti,1,1,13,9,0,home,True,Mexico
+80,Round of 32,"Mercedes-Benz Stadium, Atlanta",England,Ivory Coast,1,1,9,6,0,home,True,England
+81,Round of 32,"Lumen Field, Seattle",Belgium,South Africa,1,0,9,5,0,home,False,Belgium
+82,Round of 32,"Levi's Stadium, Santa Clara",Australia,Senegal,1,1,8,6,0,home,True,Australia
+83,Round of 32,"BMO Field, Toronto",Uzbekistan,Croatia,1,1,12,8,0,home,True,Uzbekistan
+84,Round of 32,"SoFi Stadium, Los Angeles",Spain,Algeria,1,1,12,8,0,home,True,Spain
+85,Round of 32,"BC Place, Vancouver",Canada,New Zealand,1,1,13,9,0,home,True,Canada
+86,Round of 32,"AT&T Stadium, Dallas",United States,Iran,1,1,11,8,0,home,True,United States
+87,Round of 32,"Hard Rock Stadium, Miami",Argentina,Cape Verde,1,0,6,3,0,home,False,Argentina
+88,Round of 32,"GEHA Field at Arrowhead Stadium, Kansas City",Portugal,Austria,1,1,13,9,0,home,True,Portugal
+89,Round of 16,"NRG Stadium, Houston",South Korea,Germany,1,1,14,9,0,home,True,South Korea
+90,Round of 16,"Lincoln Financial Field, Philadelphia",Morocco,Norway,1,0,8,4,0,home,False,Morocco
+91,Round of 16,"MetLife Stadium, East Rutherford",Japan,France,1,1,12,8,0,home,True,Japan
+92,Round of 16,"Estadio Azteca, Mexico City",Mexico,England,1,1,10,7,0,away,True,England
+93,Round of 16,"AT&T Stadium, Dallas",Uzbekistan,Spain,1,1,11,8,0,away,True,Spain
+94,Round of 16,"Lumen Field, Seattle",Belgium,Australia,1,1,12,8,0,away,True,Australia
+95,Round of 16,"Mercedes-Benz Stadium, Atlanta",United States,Portugal,1,1,12,8,0,home,True,United States
+96,Round of 16,"BC Place, Vancouver",Canada,Argentina,1,1,10,7,0,home,True,Canada
+97,Quarter-final,"Gillette Stadium, Boston",South Korea,Morocco,0,1,8,6,0,away,False,Morocco
+98,Quarter-final,"SoFi Stadium, Los Angeles",Spain,Australia,1,1,11,7,0,home,True,Spain
+99,Quarter-final,"Hard Rock Stadium, Miami",Japan,England,1,1,11,8,0,away,True,England
+100,Quarter-final,"GEHA Field at Arrowhead Stadium, Kansas City",United States,Canada,1,1,13,9,0,home,True,United States
+101,Semi-final,"AT&T Stadium, Dallas",Morocco,Spain,1,1,10,7,0,home,True,Morocco
+102,Semi-final,"Mercedes-Benz Stadium, Atlanta",England,United States,1,1,11,8,0,home,True,England
+103,Third-place playoff,"Hard Rock Stadium, Miami",Spain,United States,1,1,13,9,0,away,True,United States
+104,Final,"MetLife Stadium, East Rutherford",Morocco,England,1,1,8,6,0,home,True,Morocco
