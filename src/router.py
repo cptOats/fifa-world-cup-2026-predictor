@@ -180,7 +180,13 @@ def generate_round_of_32_draw(group_tables_df, third_place_mapping):
 
 
 def simulate_knockout_waterfall(
-    group_tables_df, third_place_mapping, ratings, g_home_avg, g_away_avg
+    group_tables_df,
+    third_place_mapping,
+    ratings,
+    g_home_avg,
+    g_away_avg,
+    model_type="poisson",
+    elo_engine=None,
 ):
     """Simulates the knockout bracket sequentially, evaluating regular time (90m), extra time (120m) with fatigue adjustments, and penalty shootouts."""
     from src.models import get_dixon_coles_score, get_venue_country
@@ -204,15 +210,13 @@ def simulate_knockout_waterfall(
 
     knockout_results = []
 
-    # Fatigue factor: Extra time goal scoring effeciency and corner occurances drop
+    # Fatigue Factor: Extra time goal scoring efficiency and corner occurrences drop
     FATIGUE_FACTOR = 0.80
-    # Card boost factor: Extra time (yellow) cards spike due to tired fouls and compounding dissent
+    # Card Boost Factor: Extra time (yellow) cards spike due to tired fouls and compounding dissent
     CARD_BOOST_FACTOR = 1.75
     ET_MULTIPLIER = 1 / 3
 
-    print(
-        "\n🔮 Simulating Knockout Waterfall (with 120m Extra Time and Penalties Evaluation)..."
-    )
+    print(f"\n🔮 Simulating Knockout Waterfall (Model Engine: {model_type.upper()})...")
 
     for _, row in knockout_template.iterrows():
         match_id = int(row["match_id"])
@@ -252,7 +256,7 @@ def simulate_knockout_waterfall(
         else:
             away_team = slot_away
 
-        # Base 90-Minute Expected Goal Intensities
+        # 90min Expected Goal Intensities & Parameters
         home_rating = ratings.get(home_team, {"attack": 1.0, "defense": 1.0})
         away_rating = ratings.get(away_team, {"attack": 1.0, "defense": 1.0})
 
@@ -269,14 +273,26 @@ def simulate_knockout_waterfall(
             lambda_home_90 = home_rating["attack"] * away_rating["defense"] * g_neutral
             lambda_away_90 = away_rating["attack"] * home_rating["defense"] * g_neutral
 
-        # Standard Poisson 90min
-        # pred_home_90, pred_away_90 = int(np.round(lambda_home_90)), int(np.round(lambda_away_90))
-        # Dixon-Coles 90min upgrade
-        pred_home_90, pred_away_90 = get_dixon_coles_score(
-            lambda_home_90, lambda_away_90
-        )
+        # 1. EXECUTE MODEL INTERCEPT TOGGLE FOR 90-MINUTE GOALS
+        if model_type == "poisson":
+            pred_home_90, pred_away_90 = get_dixon_coles_score(
+                lambda_home_90, lambda_away_90
+            )
+        elif model_type == "elo":
+            # Extract win expectancy from Elo component logic to map back continuous intensities
+            w_home, _ = elo_engine.calculate_expected_score(
+                elo_engine.get_rating(home_team), elo_engine.get_rating(away_team)
+            )
+            # Re-generate aligned continuous distributions for ET mapping scaling
+            lambda_home_90 = max(0.1, 1.35 + 2.2 * (w_home - 0.5))
+            lambda_away_90 = max(0.1, 1.35 + 2.2 * ((1.0 - w_home) - 0.5))
 
-        # 1. Compute Raw 90-Minute Continuous Float Baselines
+            # Extract score integers natively from the instantiated EloEngine module
+            elo_res = elo_engine.predict_match(home_team, away_team)
+            pred_home_90 = elo_res["predicted_home_goals"]
+            pred_away_90 = elo_res["predicted_away_goals"]
+
+        # 2. Compute Raw 90min Continuous Float Baselines for Secondary Metrics
         raw_corners_90 = (5.5 * home_rating["attack"] * away_rating["defense"]) + (
             5.5 * away_rating["attack"] * home_rating["defense"]
         )
@@ -285,48 +301,46 @@ def simulate_knockout_waterfall(
             3.0 * away_rating["defense"] * home_rating["attack"]
         )
 
-        # 2. TIMELINE RESOLUTION GATE
+        # 3. TIMELINE RESOLUTION GATE
         is_penalty = False
-        tot_reds = 0  # Fixed: Defined baseline to avoid subsequent NameError
+        tot_reds = 0
 
         if pred_home_90 > pred_away_90:
-            # Resolved in Normal Time (90 mins)
             final_home_goals, final_away_goals = pred_home_90, pred_away_90
-            advance_winner, advance_loser = home_team, away_team  # Fixed
+            advance_winner, advance_loser = home_team, away_team
             winner_side = "home"
-            # Finalize metrics using standard 90m baseline arrays
             tot_corners = int(np.clip(np.round(raw_corners_90), 5, 16))
             tot_yellows = int(np.clip(np.round(raw_yellows_90), 1, 9))
 
         elif pred_away_90 > pred_home_90:
-            # Resolved in Normal Time (90 mins)
             final_home_goals, final_away_goals = pred_home_90, pred_away_90
-            advance_winner, advance_loser = away_team, home_team  # Fixed
+            advance_winner, advance_loser = away_team, home_team
             winner_side = "away"
-            # Finalize metrics using standard 90m baseline arrays
             tot_corners = int(np.clip(np.round(raw_corners_90), 5, 16))
             tot_yellows = int(np.clip(np.round(raw_yellows_90), 1, 9))
 
         else:
-            # 90-Minute Integer Draw -> Expand horizon to 120 minutes
+            # 90min Integer Draw
             lambda_home_120 = lambda_home_90 * (1 + (ET_MULTIPLIER * FATIGUE_FACTOR))
             lambda_away_120 = lambda_away_90 * (1 + (ET_MULTIPLIER * FATIGUE_FACTOR))
 
-            # Standard Poisson 120min
-            # pred_home_120, pred_away_120 = int(np.round(lambda_home_120)), int(np.round(lambda_away_120))
-            # Dixon-Coles 120min upgrade
-            pred_home_120, pred_away_120 = get_dixon_coles_score(
-                lambda_home_120, lambda_away_120
-            )
+            # 120min Goal Resolution
+            if model_type == "poisson":
+                pred_home_120, pred_away_120 = get_dixon_coles_score(
+                    lambda_home_120, lambda_away_120
+                )
+            elif model_type == "elo":
+                pred_home_120 = int(np.round(lambda_home_120))
+                pred_away_120 = int(np.round(lambda_away_120))
 
-            # INFLATE SECONDARY METRICS: Scale raw values by the fatigue adjusted ET multiplier
+            # 120min Inflate Stats
             tot_corners = int(
                 np.clip(
                     np.round(raw_corners_90 * (1 + (ET_MULTIPLIER * FATIGUE_FACTOR))),
                     5,
                     18,
                 )
-            )  # Expanded max clip for ET drama
+            )
             tot_yellows = int(
                 np.clip(
                     np.round(
@@ -335,28 +349,28 @@ def simulate_knockout_waterfall(
                     1,
                     12,
                 )
-            )  # Expanded max clip for ET friction
+            )
 
             if pred_home_120 > pred_away_120:
                 final_home_goals, final_away_goals = pred_home_120, pred_away_120
-                advance_winner, advance_loser = home_team, away_team  # Fixed
+                advance_winner, advance_loser = home_team, away_team
                 winner_side = "home"
             elif pred_away_120 > pred_home_120:
                 final_home_goals, final_away_goals = pred_home_120, pred_away_120
-                advance_winner, advance_loser = away_team, home_team  # Fixed
+                advance_winner, advance_loser = away_team, home_team
                 winner_side = "away"
             else:
-                # Still a draw after 120 minutes -> Official Penalty Shootout
+                # 120min Draw -> Penalty Shootout
                 final_home_goals, final_away_goals = pred_home_120, pred_away_120
                 is_penalty = True
                 if lambda_home_120 >= lambda_away_120:
-                    advance_winner, advance_loser = home_team, away_team  # Fixed
+                    advance_winner, advance_loser = home_team, away_team
                     winner_side = "home"
                 else:
-                    advance_winner, advance_loser = away_team, home_team  # Fixed
+                    advance_winner, advance_loser = away_team, home_team
                     winner_side = "away"
 
-        # Update lookup tables for subsequent rounds
+        # Update lookup tables for subsequent tournament rounds
         match_winners[match_id] = advance_winner
         match_losers[match_id] = advance_loser
 

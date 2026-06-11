@@ -168,9 +168,8 @@ def predict_match_score(home, away, venue, ratings, g_home_avg, g_away_avg):
         lambda_away = away_rating["attack"] * home_rating["defense"] * g_neutral
 
     # Standard Poisson
-    # pred_home_score = int(np.round(lambda_home))
-    # pred_away_score = int(np.round(lambda_away))
-    # Direct integration of the Dixon-Coles probability mode selector:
+    # pred_home_score, pred_away_score = int(np.round(lambda_home)), int(np.round(lambda_away))
+    # Directly integrate Dixon-Coles probability:
     pred_home_score, pred_away_score = get_dixon_coles_score(lambda_home, lambda_away)
 
     # 2. CORNERS PROXY MODEL (scaled by matchup threat)
@@ -202,44 +201,6 @@ def predict_match_score(home, away, venue, ratings, g_home_avg, g_away_avg):
         total_reds,
         win_label,
     )
-
-
-def simulate_group_stage(ratings, g_home_avg, g_away_avg):
-    """Simulates group fixtures and formats arrays"""
-    fixtures_path = os.path.join("data", "raw", "group_fixtures.csv")
-    fixtures_df = pd.read_csv(fixtures_path)
-
-    fixtures_df["home_team"] = fixtures_df["home_team"].replace(DATACAMP_TO_KAGGLE)
-    fixtures_df["away_team"] = fixtures_df["away_team"].replace(DATACAMP_TO_KAGGLE)
-
-    # Array structure
-    home_goals, away_goals, corners, yellows, reds, winners = [], [], [], [], [], []
-
-    for _, row in fixtures_df.iterrows():
-        hg, ag, corn, yel, red, win = predict_match_score(
-            row["home_team"],
-            row["away_team"],
-            row["venue"],
-            ratings,
-            g_home_avg,
-            g_away_avg,
-        )
-        home_goals.append(hg)
-        away_goals.append(ag)
-        corners.append(corn)
-        yellows.append(yel)
-        reds.append(red)
-        winners.append(win)
-
-    # Sync with DataCamp competition labels
-    fixtures_df["predicted_home_goals"] = home_goals
-    fixtures_df["predicted_away_goals"] = away_goals
-    fixtures_df["corners"] = corners
-    fixtures_df["yellow_cards"] = yellows
-    fixtures_df["red_cards"] = reds
-    fixtures_df["winning_team"] = winners
-
-    return fixtures_df
 
 
 def print_team_power_rankings(ratings):

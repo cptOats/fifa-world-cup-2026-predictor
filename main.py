@@ -3,10 +3,12 @@ import os
 import pandas as pd
 
 from src.check_names import identify_name_mismatches
+from src.elo_model import EloEngine
 from src.ingest import verify_data_layer
 from src.models import (
+    DATACAMP_TO_KAGGLE,
+    predict_match_score,
     print_team_power_rankings,
-    simulate_group_stage,
     train_poisson_ratings,
 )
 from src.prepare_data import prepare_historical_features
@@ -17,28 +19,121 @@ from src.router import (
     simulate_knockout_waterfall,
 )
 
+# --- MODEL CONFIGURATION TOGGLE ---
+MODEL_TYPE = "elo"  # Options: "poisson" or "elo"
+
 
 def main():
     print("🚀 Initializing World Cup Prediction Pipeline...")
 
-    # --- INFRASTRUCTURE GATES---
+    # --- INFRASTRUCTURE GATES ---
     verify_data_layer()
     print("\n--- Running Entity Resolution Check ---")
     identify_name_mismatches()
     print("\n--- Compiling Clean Historical Feature Matrix ---")
     prepare_historical_features()
 
-    # --- PREDICTIVE CORE MODEL ---
+    # --- DATA INGESTION ---
+    modern_df = pd.read_parquet(
+        os.path.join("data", "processed", "clean_historical_matches.parquet")
+    )
+    group_fixtures = pd.read_csv(os.path.join("data", "raw", "group_fixtures.csv"))
+
+    # TRANSLATION GATE: Standardize fixtures to use Kaggle entities globally
+    group_fixtures["home_team"] = group_fixtures["home_team"].replace(
+        DATACAMP_TO_KAGGLE
+    )
+    group_fixtures["away_team"] = group_fixtures["away_team"].replace(
+        DATACAMP_TO_KAGGLE
+    )
+
+    # Now this set will capture the true historical country names!
+    participating_teams = set(group_fixtures["home_team"].unique()) | set(
+        group_fixtures["away_team"].unique()
+    )
+
+    # --- PREDICTIVE MODELS ---
     print("\n--- Predictive Core Poisson Model ---")
     ratings, g_home, g_away = train_poisson_ratings()
     print(
-        f"   Global Baseline Goal Expectancy: {(g_home + g_away) / 2:.2f} (Neutral) / {g_home:.2f} (Home) / {g_away:.2f} (Away)"
+        f"    Global Baseline Goal Expectancy: {(g_home + g_away) / 2:.2f} (Neutral) / {g_home:.2f} (Home) / {g_away:.2f} (Away)"
     )
-    print_team_power_rankings(ratings)
+
+    # Filter the Poisson ratings dict before handing it to the print engine
+    participating_poisson = {
+        team: coefs for team, coefs in ratings.items() if team in participating_teams
+    }
+    print_team_power_rankings(participating_poisson)
+
+    elo_engine = None
+    if MODEL_TYPE == "elo":
+        print("\n📈 Training World Football Elo Engine components...")
+        elo_engine = EloEngine(k_factor=40)
+        elo_engine.fit(modern_df)
+
+        # ELO RANKING: Extract, map, and sort the ratings descending
+        elo_rankings = sorted(
+            [(team, elo_engine.get_rating(team)) for team in participating_teams],
+            key=lambda x: x[1],
+            reverse=True,
+        )
+
+        # Print structured dashboard
+        print("\n📊 World Football Elo Power Rankings (Tournament Field Only):")
+        print("=" * 55)
+        print(f"{'Rank':<5} | {'Country':<25} | {'Elo Rating':<10}")
+        print("-" * 55)
+        for rank, (team, score) in enumerate(elo_rankings, 1):
+            print(f"{rank:>4}  | {team:<25} | {score:>10.1f}")
+        print("=" * 55)
 
     # Execute Group Stage Simulation
     print("\n--- Executing Tournament Simulation ---")
-    predicted_fixtures = simulate_group_stage(ratings, g_home, g_away)
+
+    group_results = []
+
+    for idx, row in group_fixtures.iterrows():
+        match_id = int(row["match_id"])
+        group_letter = row["group"]
+        home = row["home_team"]
+        away = row["away_team"]
+        venue = row.get("venue", "Neutral Turf")
+
+        p_home_goals, p_away_goals, p_corners, p_yellows, p_reds, p_winner = (
+            predict_match_score(home, away, venue, ratings, g_home, g_away)
+        )
+
+        if MODEL_TYPE == "poisson":
+            # Pure Dixon-Coles Poisson Path
+            final_home_goals = p_home_goals
+            final_away_goals = p_away_goals
+            winner_side = p_winner
+
+        elif MODEL_TYPE == "elo":
+            # Core Elo Scoring Path
+            elo_meta = elo_engine.predict_match(home, away)
+            final_home_goals = elo_meta["predicted_home_goals"]
+            final_away_goals = elo_meta["predicted_away_goals"]
+            winner_side = elo_meta["winning_team"]
+
+        # Append to group results dataframe array using consistent variables
+        group_results.append(
+            {
+                "match_id": match_id,
+                "group": group_letter,
+                "home_team": home,
+                "away_team": away,
+                "predicted_home_goals": final_home_goals,
+                "predicted_away_goals": final_away_goals,
+                "corners": p_corners,
+                "yellow_cards": p_yellows,
+                "red_cards": p_reds,
+                "winning_team": winner_side,
+            }
+        )
+
+    # Bind the toggle array directly to the active fixtures pipeline variable
+    predicted_fixtures = pd.DataFrame(group_results)
 
     # Sort by group letter and match sequence for a clean, logical display
     print("\n📊 Simulating Group Stage:")
@@ -61,7 +156,13 @@ def main():
 
     # Run Sequential Knockout Waterfall
     knockout_matrix = simulate_knockout_waterfall(
-        group_tables, third_place_assignments, ratings, g_home, g_away
+        group_tables_df=group_tables,
+        third_place_mapping=third_place_assignments,
+        ratings=ratings,
+        g_home_avg=g_home,
+        g_away_avg=g_away,
+        model_type=MODEL_TYPE,
+        elo_engine=elo_engine,
     )
 
     # --- KNOCKOUT BRACKET STAGES ---
@@ -89,7 +190,6 @@ def main():
     )
 
     # --- PERSISTENCE LAYER: SAVE ARTIFACTS TO DISK ---
-
     results_dir = os.path.join("data", "results")
     os.makedirs(results_dir, exist_ok=True)
 
@@ -117,7 +217,7 @@ def main():
     ko_yellows = knockout_matrix["yellow_cards"]
     ko_reds = knockout_matrix["red_cards"]
 
-    # 3. Concatenate for Global Tournament Pools (All 104 Matches)
+    # 3. Concatenate for Global Tournament Pools
     all_corners = pd.concat([g_corners, ko_corners])
     all_yellows = pd.concat([g_yellows, ko_yellows])
     all_reds = pd.concat([g_reds, ko_reds])
