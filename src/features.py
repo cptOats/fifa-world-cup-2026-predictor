@@ -7,12 +7,12 @@ import pandas as pd
 def build_leakproof_form_features(df):
     """
     Transforms a match-grain dataframe into a chronological team-grain timeline,
-    computes rolling performance metrics, shifts them to prevent data leakage,
-    and maps them back to the original match format.
+    computes exponential moving performance vectors,
+    shifts them to prevent lookback leakage, and maps them back to matches.
     """
-    print("🔄 Processing leak-proof historical team form vectors...")
+    print("🔄 Processing leak-proof historical EWM team form vectors...")
 
-    # 1. Isolate home and away perspectives to create a unified team-timeline
+    # 1. Isolate home and away perspectives to create a unified team timeline
     home_perspective = df[["date", "home_team", "home_score", "away_score"]].rename(
         columns={
             "home_team": "team",
@@ -40,33 +40,27 @@ def build_leakproof_form_features(df):
 
     # 3. Derive match outcomes from the team's perspective
     timeline["is_win"] = (timeline["goals_for"] > timeline["goals_against"]).astype(int)
-    timeline["is_draw"] = (timeline["goals_for"] == timeline["goals_against"]).astype(
-        int
-    )
 
-    # 4. Compute rolling stats using closed='left' to STRICTLY exclude the current match outcome
-    # This uses only past historical performance data
-    window_sizes = [3, 5]
-    for w in window_sizes:
-        timeline[f"team_avg_gf_{w}g"] = timeline.groupby("team")["goals_for"].transform(
-            lambda x: x.rolling(window=w, closed="left").mean()
+    # 4. Compute EWM (Continuous decay) - .shift(1) inside the transform ensures strict lookback protection
+    spans = [4, 10]  # Short-term momentum vs long-term baseline stability
+    for s in spans:
+        timeline[f"team_ewm_gf_{s}s"] = timeline.groupby("team")["goals_for"].transform(
+            lambda x: x.ewm(span=s, adjust=False).mean().shift(1)
         )
-        timeline[f"team_avg_ga_{w}g"] = timeline.groupby("team")[
+        timeline[f"team_ewm_ga_{s}s"] = timeline.groupby("team")[
             "goals_against"
-        ].transform(lambda x: x.rolling(window=w, closed="left").mean())
-        timeline[f"team_win_rate_{w}g"] = timeline.groupby("team")["is_win"].transform(
-            lambda x: x.rolling(window=w, closed="left").mean()
+        ].transform(lambda x: x.ewm(span=s, adjust=False).mean().shift(1))
+        timeline[f"team_ewm_wr_{s}s"] = timeline.groupby("team")["is_win"].transform(
+            lambda x: x.ewm(span=s, adjust=False).mean().shift(1)
         )
 
-    # 5. Handle initial baseline fill-forward for teams in early parts of their history
-    fill_cols = [
-        c for c in timeline.columns if "rolling" in c or "avg" in c or "rate" in c
-    ]
+    # 5. Handle initial baseline fill-forward for early history gaps
+    fill_cols = [c for c in timeline.columns if "ewm" in c]
     timeline[fill_cols] = timeline.groupby("team")[fill_cols].ffill().fillna(0)
 
     # 6. Split back out into pristine Home and Away feature frames
     home_features = timeline[timeline["is_home"] == 1].drop(
-        columns=["goals_for", "goals_against", "is_home", "is_win", "is_draw"]
+        columns=["goals_for", "goals_against", "is_home", "is_win"]
     )
     home_features = home_features.rename(
         columns={
@@ -75,7 +69,7 @@ def build_leakproof_form_features(df):
     )
 
     away_features = timeline[timeline["is_home"] == 0].drop(
-        columns=["goals_for", "goals_against", "is_home", "is_win", "is_draw"]
+        columns=["goals_for", "goals_against", "is_home", "is_win"]
     )
     away_features = away_features.rename(
         columns={
@@ -90,6 +84,7 @@ def build_leakproof_form_features(df):
         right_on=["date", "team"],
         how="left",
     ).drop(columns=["team"])
+
     processed_df = processed_df.merge(
         away_features,
         left_on=["date", "away_team"],
@@ -102,8 +97,8 @@ def build_leakproof_form_features(df):
 
 def compile_master_feature_matrix(matches_parquet_path, elo_engine):
     """
-    Ingests clean historical matches, overlays rolling form vectors,
-    injects historical Elo snapshots, and returns a clean training matrix.
+    Ingests clean historical matches, overlays EWM form vectors, overlays Elo snapshots,
+    and returns a clean, fully aligned training matrix for the ML engine.
     """
     if not os.path.exists(matches_parquet_path):
         raise FileNotFoundError(f"Missing base match file: {matches_parquet_path}")
@@ -121,12 +116,11 @@ def compile_master_feature_matrix(matches_parquet_path, elo_engine):
     home_elos = []
     away_elos = []
 
-    # We step through time matching what the Elo engine knew right before each match kicked off
+    # Interacts cleanly with elo_model.py by passing clean string team identifiers
     for idx, row in df.iterrows():
         h_team = row["home_team"]
         a_team = row["away_team"]
 
-        # Pull snapshots from our compiled engine state
         home_elos.append(elo_engine.get_rating(h_team))
         away_elos.append(elo_engine.get_rating(a_team))
 
@@ -143,26 +137,27 @@ def compile_master_feature_matrix(matches_parquet_path, elo_engine):
         "away_elo_rating",
         "elo_differential",
         "is_neutral_venue",
-        "home_team_avg_gf_3g",
-        "home_team_avg_ga_3g",
-        "home_team_win_rate_3g",
-        "home_team_avg_gf_5g",
-        "home_team_avg_ga_5g",
-        "home_team_win_rate_5g",
-        "away_team_avg_gf_3g",
-        "away_team_avg_ga_3g",
-        "away_team_win_rate_3g",
-        "away_team_avg_gf_5g",
-        "away_team_avg_ga_5g",
-        "away_team_win_rate_5g",
+        "home_team_ewm_gf_4s",
+        "home_team_ewm_ga_4s",
+        "home_team_ewm_wr_4s",
+        "home_team_ewm_gf_10s",
+        "home_team_ewm_ga_10s",
+        "home_team_ewm_wr_10s",
+        "away_team_ewm_gf_4s",
+        "away_team_ewm_ga_4s",
+        "away_team_ewm_wr_4s",
+        "away_team_ewm_gf_10s",
+        "away_team_ewm_ga_10s",
+        "away_team_ewm_wr_10s",
     ]
 
     targets = ["home_score", "away_score"]
 
-    # Drop rows with NaN values resulting from early-history rolling limits
+    # 5. Extract matrix and rename 'date' to 'match_date' for direct ml_engine.py synergy
     final_matrix = (
         df[["date", "home_team", "away_team"] + feature_columns + targets]
         .dropna()
+        .rename(columns={"date": "match_date"})
         .reset_index(drop=True)
     )
 

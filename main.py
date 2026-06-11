@@ -14,6 +14,7 @@ from src.models import (
     DATACAMP_TO_KAGGLE,
     predict_match_score,
     print_team_power_rankings,
+    train_poisson_oof_predictions,
     train_poisson_ratings,
 )
 from src.monte_carlo import run_monte_carlo_master
@@ -26,12 +27,67 @@ from src.router import (
 )
 
 # --- MODEL CONFIGURATION TOGGLE ---
-# Options: "poisson", "elo", "xgboost", "ensemble"
-MODEL_TYPE = "ensemble"
+MODEL_TYPE = "ensemble"  # Options: "poisson", "elo", "xgboost", "ensemble"
 
 # --- PROBABILISTIC MONTE CARLO TOGGLE ---
-RUN_MONTE_CARLO = True  # Bool: Run or Skip Monte-Carlo Simulation
+RUN_MONTE_CARLO = True  # Bool: Run Monte-Carlo Simulation
 MONTE_CARLO_RUNS = 10000  # Total parallel universes to simulate (10k+ recommended)
+
+# --- BAYESIAN EXPERT PRIOR TOGGLE ---
+USE_PRIOR_NUDGE = True  # Bool: Apply Bayesian Expert Fine Tuning
+NUDGE_STRENGTH = 1.5  # Tuning parameter controlling goal scaling factor
+
+# --- POWER RATINGS TABLE --- source: https://www.datacamp.com/datalab/w/3da1cc64-5670-441e-8e7b-b948a6a29403
+TEAM_POWER = {
+    "Algeria": 74,
+    "Argentina": 95,
+    "Australia": 74,
+    "Austria": 79,
+    "Belgium": 86,
+    "Bosnia and Herzegovina": 72,
+    "Brazil": 94,
+    "Cape Verde": 64,
+    "Canada": 75,
+    "Colombia": 84,
+    "DR Congo": 69,
+    "Croatia": 83,
+    "Curaçao": 61,
+    "Czech Republic": 73,
+    "Ivory Coast": 77,
+    "Ecuador": 79,
+    "Egypt": 76,
+    "England": 93,
+    "France": 97,
+    "Germany": 90,
+    "Ghana": 73,
+    "Haiti": 62,
+    "Iran": 74,
+    "Iraq": 69,
+    "Japan": 81,
+    "Jordan": 65,
+    "Mexico": 79,
+    "Morocco": 82,
+    "Netherlands": 88,
+    "New Zealand": 64,
+    "Norway": 81,
+    "Panama": 67,
+    "Paraguay": 76,
+    "Portugal": 91,
+    "Qatar": 68,
+    "Saudi Arabia": 70,
+    "Scotland": 73,
+    "Senegal": 80,
+    "South Africa": 70,
+    "South Korea": 77,
+    "Spain": 97,
+    "Sweden": 78,
+    "Switzerland": 82,
+    "Tunisia": 71,
+    "Turkey": 78,
+    "United States": 80,
+    "Uruguay": 84,
+    "Uzbekistan": 68,
+}
 
 
 def main():
@@ -62,6 +118,18 @@ def main():
     participating_teams = set(group_fixtures["home_team"].unique()) | set(
         group_fixtures["away_team"].unique()
     )
+
+    # --- ENTITY ALIGNMENT GATE FOR POWER RATINGS PRIORS ---
+    if USE_PRIOR_NUDGE and TEAM_POWER:
+        missing_priors = [
+            team for team in participating_teams if team not in TEAM_POWER
+        ]
+        assert not missing_priors, (
+            f"❌ TEAM_POWER String Mismatch! The following resolved tournament teams are missing keys in power dictionary: {missing_priors}"
+        )
+        print(
+            "🎯 Verification Matrix: All tournament entities successfully verified in power ratings table."
+        )
 
     # --- TELEMETRY PHASE: STATISTICAL POWER RANKINGS ---
     print("\n--- Predictive Core Poisson Model ---")
@@ -99,20 +167,29 @@ def main():
         os.path.join("data", "processed", "clean_historical_matches.parquet"),
         elo_engine,
     )
-    xgb_home, xgb_away = train_production_xgboost_models(
-        feature_matrix, feature_columns
+
+    # 1. Capture XGBoost OOF arrays
+    xgb_home, xgb_away, oof_home_preds, oof_away_preds = (
+        train_production_xgboost_models(feature_matrix, feature_columns)
     )
+
+    # 2. Capture Poisson OOF arrays
+    oof_poisson_home, oof_poisson_away = train_poisson_oof_predictions(feature_matrix)
 
     # CALIBRATE OPTIMAL CONSENSUS WEIGHTS
     blend_weights = find_optimal_blend_weights(
-        feature_matrix,
-        ratings,
-        g_home,
-        g_away,
-        elo_engine,
-        xgb_home,
-        xgb_away,
-        feature_columns,
+        feature_matrix=feature_matrix,
+        ratings=ratings,
+        g_home=g_home,
+        g_away=g_away,
+        elo_engine=elo_engine,
+        xgb_home=xgb_home,
+        xgb_away=xgb_away,
+        feature_columns=feature_columns,
+        oof_home_preds=oof_home_preds,
+        oof_away_preds=oof_away_preds,
+        oof_poisson_home=oof_poisson_home,
+        oof_poisson_away=oof_poisson_away,
     )
 
     # DIAGNOSTIC PRINT: Display the mathematical optimization weights clearly
@@ -136,21 +213,22 @@ def main():
             prefix = "home_team_" if latest_row["home_team"] == team else "away_team_"
 
             latest_team_form[team] = {
-                "avg_gf_3g": latest_row[f"{prefix}avg_gf_3g"],
-                "avg_ga_3g": latest_row[f"{prefix}avg_ga_3g"],
-                "win_rate_3g": latest_row[f"{prefix}win_rate_3g"],
-                "avg_gf_5g": latest_row[f"{prefix}avg_gf_5g"],
-                "avg_ga_5g": latest_row[f"{prefix}avg_ga_5g"],
-                "win_rate_5g": latest_row[f"{prefix}win_rate_5g"],
+                "ewm_gf_4s": latest_row[f"{prefix}ewm_gf_4s"],
+                "ewm_ga_4s": latest_row[f"{prefix}ewm_ga_4s"],
+                "ewm_wr_4s": latest_row[f"{prefix}ewm_wr_4s"],
+                "ewm_gf_10s": latest_row[f"{prefix}ewm_gf_10s"],
+                "ewm_ga_10s": latest_row[f"{prefix}ewm_ga_10s"],
+                "ewm_wr_10s": latest_row[f"{prefix}ewm_wr_10s"],
             }
         else:
+            # Default fallbacks
             latest_team_form[team] = {
-                "avg_gf_3g": 1.2,
-                "avg_ga_3g": 1.2,
-                "win_rate_3g": 0.35,
-                "avg_gf_5g": 1.2,
-                "avg_ga_5g": 1.2,
-                "win_rate_5g": 0.35,
+                "ewm_gf_4s": 1.2,
+                "ewm_ga_4s": 1.2,
+                "ewm_wr_4s": 0.35,
+                "ewm_gf_10s": 1.2,
+                "ewm_ga_10s": 1.2,
+                "ewm_wr_10s": 0.35,
             }
 
     # Execute Group Stage Simulation
@@ -177,18 +255,18 @@ def main():
             "elo_differential": elo_engine.get_rating(home)
             - elo_engine.get_rating(away),
             "is_neutral_venue": 1,
-            "home_team_avg_gf_3g": latest_team_form[home]["avg_gf_3g"],
-            "home_team_avg_ga_3g": latest_team_form[home]["avg_ga_3g"],
-            "home_team_win_rate_3g": latest_team_form[home]["win_rate_3g"],
-            "home_team_avg_gf_5g": latest_team_form[home]["avg_gf_5g"],
-            "home_team_avg_ga_5g": latest_team_form[home]["avg_ga_5g"],
-            "home_team_win_rate_5g": latest_team_form[home]["win_rate_5g"],
-            "away_team_avg_gf_3g": latest_team_form[away]["avg_gf_3g"],
-            "away_team_avg_ga_3g": latest_team_form[away]["avg_ga_3g"],
-            "away_team_win_rate_3g": latest_team_form[away]["win_rate_3g"],
-            "away_team_avg_gf_5g": latest_team_form[away]["avg_gf_5g"],
-            "away_team_avg_ga_5g": latest_team_form[away]["avg_ga_5g"],
-            "away_team_win_rate_5g": latest_team_form[away]["win_rate_5g"],
+            "home_team_ewm_gf_4s": latest_team_form[home]["ewm_gf_4s"],
+            "home_team_ewm_ga_4s": latest_team_form[home]["ewm_ga_4s"],
+            "home_team_ewm_wr_4s": latest_team_form[home]["ewm_wr_4s"],
+            "home_team_ewm_gf_10s": latest_team_form[home]["ewm_gf_10s"],
+            "home_team_ewm_ga_10s": latest_team_form[home]["ewm_ga_10s"],
+            "home_team_ewm_wr_10s": latest_team_form[home]["ewm_wr_10s"],
+            "away_team_ewm_gf_4s": latest_team_form[away]["ewm_gf_4s"],
+            "away_team_ewm_ga_4s": latest_team_form[away]["ewm_ga_4s"],
+            "away_team_ewm_wr_4s": latest_team_form[away]["ewm_wr_4s"],
+            "away_team_ewm_gf_10s": latest_team_form[away]["ewm_gf_10s"],
+            "away_team_ewm_ga_10s": latest_team_form[away]["ewm_ga_10s"],
+            "away_team_ewm_wr_10s": latest_team_form[away]["ewm_wr_10s"],
         }
         match_df = pd.DataFrame([live_match_vector])[feature_columns]
         xgb_h_pred = xgb_home.predict(match_df)[0]
@@ -214,7 +292,7 @@ def main():
             )
 
         elif MODEL_TYPE == "ensemble":
-            # 🚨 RIGOROUS Fractional Consensus Value Mapping
+            # 1. Classical Statistical Baselines
             h_poisson_baseline = (
                 ratings.get(home, {}).get("attack", 1)
                 * ratings.get(away, {}).get("defense", 1)
@@ -226,6 +304,7 @@ def main():
                 * ((g_home + g_away) / 2.0)
             )
 
+            # 2. Empirical Machine Learning Consensus Blend
             blend_home_raw = (
                 (blend_weights["poisson"] * h_poisson_baseline)
                 + (blend_weights["elo"] * elo_meta["predicted_home_goals"])
@@ -237,8 +316,20 @@ def main():
                 + (blend_weights["xgboost"] * xgb_w_pred)
             )
 
-            final_home_goals = int(np.round(blend_home_raw))
-            final_away_goals = int(np.round(blend_away_raw))
+            # 3. 2026 Power Ratings
+            home_power = TEAM_POWER.get(home, 75)
+            away_power = TEAM_POWER.get(away, 75)
+            power_gap = home_power - away_power
+
+            #  Gentle Bayesian adjustment to fine-tune Data Latency problem
+            prior_nudge = (power_gap / 100) * NUDGE_STRENGTH
+
+            blend_home_raw += prior_nudge
+            blend_away_raw -= prior_nudge
+
+            # 4. Final Integer Output Compilation
+            final_home_goals = int(np.round(max(0, blend_home_raw)))
+            final_away_goals = int(np.round(max(0, blend_away_raw)))
             winner_side = (
                 "home"
                 if final_home_goals > final_away_goals

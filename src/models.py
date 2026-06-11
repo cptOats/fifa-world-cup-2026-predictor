@@ -4,14 +4,13 @@ import os
 
 import numpy as np
 import pandas as pd
+from sklearn.model_selection import TimeSeriesSplit
 
 # The Master Entity Resolution Translation Layer
 DATACAMP_TO_KAGGLE = {
-    # Core Country Spelling Mismatches
     "USA": "United States",
     "Côte d'Ivoire": "Ivory Coast",
     "Cabo Verde": "Cape Verde",
-    # Resolved 2026 Playoff Slots
     "UEFA Playoff A": "Bosnia and Herzegovina",
     "UEFA Playoff B": "Sweden",
     "UEFA Playoff C": "Turkey",
@@ -25,7 +24,7 @@ MODEL_PATH = os.path.join(MODEL_DIR, "poisson_artifacts.json")
 
 
 def train_poisson_ratings():
-    """Calculates weighted attack/defense strengths OR loads them from disk if cached."""
+    """Calculates weighted attack/defense strengths for final production 2026 runs."""
     if os.path.exists(MODEL_PATH):
         print(f"💾 Loading pre-compiled Poisson model from cache: {MODEL_PATH}")
         with open(MODEL_PATH, "r") as f:
@@ -131,6 +130,94 @@ def train_poisson_ratings():
     print(f"💾 Model architecture serialized and stored at: {MODEL_PATH}")
 
     return ratings, global_home_avg, global_away_avg
+
+
+def train_poisson_oof_predictions(feature_matrix):
+    """
+    Executes an identical chronological cross-validation loop to calculate
+    leak-proof, continuous out-of-fold Poisson predictions for the blender.
+    """
+    print("📋 Generating Out-of-Fold Poisson Baseline Horizon...")
+    n_matches = len(feature_matrix)
+    oof_home_preds = np.zeros(n_matches)
+    oof_away_preds = np.zeros(n_matches)
+
+    tscv = TimeSeriesSplit(n_splits=3)
+
+    for fold, (train_idx, test_idx) in enumerate(tscv.split(feature_matrix), 1):
+        train_df = feature_matrix.iloc[train_idx].copy()
+        test_df = feature_matrix.iloc[test_idx]
+
+        # Use 1.0 default if match_weight was dropped during earlier matrix slicing
+        if "match_weight" not in train_df.columns:
+            train_df["match_weight"] = 1.0
+
+        total_weight = train_df["match_weight"].sum()
+        g_home = train_df["home_score"].sum() / len(train_df)
+        g_away = train_df["away_score"].sum() / len(train_df)
+        g_neutral = (g_home + g_away) / 2.0
+
+        # Calculate isolated fold statistics
+        train_df["w_hd_sc"] = train_df["home_score"] * train_df["match_weight"]
+        train_df["w_hd_cn"] = train_df["away_score"] * train_df["match_weight"]
+        home_stats = (
+            train_df.groupby("home_team")
+            .agg(
+                sc=("w_hd_sc", "sum"), cn=("w_hd_cn", "sum"), wt=("match_weight", "sum")
+            )
+            .reset_index()
+        )
+
+        train_df["w_aw_sc"] = train_df["away_score"] * train_df["match_weight"]
+        train_df["w_aw_cn"] = train_df["home_score"] * train_df["match_weight"]
+        away_stats = (
+            train_df.groupby("away_team")
+            .agg(
+                sc=("w_aw_sc", "sum"), cn=("w_aw_cn", "sum"), wt=("match_weight", "sum")
+            )
+            .reset_index()
+        )
+
+        teams = set(home_stats["home_team"]).union(set(away_stats["away_team"]))
+        fold_ratings = {}
+
+        for team in teams:
+            h = home_stats[home_stats["home_team"] == team]
+            a = away_stats[away_stats["away_team"] == team]
+
+            h_sc = h["sc"].values[0] if not h.empty else 0
+            h_cn = h["cn"].values[0] if not h.empty else 0
+            h_wt = h["wt"].values[0] if not h.empty else 0
+
+            a_sc = a["sc"].values[0] if not a.empty else 0
+            a_cn = a["cn"].values[0] if not a.empty else 0
+            a_wt = a["wt"].values[0] if not a.empty else 0
+
+            total_matches = h_wt + a_wt
+            if total_matches == 0:
+                fold_ratings[team] = {"attack": 1.0, "defense": 1.0}
+                continue
+
+            attack = ((h_sc + a_sc) / total_matches) / g_neutral
+            defense = ((h_cn + a_cn) / total_matches) / g_neutral
+
+            fold_ratings[team] = {
+                "attack": max(0.1000, attack),
+                "defense": max(0.2500, defense),
+            }
+
+        # Predict continuous expected values (lambda) for the unseen test rows
+        for idx, row in test_df.iterrows():
+            h_team = row["home_team"]
+            a_team = row["away_team"]
+
+            h_rat = fold_ratings.get(h_team, {"attack": 1.0, "defense": 1.0})
+            a_rat = fold_ratings.get(a_team, {"attack": 1.0, "defense": 1.0})
+
+            oof_home_preds[idx] = h_rat["attack"] * a_rat["defense"] * g_neutral
+            oof_away_preds[idx] = a_rat["attack"] * h_rat["defense"] * g_neutral
+
+    return oof_home_preds, oof_away_preds
 
 
 def get_venue_country(venue_string):

@@ -265,6 +265,43 @@ def simulate_knockout_waterfall(
             )
         )
 
+        # FEATURE CONSTRUCTION
+        live_match_vector = {
+            "home_elo_rating": elo_engine.get_rating(home_team)
+            if elo_engine
+            else 1500.0,
+            "away_elo_rating": elo_engine.get_rating(away_team)
+            if elo_engine
+            else 1500.0,
+            "elo_differential": (
+                elo_engine.get_rating(home_team) - elo_engine.get_rating(away_team)
+            )
+            if elo_engine
+            else 0.0,
+            "is_neutral_venue": 1,
+            "home_team_ewm_gf_4s": latest_team_form[home_team]["ewm_gf_4s"],
+            "home_team_ewm_ga_4s": latest_team_form[home_team]["ewm_ga_4s"],
+            "home_team_ewm_wr_4s": latest_team_form[home_team]["ewm_wr_4s"],
+            "home_team_ewm_gf_10s": latest_team_form[home_team]["ewm_gf_10s"],
+            "home_team_ewm_ga_10s": latest_team_form[home_team]["ewm_ga_10s"],
+            "home_team_ewm_wr_10s": latest_team_form[home_team]["ewm_wr_10s"],
+            "away_team_ewm_gf_4s": latest_team_form[away_team]["ewm_gf_4s"],
+            "away_team_ewm_ga_4s": latest_team_form[away_team]["ewm_ga_4s"],
+            "away_team_ewm_wr_4s": latest_team_form[away_team]["ewm_wr_4s"],
+            "away_team_ewm_gf_10s": latest_team_form[away_team]["ewm_gf_10s"],
+            "away_team_ewm_ga_10s": latest_team_form[away_team]["ewm_ga_10s"],
+            "away_team_ewm_wr_10s": latest_team_form[away_team]["ewm_wr_10s"],
+        }
+
+        # Convert to DataFrame and slice strictly by your updated feature columns
+        match_df = pd.DataFrame([live_match_vector])[feature_columns]
+        xgb_h_pred = xgb_home.predict(match_df)[0] if xgb_home is not None else 0.0
+        xgb_w_pred = xgb_away.predict(match_df)[0] if xgb_away is not None else 0.0
+
+        # Maintain default continuous variable state for downstream Extra Time evaluations
+        raw_home = xgb_h_pred
+        raw_away = xgb_w_pred
+
         # --- UNIFIED CORE COGNITIVE ROUTER (90 mins BASELINE) ---
         if model_type == "poisson":
             pred_home_90 = p_home_goals
@@ -276,31 +313,8 @@ def simulate_knockout_waterfall(
             pred_away_90 = elo_meta["predicted_away_goals"]
 
         elif model_type == "xgboost":
-            live_match_vector = {
-                "home_elo_rating": elo_engine.get_rating(home_team),
-                "away_elo_rating": elo_engine.get_rating(away_team),
-                "elo_differential": elo_engine.get_rating(home_team)
-                - elo_engine.get_rating(away_team),
-                "is_neutral_venue": 1,
-                "home_team_avg_gf_3g": latest_team_form[home_team]["avg_gf_3g"],
-                "home_team_avg_ga_3g": latest_team_form[home_team]["avg_ga_3g"],
-                "home_team_win_rate_3g": latest_team_form[home_team]["win_rate_3g"],
-                "home_team_avg_gf_5g": latest_team_form[home_team]["avg_gf_5g"],
-                "home_team_avg_ga_5g": latest_team_form[home_team]["avg_ga_5g"],
-                "home_team_win_rate_5g": latest_team_form[home_team]["win_rate_5g"],
-                "away_team_avg_gf_3g": latest_team_form[away_team]["avg_gf_3g"],
-                "away_team_avg_ga_3g": latest_team_form[away_team]["avg_ga_3g"],
-                "away_team_win_rate_3g": latest_team_form[away_team]["win_rate_3g"],
-                "away_team_avg_gf_5g": latest_team_form[away_team]["avg_gf_5g"],
-                "away_team_avg_ga_5g": latest_team_form[away_team]["avg_ga_5g"],
-                "away_team_win_rate_5g": latest_team_form[away_team]["win_rate_5g"],
-            }
-            match_df = pd.DataFrame([live_match_vector])[feature_columns]
-            raw_home = xgb_home.predict(match_df)[0]
-            raw_away = xgb_away.predict(match_df)[0]
-
-            pred_home_90 = int(np.round(raw_home))
-            pred_away_90 = int(np.round(raw_away))
+            pred_home_90 = int(np.round(xgb_h_pred))
+            pred_away_90 = int(np.round(xgb_w_pred))
 
         elif model_type == "ensemble":
             b_w = latest_team_form["__meta_weights__"]
@@ -316,29 +330,6 @@ def simulate_knockout_waterfall(
                 * ((g_home_avg + g_away_avg) / 2.0)
             )
             elo_meta = elo_engine.predict_match(home_team, away_team)
-
-            live_match_vector = {
-                "home_elo_rating": elo_engine.get_rating(home_team),
-                "away_elo_rating": elo_engine.get_rating(away_team),
-                "elo_differential": elo_engine.get_rating(home_team)
-                - elo_engine.get_rating(away_team),
-                "is_neutral_venue": 1,
-                "home_team_avg_gf_3g": latest_team_form[home_team]["avg_gf_3g"],
-                "home_team_avg_ga_3g": latest_team_form[home_team]["avg_ga_3g"],
-                "home_team_win_rate_3g": latest_team_form[home_team]["win_rate_3g"],
-                "home_team_avg_gf_5g": latest_team_form[home_team]["avg_gf_5g"],
-                "home_team_avg_ga_5g": latest_team_form[home_team]["avg_ga_5g"],
-                "home_team_win_rate_5g": latest_team_form[home_team]["win_rate_5g"],
-                "away_team_avg_gf_3g": latest_team_form[away_team]["avg_gf_3g"],
-                "away_team_avg_ga_3g": latest_team_form[away_team]["avg_ga_3g"],
-                "away_team_win_rate_3g": latest_team_form[away_team]["win_rate_3g"],
-                "away_team_avg_gf_5g": latest_team_form[away_team]["avg_gf_5g"],
-                "away_team_avg_ga_5g": latest_team_form[away_team]["avg_ga_5g"],
-                "away_team_win_rate_5g": latest_team_form[away_team]["win_rate_5g"],
-            }
-            match_df = pd.DataFrame([live_match_vector])[feature_columns]
-            xgb_h_pred = xgb_home.predict(match_df)[0]
-            xgb_w_pred = xgb_away.predict(match_df)[0]
 
             raw_home = (
                 (b_w["poisson"] * h_poisson_baseline)
@@ -428,7 +419,7 @@ def simulate_knockout_waterfall(
                 advance_winner, advance_loser = away_team, home_team
                 winner_side = "away"
             else:
-                # 🚨 Still Level After 120 Mins -> Resolves via Sudden-Death Penalty Shootout
+                # Still Level After 120 Mins -> Resolves via Sudden-Death Penalty Shootout
                 final_home_goals, final_away_goals = pred_home_120, pred_away_120
                 is_penalty = True
 
