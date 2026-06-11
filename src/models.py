@@ -167,9 +167,7 @@ def predict_match_score(home, away, venue, ratings, g_home_avg, g_away_avg):
         lambda_home = home_rating["attack"] * away_rating["defense"] * g_neutral
         lambda_away = away_rating["attack"] * home_rating["defense"] * g_neutral
 
-    # Standard Poisson
-    # pred_home_score, pred_away_score = int(np.round(lambda_home)), int(np.round(lambda_away))
-    # Directly integrate Dixon-Coles probability:
+    # Directly integrate Dixon-Coles Poisson probability :
     pred_home_score, pred_away_score = get_dixon_coles_score(lambda_home, lambda_away)
 
     # 2. CORNERS PROXY MODEL (scaled by matchup threat)

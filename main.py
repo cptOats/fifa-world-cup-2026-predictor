@@ -16,6 +16,7 @@ from src.models import (
     print_team_power_rankings,
     train_poisson_ratings,
 )
+from src.monte_carlo import run_monte_carlo_master
 from src.prepare_data import prepare_historical_features
 from src.router import (
     allocate_third_places,
@@ -27,6 +28,10 @@ from src.router import (
 # --- MODEL CONFIGURATION TOGGLE ---
 # Options: "poisson", "elo", "xgboost", "ensemble"
 MODEL_TYPE = "ensemble"
+
+# --- PROBABILISTIC MONTE CARLO TOGGLE ---
+RUN_MONTE_CARLO = True  # Bool: Run or Skip Monte-Carlo Simulation
+MONTE_CARLO_RUNS = 10000  # Total parallel universes to simulate (10k+ recommended)
 
 
 def main():
@@ -358,6 +363,49 @@ def main():
         f"{'TOURNAMENT TOTAL':<20} | {len(all_corners):<12} | {all_corners.mean():<13.2f} | {all_yellows.mean():<16.2f} | {all_reds.mean():<13.2f}"
     )
     print("=" * 100)
+
+    # Load the raw knockout structure template to hand off to the simulator
+    raw_knockout_template = pd.read_csv(
+        os.path.join("data", "raw", "knockout_slots.csv")
+    )
+
+    # --- PROBABILISTIC SIMULATION LAYER ---
+    if RUN_MONTE_CARLO:
+        # Load the raw knockout structure template to hand off to the simulator
+        raw_knockout_template = pd.read_csv(
+            os.path.join("data", "raw", "knockout_slots.csv")
+        )
+
+        # Execute the Master Monte Carlo Suite at scale
+        prob_dashboard, master_ledgers = run_monte_carlo_master(
+            group_fixtures=group_fixtures,
+            raw_knockout_template=raw_knockout_template,
+            ratings=ratings,
+            g_home=g_home,
+            g_away=g_away,
+            elo_engine=elo_engine,
+            xgb_home=xgb_home,
+            xgb_away=xgb_away,
+            feature_columns=feature_columns,
+            latest_team_form=latest_team_form,
+            blend_weights=blend_weights,
+            n_simulations=MONTE_CARLO_RUNS,
+        )
+
+        # PERSIST FORECAST MATRIX TO DISK
+        output_dir = os.path.join("data", "results")
+        os.makedirs(output_dir, exist_ok=True)
+
+        csv_path = os.path.join(output_dir, "monte_carlo_forecast.csv")
+        prob_dashboard.to_csv(csv_path, index=False)
+
+        print(f"\n💾 PERSISTENCE LAYER: Probability matrix cached cleanly to:")
+        print(f"   ↳ {csv_path}")
+
+    else:
+        print(
+            "\n🎲 Monte Carlo Engine: [DISABLED] Skipping probabilistic calculations."
+        )
 
 
 if __name__ == "__main__":

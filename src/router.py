@@ -265,7 +265,7 @@ def simulate_knockout_waterfall(
             )
         )
 
-        # --- UNIFIED CORE COGNITIVE ROUTER (90-MINUTE BASELINE) ---
+        # --- UNIFIED CORE COGNITIVE ROUTER (90 mins BASELINE) ---
         if model_type == "poisson":
             pred_home_90 = p_home_goals
             pred_away_90 = p_away_goals
@@ -452,7 +452,7 @@ def simulate_knockout_waterfall(
         match_winners[match_id] = advance_winner
         match_losers[match_id] = advance_loser
 
-        # 🚨 THE PRODUCTION RESULTS LEDGER DICTIONARY (Appended with pristine schema alignment)
+        # THE PRODUCTION RESULTS LEDGER DICTIONARY
         knockout_results.append(
             {
                 "match_id": match_id,
