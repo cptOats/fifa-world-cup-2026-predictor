@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import xgboost as xgb
 
+from src.blender import find_optimal_blend_weights
 from src.check_names import identify_name_mismatches
 from src.elo_model import EloEngine
 from src.features import compile_master_feature_matrix
@@ -24,8 +25,8 @@ from src.router import (
 )
 
 # --- MODEL CONFIGURATION TOGGLE ---
-# Options: "poisson", "elo", "xgboost"
-MODEL_TYPE = "xgboost"
+# Options: "poisson", "elo", "xgboost", "ensemble"
+MODEL_TYPE = "ensemble"
 
 
 def main():
@@ -57,7 +58,7 @@ def main():
         group_fixtures["away_team"].unique()
     )
 
-    # --- 📊 TELEMETRY PHASE 1: STATISTICAL POWER RANKINGS ---
+    # --- TELEMETRY PHASE: STATISTICAL POWER RANKINGS ---
     print("\n--- Predictive Core Poisson Model ---")
     ratings, g_home, g_away = train_poisson_ratings()
     print(
@@ -87,7 +88,7 @@ def main():
         print(f"{rank:>4}  | {team:<25} | {score:>10.1f}")
     print("=" * 55)
 
-    # --- 🌲 TELEMETRY PHASE 2: MACHINE LEARNING ENGINE ---
+    # --- MACHINE LEARNING ENGINE PIPELINE LAYER ---
     print("\n🌲 Compiling ML Feature Matrices and training Tree Ensembles...")
     feature_matrix, feature_columns = compile_master_feature_matrix(
         os.path.join("data", "processed", "clean_historical_matches.parquet"),
@@ -96,6 +97,27 @@ def main():
     xgb_home, xgb_away = train_production_xgboost_models(
         feature_matrix, feature_columns
     )
+
+    # CALIBRATE OPTIMAL CONSENSUS WEIGHTS
+    blend_weights = find_optimal_blend_weights(
+        feature_matrix,
+        ratings,
+        g_home,
+        g_away,
+        elo_engine,
+        xgb_home,
+        xgb_away,
+        feature_columns,
+    )
+
+    # DIAGNOSTIC PRINT: Display the mathematical optimization weights clearly
+    print("\n⚖️  ACTIVE CONSENSUS MODEL WEIGHT DISTRIBUTION:")
+    print("=" * 55)
+    print(f"   📊 Poisson Base Weight (w1) : {blend_weights['poisson']:.4f}")
+    print(f"   📈 Elo Engine Weight (w2)   : {blend_weights['elo']:.4f}")
+    print(f"   🌲 XGBoost Tree Weight (w3) : {blend_weights['xgboost']:.4f}")
+    print(f"   Verified Total Coefficient  : {sum(blend_weights.values()):.2f}")
+    print("=" * 55)
 
     # State tracking: Extract the single most recent form row for every country to use as tournament baseline
     latest_team_form = {}
@@ -126,7 +148,7 @@ def main():
                 "win_rate_5g": 0.35,
             }
 
-    # --- ⚽ SIMULATION PHASE 3: EXECUTE TOURNAMENT LOOP ---
+    # Execute Group Stage Simulation
     print("\n--- Executing Tournament Simulation Loop ---")
     group_results = []
 
@@ -137,53 +159,86 @@ def main():
         away = row["away_team"]
         venue = row.get("venue", "Neutral Turf")
 
-        # Compute baseline secondary metrics (Corners, Cards) natively via Poisson positions
+        # Compute pure baseline statistical models
         p_home_goals, p_away_goals, p_corners, p_yellows, p_reds, p_winner = (
             predict_match_score(home, away, venue, ratings, g_home, g_away)
         )
+        elo_meta = elo_engine.predict_match(home, away)
 
+        # Build live XGBoost match features
+        live_match_vector = {
+            "home_elo_rating": elo_engine.get_rating(home),
+            "away_elo_rating": elo_engine.get_rating(away),
+            "elo_differential": elo_engine.get_rating(home)
+            - elo_engine.get_rating(away),
+            "is_neutral_venue": 1,
+            "home_team_avg_gf_3g": latest_team_form[home]["avg_gf_3g"],
+            "home_team_avg_ga_3g": latest_team_form[home]["avg_ga_3g"],
+            "home_team_win_rate_3g": latest_team_form[home]["win_rate_3g"],
+            "home_team_avg_gf_5g": latest_team_form[home]["avg_gf_5g"],
+            "home_team_avg_ga_5g": latest_team_form[home]["avg_ga_5g"],
+            "home_team_win_rate_5g": latest_team_form[home]["win_rate_5g"],
+            "away_team_avg_gf_3g": latest_team_form[away]["avg_gf_3g"],
+            "away_team_avg_ga_3g": latest_team_form[away]["avg_ga_3g"],
+            "away_team_win_rate_3g": latest_team_form[away]["win_rate_3g"],
+            "away_team_avg_gf_5g": latest_team_form[away]["avg_gf_5g"],
+            "away_team_avg_ga_5g": latest_team_form[away]["avg_ga_5g"],
+            "away_team_win_rate_5g": latest_team_form[away]["win_rate_5g"],
+        }
+        match_df = pd.DataFrame([live_match_vector])[feature_columns]
+        xgb_h_pred = xgb_home.predict(match_df)[0]
+        xgb_w_pred = xgb_away.predict(match_df)[0]
+
+        # --- RE-ENGINEERED OVERLAY DECISION ROUTER ---
         if MODEL_TYPE == "poisson":
-            final_home_goals = p_home_goals
-            final_away_goals = p_away_goals
+            final_home_goals, final_away_goals = p_home_goals, p_away_goals
             winner_side = p_winner
-
         elif MODEL_TYPE == "elo":
-            elo_meta = elo_engine.predict_match(home, away)
-            final_home_goals = elo_meta["predicted_home_goals"]
-            final_away_goals = elo_meta["predicted_away_goals"]
+            final_home_goals, final_away_goals = (
+                elo_meta["predicted_home_goals"],
+                elo_meta["predicted_away_goals"],
+            )
             winner_side = elo_meta["winning_team"]
-
         elif MODEL_TYPE == "xgboost":
-            live_match_vector = {
-                "home_elo_rating": elo_engine.get_rating(home),
-                "away_elo_rating": elo_engine.get_rating(away),
-                "elo_differential": elo_engine.get_rating(home)
-                - elo_engine.get_rating(away),
-                "is_neutral_venue": 1,
-                "home_team_avg_gf_3g": latest_team_form[home]["avg_gf_3g"],
-                "home_team_avg_ga_3g": latest_team_form[home]["avg_ga_3g"],
-                "home_team_win_rate_3g": latest_team_form[home]["win_rate_3g"],
-                "home_team_avg_gf_5g": latest_team_form[home]["avg_gf_5g"],
-                "home_team_avg_ga_5g": latest_team_form[home]["avg_ga_5g"],
-                "home_team_win_rate_5g": latest_team_form[home]["win_rate_5g"],
-                "away_team_avg_gf_3g": latest_team_form[away]["avg_gf_3g"],
-                "away_team_avg_ga_3g": latest_team_form[away]["avg_ga_3g"],
-                "away_team_win_rate_3g": latest_team_form[away]["win_rate_3g"],
-                "away_team_avg_gf_5g": latest_team_form[away]["avg_gf_5g"],
-                "away_team_avg_ga_5g": latest_team_form[away]["avg_ga_5g"],
-                "away_team_win_rate_5g": latest_team_form[away]["win_rate_5g"],
-            }
+            final_home_goals = int(np.round(xgb_h_pred))
+            final_away_goals = int(np.round(xgb_w_pred))
+            winner_side = (
+                "home"
+                if final_home_goals > final_away_goals
+                else ("away" if final_away_goals > final_home_goals else "draw")
+            )
 
-            match_df = pd.DataFrame([live_match_vector])[feature_columns]
-            final_home_goals = int(np.round(xgb_home.predict(match_df)[0]))
-            final_away_goals = int(np.round(xgb_away.predict(match_df)[0]))
+        elif MODEL_TYPE == "ensemble":
+            # 🚨 RIGOROUS Fractional Consensus Value Mapping
+            h_poisson_baseline = (
+                ratings.get(home, {}).get("attack", 1)
+                * ratings.get(away, {}).get("defense", 1)
+                * ((g_home + g_away) / 2.0)
+            )
+            a_poisson_baseline = (
+                ratings.get(away, {}).get("attack", 1)
+                * ratings.get(home, {}).get("defense", 1)
+                * ((g_home + g_away) / 2.0)
+            )
 
-            if final_home_goals > final_away_goals:
-                winner_side = "home"
-            elif final_away_goals > final_home_goals:
-                winner_side = "away"
-            else:
-                winner_side = "draw"
+            blend_home_raw = (
+                (blend_weights["poisson"] * h_poisson_baseline)
+                + (blend_weights["elo"] * elo_meta["predicted_home_goals"])
+                + (blend_weights["xgboost"] * xgb_h_pred)
+            )
+            blend_away_raw = (
+                (blend_weights["poisson"] * a_poisson_baseline)
+                + (blend_weights["elo"] * elo_meta["predicted_away_goals"])
+                + (blend_weights["xgboost"] * xgb_w_pred)
+            )
+
+            final_home_goals = int(np.round(blend_home_raw))
+            final_away_goals = int(np.round(blend_away_raw))
+            winner_side = (
+                "home"
+                if final_home_goals > final_away_goals
+                else ("away" if final_away_goals > final_home_goals else "draw")
+            )
 
         group_results.append(
             {
@@ -202,7 +257,7 @@ def main():
 
     predicted_fixtures = pd.DataFrame(group_results)
 
-    # 📊 TELEMETRY PHASE 3A: MATCH-BY-MATCH GROUP STAGE DISPLAY
+    # TELEMETRY PHASE: MATCH-BY-MATCH GROUP STAGE DISPLAY
     print("\n📊 Simulating Group Stage:")
     print("=" * 100)
     sorted_fixtures = predicted_fixtures.sort_values(by=["group", "match_id"])
@@ -221,6 +276,7 @@ def main():
     top_thirds = extract_best_third_places(group_tables)
     third_place_assignments = allocate_third_places(top_thirds)
 
+    latest_team_form["__meta_weights__"] = blend_weights
     # Run Sequential Knockout Waterfall
     knockout_matrix = simulate_knockout_waterfall(
         group_tables_df=group_tables,
@@ -236,7 +292,7 @@ def main():
         latest_team_form=latest_team_form,
     )
 
-    # 📊 TELEMETRY PHASE 3B: KNOCKOUT BRACKET DISPLAY
+    # TELEMETRY PHASE: KNOCKOUT BRACKET DISPLAY
     rounds_to_print = [
         "Round of 32",
         "Round of 16",
@@ -270,7 +326,7 @@ def main():
         os.path.join(results_dir, "predicted_knockout_bracket.csv"), index=False
     )
 
-    # --- 📊 TELEMETRY PHASE 4: MACRO SENSE-CHECK DASHBOARD ---
+    # --- TELEMETRY PHASE: MACRO SENSE-CHECK DASHBOARD ---
     print("\n🔍👀 EXECUTING MACRO SENSE-CHECK (Tournament-Wide Metric Convergence):")
     print("=" * 100)
     g_corners, g_yellows, g_reds = (

@@ -302,6 +302,58 @@ def simulate_knockout_waterfall(
             pred_home_90 = int(np.round(raw_home))
             pred_away_90 = int(np.round(raw_away))
 
+        elif model_type == "ensemble":
+            b_w = latest_team_form["__meta_weights__"]
+
+            h_poisson_baseline = (
+                ratings.get(home_team, {}).get("attack", 1)
+                * ratings.get(away_team, {}).get("defense", 1)
+                * ((g_home_avg + g_away_avg) / 2.0)
+            )
+            a_poisson_baseline = (
+                ratings.get(away_team, {}).get("attack", 1)
+                * ratings.get(home_team, {}).get("defense", 1)
+                * ((g_home_avg + g_away_avg) / 2.0)
+            )
+            elo_meta = elo_engine.predict_match(home_team, away_team)
+
+            live_match_vector = {
+                "home_elo_rating": elo_engine.get_rating(home_team),
+                "away_elo_rating": elo_engine.get_rating(away_team),
+                "elo_differential": elo_engine.get_rating(home_team)
+                - elo_engine.get_rating(away_team),
+                "is_neutral_venue": 1,
+                "home_team_avg_gf_3g": latest_team_form[home_team]["avg_gf_3g"],
+                "home_team_avg_ga_3g": latest_team_form[home_team]["avg_ga_3g"],
+                "home_team_win_rate_3g": latest_team_form[home_team]["win_rate_3g"],
+                "home_team_avg_gf_5g": latest_team_form[home_team]["avg_gf_5g"],
+                "home_team_avg_ga_5g": latest_team_form[home_team]["avg_ga_5g"],
+                "home_team_win_rate_5g": latest_team_form[home_team]["win_rate_5g"],
+                "away_team_avg_gf_3g": latest_team_form[away_team]["avg_gf_3g"],
+                "away_team_avg_ga_3g": latest_team_form[away_team]["avg_ga_3g"],
+                "away_team_win_rate_3g": latest_team_form[away_team]["win_rate_3g"],
+                "away_team_avg_gf_5g": latest_team_form[away_team]["avg_gf_5g"],
+                "away_team_avg_ga_5g": latest_team_form[away_team]["avg_ga_5g"],
+                "away_team_win_rate_5g": latest_team_form[away_team]["win_rate_5g"],
+            }
+            match_df = pd.DataFrame([live_match_vector])[feature_columns]
+            xgb_h_pred = xgb_home.predict(match_df)[0]
+            xgb_w_pred = xgb_away.predict(match_df)[0]
+
+            raw_home = (
+                (b_w["poisson"] * h_poisson_baseline)
+                + (b_w["elo"] * elo_meta["predicted_home_goals"])
+                + (b_w["xgboost"] * xgb_h_pred)
+            )
+            raw_away = (
+                (b_w["poisson"] * a_poisson_baseline)
+                + (b_w["elo"] * elo_meta["predicted_away_goals"])
+                + (b_w["xgboost"] * xgb_w_pred)
+            )
+
+            pred_home_90 = int(np.round(raw_home))
+            pred_away_90 = int(np.round(raw_away))
+
         # Compute Raw 90min Continuous Float Baselines for Secondary Metrics
         raw_corners_90 = (5.5 * home_rating["attack"] * away_rating["defense"]) + (
             5.5 * away_rating["attack"] * home_rating["defense"]
@@ -329,7 +381,7 @@ def simulate_knockout_waterfall(
             tot_yellows = int(np.clip(np.round(raw_yellows_90), 1, 9))
 
         else:
-            # 🚨 Regulation Integer Draw -> Triggers Extra Time (120 Mins)
+            # 🚨 Regulation Integer Draw -> Triggers Extra Time (120 mins)
             lambda_home_120 = lambda_home_90 * (1 + (ET_MULTIPLIER * FATIGUE_FACTOR))
             lambda_away_120 = lambda_away_90 * (1 + (ET_MULTIPLIER * FATIGUE_FACTOR))
 
@@ -340,8 +392,8 @@ def simulate_knockout_waterfall(
             elif model_type == "elo":
                 pred_home_120 = int(np.round(lambda_home_120))
                 pred_away_120 = int(np.round(lambda_away_120))
-            elif model_type == "xgboost":
-                # Scale raw 90min tree expectations dynamically to account for the extra 30 mins
+            elif model_type in ["xgboost", "ensemble"]:
+                # Scale raw expectations for extra 30 mins
                 pred_home_120 = int(
                     np.round(raw_home * (1 + (ET_MULTIPLIER * FATIGUE_FACTOR)))
                 )
@@ -349,7 +401,7 @@ def simulate_knockout_waterfall(
                     np.round(raw_away * (1 + (ET_MULTIPLIER * FATIGUE_FACTOR)))
                 )
 
-            # Inflate timeline metrics for the extra 30-minute tracking pool
+            # Inflate timeline metrics for extra 30 mins
             tot_corners = int(
                 np.clip(
                     np.round(raw_corners_90 * (1 + (ET_MULTIPLIER * FATIGUE_FACTOR))),
@@ -380,7 +432,7 @@ def simulate_knockout_waterfall(
                 final_home_goals, final_away_goals = pred_home_120, pred_away_120
                 is_penalty = True
 
-                if model_type == "xgboost":
+                if model_type in ["xgboost", "ensemble"]:
                     # Fractional continuous tree output acts as the native algorithmic tiebreaker
                     if raw_home >= raw_away:
                         advance_winner, advance_loser = home_team, away_team

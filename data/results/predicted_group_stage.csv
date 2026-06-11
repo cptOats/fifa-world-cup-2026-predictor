@@ -21,30 +21,30 @@ match_id,group,home_team,away_team,predicted_home_goals,predicted_away_goals,cor
 20,J,Argentina,Algeria,2,1,7,4,0,home
 21,K,Portugal,DR Congo,2,1,8,4,0,home
 22,L,England,Croatia,2,1,11,6,0,home
-23,L,Ghana,Panama,1,2,10,5,0,away
+23,L,Ghana,Panama,1,1,10,5,0,draw
 24,K,Uzbekistan,Colombia,1,1,8,4,0,draw
-25,A,Czech Republic,South Africa,2,1,9,5,0,home
+25,A,Czech Republic,South Africa,1,1,9,5,0,draw
 26,B,Switzerland,Bosnia and Herzegovina,2,1,12,7,0,home
 27,B,Canada,Qatar,2,1,12,6,0,home
-28,A,Mexico,South Korea,2,1,8,4,0,home
+28,A,Mexico,South Korea,1,1,8,4,0,draw
 29,D,Turkey,Paraguay,2,1,9,5,0,home
 30,D,United States,Australia,1,1,9,5,0,draw
 31,C,Scotland,Morocco,1,2,9,5,0,away
 32,C,Brazil,Haiti,2,1,11,6,0,home
-33,F,Tunisia,Japan,1,2,8,4,0,away
+33,F,Tunisia,Japan,1,1,8,4,0,draw
 34,F,Netherlands,Sweden,2,1,13,7,0,home
 35,E,Germany,Ivory Coast,2,1,11,6,0,home
-36,E,Ecuador,Curaçao,3,1,9,5,0,home
+36,E,Ecuador,Curaçao,2,1,9,5,0,home
 37,H,Spain,Saudi Arabia,2,1,9,5,0,home
 38,G,Belgium,Iran,1,1,11,6,0,draw
-39,H,Uruguay,Cape Verde,2,1,6,4,0,home
+39,H,Uruguay,Cape Verde,1,1,6,4,0,draw
 40,G,New Zealand,Egypt,1,1,8,4,0,draw
 41,J,Argentina,Austria,2,1,8,5,0,home
 42,I,France,Iraq,2,1,9,5,0,home
 43,I,Norway,Senegal,1,1,9,5,0,draw
 44,J,Jordan,Algeria,1,2,9,5,0,away
 45,K,Portugal,Uzbekistan,2,1,9,5,0,home
-46,L,England,Ghana,3,1,9,5,0,home
+46,L,England,Ghana,2,1,9,5,0,home
 47,L,Panama,Croatia,1,1,12,6,0,draw
 48,K,Colombia,DR Congo,2,1,6,3,0,home
 49,B,Switzerland,Canada,1,1,12,7,0,draw
@@ -67,7 +67,7 @@ match_id,group,home_team,away_team,predicted_home_goals,predicted_away_goals,cor
 66,G,New Zealand,Belgium,1,2,12,6,0,away
 67,L,Panama,England,1,2,11,6,0,away
 68,L,Croatia,Ghana,2,1,9,5,0,home
-69,K,Colombia,Portugal,2,1,9,5,0,home
+69,K,Colombia,Portugal,1,1,9,5,0,draw
 70,K,DR Congo,Uzbekistan,1,1,7,4,0,draw
 71,J,Algeria,Austria,2,1,10,6,0,home
 72,J,Jordan,Argentina,1,2,8,4,0,away
