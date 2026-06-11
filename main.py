@@ -1,10 +1,14 @@
 import os
 
+import numpy as np
 import pandas as pd
+import xgboost as xgb
 
 from src.check_names import identify_name_mismatches
 from src.elo_model import EloEngine
+from src.features import compile_master_feature_matrix
 from src.ingest import verify_data_layer
+from src.ml_engine import train_production_xgboost_models
 from src.models import (
     DATACAMP_TO_KAGGLE,
     predict_match_score,
@@ -20,11 +24,14 @@ from src.router import (
 )
 
 # --- MODEL CONFIGURATION TOGGLE ---
-MODEL_TYPE = "elo"  # Options: "poisson" or "elo"
+# Options: "poisson", "elo", "xgboost"
+MODEL_TYPE = "xgboost"
 
 
 def main():
-    print("🚀 Initializing World Cup Prediction Pipeline...")
+    print(
+        f"🚀 Initializing World Cup Prediction Pipeline [Active Engine: {MODEL_TYPE.upper()}]..."
+    )
 
     # --- INFRASTRUCTURE GATES ---
     verify_data_layer()
@@ -33,63 +40,94 @@ def main():
     print("\n--- Compiling Clean Historical Feature Matrix ---")
     prepare_historical_features()
 
-    # --- DATA INGESTION ---
+    # --- EXPLICIT DATA INGESTION ---
     modern_df = pd.read_parquet(
         os.path.join("data", "processed", "clean_historical_matches.parquet")
     )
     group_fixtures = pd.read_csv(os.path.join("data", "raw", "group_fixtures.csv"))
 
-    # TRANSLATION GATE: Standardize fixtures to use Kaggle entities globally
+    # Apply Master Entity Resolution Translation Layer
     group_fixtures["home_team"] = group_fixtures["home_team"].replace(
         DATACAMP_TO_KAGGLE
     )
     group_fixtures["away_team"] = group_fixtures["away_team"].replace(
         DATACAMP_TO_KAGGLE
     )
-
-    # Now this set will capture the true historical country names!
     participating_teams = set(group_fixtures["home_team"].unique()) | set(
         group_fixtures["away_team"].unique()
     )
 
-    # --- PREDICTIVE MODELS ---
+    # --- 📊 TELEMETRY PHASE 1: STATISTICAL POWER RANKINGS ---
     print("\n--- Predictive Core Poisson Model ---")
     ratings, g_home, g_away = train_poisson_ratings()
     print(
         f"    Global Baseline Goal Expectancy: {(g_home + g_away) / 2:.2f} (Neutral) / {g_home:.2f} (Home) / {g_away:.2f} (Away)"
     )
-
-    # Filter the Poisson ratings dict before handing it to the print engine
+    # Truncate to participating tournament field only
     participating_poisson = {
         team: coefs for team, coefs in ratings.items() if team in participating_teams
     }
     print_team_power_rankings(participating_poisson)
 
-    elo_engine = None
-    if MODEL_TYPE == "elo":
-        print("\n📈 Training World Football Elo Engine components...")
-        elo_engine = EloEngine(k_factor=40)
-        elo_engine.fit(modern_df)
+    print("\n📈 Training World Football Elo Engine components...")
+    elo_engine = EloEngine(k_factor=40)
+    elo_engine.fit(modern_df)
 
-        # ELO RANKING: Extract, map, and sort the ratings descending
-        elo_rankings = sorted(
-            [(team, elo_engine.get_rating(team)) for team in participating_teams],
-            key=lambda x: x[1],
-            reverse=True,
-        )
+    # Print Formatted Elo Standings Dashboard for Tournament Field
+    elo_rankings = sorted(
+        [(team, elo_engine.get_rating(team)) for team in participating_teams],
+        key=lambda x: x[1],
+        reverse=True,
+    )
+    print("\n📊 World Football Elo Power Rankings (Tournament Field Only):")
+    print("=" * 55)
+    print(f"{'Rank':<5} | {'Country':<25} | {'Elo Rating':<10}")
+    print("-" * 55)
+    for rank, (team, score) in enumerate(elo_rankings, 1):
+        print(f"{rank:>4}  | {team:<25} | {score:>10.1f}")
+    print("=" * 55)
 
-        # Print structured dashboard
-        print("\n📊 World Football Elo Power Rankings (Tournament Field Only):")
-        print("=" * 55)
-        print(f"{'Rank':<5} | {'Country':<25} | {'Elo Rating':<10}")
-        print("-" * 55)
-        for rank, (team, score) in enumerate(elo_rankings, 1):
-            print(f"{rank:>4}  | {team:<25} | {score:>10.1f}")
-        print("=" * 55)
+    # --- 🌲 TELEMETRY PHASE 2: MACHINE LEARNING ENGINE ---
+    print("\n🌲 Compiling ML Feature Matrices and training Tree Ensembles...")
+    feature_matrix, feature_columns = compile_master_feature_matrix(
+        os.path.join("data", "processed", "clean_historical_matches.parquet"),
+        elo_engine,
+    )
+    xgb_home, xgb_away = train_production_xgboost_models(
+        feature_matrix, feature_columns
+    )
 
-    # Execute Group Stage Simulation
-    print("\n--- Executing Tournament Simulation ---")
+    # State tracking: Extract the single most recent form row for every country to use as tournament baseline
+    latest_team_form = {}
+    for team in participating_teams:
+        team_rows = feature_matrix[
+            (feature_matrix["home_team"] == team)
+            | (feature_matrix["away_team"] == team)
+        ]
+        if not team_rows.empty:
+            latest_row = team_rows.iloc[-1]
+            prefix = "home_team_" if latest_row["home_team"] == team else "away_team_"
 
+            latest_team_form[team] = {
+                "avg_gf_3g": latest_row[f"{prefix}avg_gf_3g"],
+                "avg_ga_3g": latest_row[f"{prefix}avg_ga_3g"],
+                "win_rate_3g": latest_row[f"{prefix}win_rate_3g"],
+                "avg_gf_5g": latest_row[f"{prefix}avg_gf_5g"],
+                "avg_ga_5g": latest_row[f"{prefix}avg_ga_5g"],
+                "win_rate_5g": latest_row[f"{prefix}win_rate_5g"],
+            }
+        else:
+            latest_team_form[team] = {
+                "avg_gf_3g": 1.2,
+                "avg_ga_3g": 1.2,
+                "win_rate_3g": 0.35,
+                "avg_gf_5g": 1.2,
+                "avg_ga_5g": 1.2,
+                "win_rate_5g": 0.35,
+            }
+
+    # --- ⚽ SIMULATION PHASE 3: EXECUTE TOURNAMENT LOOP ---
+    print("\n--- Executing Tournament Simulation Loop ---")
     group_results = []
 
     for idx, row in group_fixtures.iterrows():
@@ -99,24 +137,54 @@ def main():
         away = row["away_team"]
         venue = row.get("venue", "Neutral Turf")
 
+        # Compute baseline secondary metrics (Corners, Cards) natively via Poisson positions
         p_home_goals, p_away_goals, p_corners, p_yellows, p_reds, p_winner = (
             predict_match_score(home, away, venue, ratings, g_home, g_away)
         )
 
         if MODEL_TYPE == "poisson":
-            # Pure Dixon-Coles Poisson Path
             final_home_goals = p_home_goals
             final_away_goals = p_away_goals
             winner_side = p_winner
 
         elif MODEL_TYPE == "elo":
-            # Core Elo Scoring Path
             elo_meta = elo_engine.predict_match(home, away)
             final_home_goals = elo_meta["predicted_home_goals"]
             final_away_goals = elo_meta["predicted_away_goals"]
             winner_side = elo_meta["winning_team"]
 
-        # Append to group results dataframe array using consistent variables
+        elif MODEL_TYPE == "xgboost":
+            live_match_vector = {
+                "home_elo_rating": elo_engine.get_rating(home),
+                "away_elo_rating": elo_engine.get_rating(away),
+                "elo_differential": elo_engine.get_rating(home)
+                - elo_engine.get_rating(away),
+                "is_neutral_venue": 1,
+                "home_team_avg_gf_3g": latest_team_form[home]["avg_gf_3g"],
+                "home_team_avg_ga_3g": latest_team_form[home]["avg_ga_3g"],
+                "home_team_win_rate_3g": latest_team_form[home]["win_rate_3g"],
+                "home_team_avg_gf_5g": latest_team_form[home]["avg_gf_5g"],
+                "home_team_avg_ga_5g": latest_team_form[home]["avg_ga_5g"],
+                "home_team_win_rate_5g": latest_team_form[home]["win_rate_5g"],
+                "away_team_avg_gf_3g": latest_team_form[away]["avg_gf_3g"],
+                "away_team_avg_ga_3g": latest_team_form[away]["avg_ga_3g"],
+                "away_team_win_rate_3g": latest_team_form[away]["win_rate_3g"],
+                "away_team_avg_gf_5g": latest_team_form[away]["avg_gf_5g"],
+                "away_team_avg_ga_5g": latest_team_form[away]["avg_ga_5g"],
+                "away_team_win_rate_5g": latest_team_form[away]["win_rate_5g"],
+            }
+
+            match_df = pd.DataFrame([live_match_vector])[feature_columns]
+            final_home_goals = int(np.round(xgb_home.predict(match_df)[0]))
+            final_away_goals = int(np.round(xgb_away.predict(match_df)[0]))
+
+            if final_home_goals > final_away_goals:
+                winner_side = "home"
+            elif final_away_goals > final_home_goals:
+                winner_side = "away"
+            else:
+                winner_side = "draw"
+
         group_results.append(
             {
                 "match_id": match_id,
@@ -132,10 +200,9 @@ def main():
             }
         )
 
-    # Bind the toggle array directly to the active fixtures pipeline variable
     predicted_fixtures = pd.DataFrame(group_results)
 
-    # Sort by group letter and match sequence for a clean, logical display
+    # 📊 TELEMETRY PHASE 3A: MATCH-BY-MATCH GROUP STAGE DISPLAY
     print("\n📊 Simulating Group Stage:")
     print("=" * 100)
     sorted_fixtures = predicted_fixtures.sort_values(by=["group", "match_id"])
@@ -163,9 +230,13 @@ def main():
         g_away_avg=g_away,
         model_type=MODEL_TYPE,
         elo_engine=elo_engine,
+        xgb_home=xgb_home,
+        xgb_away=xgb_away,
+        feature_columns=feature_columns,
+        latest_team_form=latest_team_form,
     )
 
-    # --- KNOCKOUT BRACKET STAGES ---
+    # 📊 TELEMETRY PHASE 3B: KNOCKOUT BRACKET DISPLAY
     rounds_to_print = [
         "Round of 32",
         "Round of 16",
@@ -192,37 +263,30 @@ def main():
     # --- PERSISTENCE LAYER: SAVE ARTIFACTS TO DISK ---
     results_dir = os.path.join("data", "results")
     os.makedirs(results_dir, exist_ok=True)
+    predicted_fixtures.to_csv(
+        os.path.join(results_dir, "predicted_group_stage.csv"), index=False
+    )
+    knockout_matrix.to_csv(
+        os.path.join(results_dir, "predicted_knockout_bracket.csv"), index=False
+    )
 
-    group_output_path = os.path.join(results_dir, "predicted_group_stage.csv")
-    knockout_output_path = os.path.join(results_dir, "predicted_knockout_bracket.csv")
-
-    predicted_fixtures.to_csv(group_output_path, index=False)
-    knockout_matrix.to_csv(knockout_output_path, index=False)
-
-    print("💾 Production simulation ledgers safely saved to disk:")
-    print(f"   - Group Stage Ledger: {group_output_path}")
-    print(f"   - Knockout Bracket Ledger: {knockout_output_path}")
-
-    # --- MACRO SENSE-CHECK: TOURNAMENT ---
+    # --- 📊 TELEMETRY PHASE 4: MACRO SENSE-CHECK DASHBOARD ---
     print("\n🔍👀 EXECUTING MACRO SENSE-CHECK (Tournament-Wide Metric Convergence):")
     print("=" * 100)
-
-    # 1. Extract Group Stage Arrays
-    g_corners = predicted_fixtures["corners"]
-    g_yellows = predicted_fixtures["yellow_cards"]
-    g_reds = predicted_fixtures["red_cards"]
-
-    # 2. Extract Knockout Stage Arrays
-    ko_corners = knockout_matrix["corners"]
-    ko_yellows = knockout_matrix["yellow_cards"]
-    ko_reds = knockout_matrix["red_cards"]
-
-    # 3. Concatenate for Global Tournament Pools
+    g_corners, g_yellows, g_reds = (
+        predicted_fixtures["corners"],
+        predicted_fixtures["yellow_cards"],
+        predicted_fixtures["red_cards"],
+    )
+    ko_corners, ko_yellows, ko_reds = (
+        knockout_matrix["corners"],
+        knockout_matrix["yellow_cards"],
+        knockout_matrix["red_cards"],
+    )
     all_corners = pd.concat([g_corners, ko_corners])
     all_yellows = pd.concat([g_yellows, ko_yellows])
     all_reds = pd.concat([g_reds, ko_reds])
 
-    # 4. Display Formatted Summary Standings Dashboard
     print(
         f"{'Tournament Phase':<20} | {'Sample Size':<12} | {'Avg Corners':<13} | {'Avg Yellow Cards':<16} | {'Avg Red Cards':<13}"
     )
@@ -237,10 +301,6 @@ def main():
     print(
         f"{'TOURNAMENT TOTAL':<20} | {len(all_corners):<12} | {all_corners.mean():<13.2f} | {all_yellows.mean():<16.2f} | {all_reds.mean():<13.2f}"
     )
-    print("=" * 100)
-    print("🎯 Target Verification Calibration Benchmarks:")
-    print("   -> World Cup Target Baseline: ~9 Corners per 90min.")
-    print("   -> World Cup Target Baseline: ~5 Yellows per 90min.")
     print("=" * 100)
 
 
