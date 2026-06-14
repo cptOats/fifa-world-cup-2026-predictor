@@ -1,6 +1,6 @@
 {
-    "run_id": "run_blend_nudge1.5_20260614_0126",
-    "timestamp": "20260614_0126",
+    "run_id": "run_blend_nudge1.5_20260614_0229",
+    "timestamp": "20260614_0229",
     "config": {
         "model_type": "blend",
         "run_monte_carlo": true,

@@ -26,7 +26,7 @@ match_id,round,venue,home_team,away_team,predicted_home_goals,predicted_away_goa
 25,Group A,"Mercedes-Benz Stadium, Atlanta",Czech Republic,South Africa,1,1,9,5,0,False,Draw
 26,Group B,"SoFi Stadium, Los Angeles",Switzerland,Bosnia and Herzegovina,2,1,12,7,0,False,Switzerland
 27,Group B,"BC Place, Vancouver",Canada,Qatar,2,1,12,6,0,False,Canada
-28,Group A,"Estadio Akron, Guadalajara",Mexico,South Korea,1,1,8,4,0,False,Draw
+28,Group A,"Estadio Akron, Guadalajara",Mexico,South Korea,2,1,8,4,0,False,Mexico
 29,Group D,"Levi's Stadium, Santa Clara",Turkey,Paraguay,2,1,9,5,0,False,Turkey
 30,Group D,"Lumen Field, Seattle",United States,Australia,1,1,9,5,0,False,Draw
 31,Group C,"Gillette Stadium, Boston",Scotland,Morocco,1,2,9,5,0,False,Morocco

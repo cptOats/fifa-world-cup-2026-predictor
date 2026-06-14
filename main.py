@@ -33,6 +33,7 @@ from src.router import (
 from src.stochastic import run_monte_carlo_master
 from src.transform import (
     DATACAMP_TO_KAGGLE,
+    get_venue_country,
     prepare_historical_features,
 )
 from src.xgb import train_production_xgboost_models
@@ -43,7 +44,7 @@ RUN_MONTE_CARLO = True
 MONTE_CARLO_RUNS = 10000  # Recommend 10K+
 USE_PRIOR_NUDGE = True
 NUDGE_STRENGTH = 1.5  # Recommend ~1.5
-FORCE_RETRAIN = False
+FORCE_RETRAIN = True
 
 # --- POWER RATINGS TABLE --- source: https://www.datacamp.com/datalab/w/3da1cc64-5670-441e-8e7b-b948a6a29403
 TEAM_POWER = {
@@ -138,7 +139,7 @@ def main():
         ValueError: If `MODEL_TYPE` is configured to an invalid or unsupported string.
     """
     logging.info(
-        "🚀 Launching World Cup Prediction Pipeline [Engine: {MODEL_TYPE}{nudge_suffix}]"
+        f"🚀 Launching World Cup Prediction Pipeline [Engine: {MODEL_TYPE}{nudge_suffix}]"
     )
 
     # --- CACHE MANAGEMENT LAYER ---
@@ -282,12 +283,15 @@ def main():
         )
         elo_meta = elo_engine.predict_elo_match(home, away)
 
+        venue_country = get_venue_country(venue)
+        is_neutral = 0 if (home == venue_country or away == venue_country) else 1
+
         live_match_vector = {
             "home_elo_rating": elo_engine.get_rating(home),
             "away_elo_rating": elo_engine.get_rating(away),
             "elo_differential": elo_engine.get_rating(home)
             - elo_engine.get_rating(away),
-            "is_neutral_venue": 1,
+            "is_neutral_venue": is_neutral,
             "home_team_ewm_gf_4s": latest_team_form[home]["ewm_gf_4s"],
             "home_team_ewm_ga_4s": latest_team_form[home]["ewm_ga_4s"],
             "home_team_ewm_wr_4s": latest_team_form[home]["ewm_wr_4s"],
@@ -427,13 +431,52 @@ def main():
     )
 
     # Save Core Artifacts
-    logging.info(f"💾 Committing dataset matrices to: {run_dir}")
+    logging.info(f"💾 Committing unified dataset matrices to: {run_dir}")
+
+    # 1. Save the Master Match Ledger
     master_tournament.to_csv(
         os.path.join(run_dir, "predicted_tournament.csv"), index=False
     )
 
-    elo_df = pd.DataFrame(elo_rankings, columns=["team", "elo_rating"])
-    elo_df.to_csv(os.path.join(run_dir, "pre_tournament_elo.csv"), index=False)
+    # 2. Save the Deterministic League Tables
+    group_tables.to_csv(os.path.join(run_dir, "final_group_tables.csv"), index=False)
+
+    # 3. Compile and Save the Master Team Capabilities Lookup Matrix
+    capability_records = []
+    for team in participating_teams:
+        p_rat = ratings.get(team, {"attack": 1.0, "defense": 1.0})
+        form = latest_team_form.get(team, {})
+
+        record = {
+            "Country": team,
+            "Elo_Rating": elo_engine.get_rating(team),
+            "Poisson_Attack": p_rat["attack"],
+            "Poisson_Defense": p_rat["defense"],
+            "Poisson_Dominance": p_rat["attack"] / max(0.01, p_rat["defense"]),
+            "Short_Term_Form_GF": form.get("ewm_gf_4s", 1.2),
+            "Short_Term_Form_WR": form.get("ewm_wr_4s", 0.35),
+            "Long_Term_Form_GF": form.get("ewm_gf_10s", 1.2),
+            "Long_Term_Form_WR": form.get("ewm_wr_10s", 0.35),
+        }
+
+        # Append Bayesian Priors Nudge
+        if USE_PRIOR_NUDGE:
+            record["Nudge_Power_Rating"] = TEAM_POWER.get(team, 75)
+            record["Nudge_Raw_Delta"] = (
+                TEAM_POWER.get(team, 75) / 100
+            ) * NUDGE_STRENGTH
+        else:
+            record["Nudge_Power_Rating"] = None
+            record["Nudge_Raw_Delta"] = None
+
+        capability_records.append(record)
+
+    capabilities_df = pd.DataFrame(capability_records).sort_values(
+        by="Elo_Rating", ascending=False
+    )
+    capabilities_df.to_csv(
+        os.path.join(run_dir, "pre_tournament_capabilities.csv"), index=False
+    )
 
     # Construct and Save the Metadata JSON
     run_metadata = {
