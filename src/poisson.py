@@ -1,3 +1,12 @@
+"""Poisson Statistical Modeling and Match Prediction Engine.
+
+This module provides the core probabilistic execution layers for the tournament
+prediction pipeline. It calculates weighted historical attack and defense strengths
+for international football teams, generates leak-proof out-of-fold (OOF) baseline
+expectations via chronological cross-validation, and provides a low-scoring
+Dixon-Coles coupling adjustment layer to predict integer match scores.
+"""
+
 import json
 import math
 import os
@@ -6,27 +15,25 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import TimeSeriesSplit
 
-# The Master Entity Resolution Translation Layer
-DATACAMP_TO_KAGGLE = {
-    "USA": "United States",
-    "Côte d'Ivoire": "Ivory Coast",
-    "Cabo Verde": "Cape Verde",
-    "UEFA Playoff A": "Bosnia and Herzegovina",
-    "UEFA Playoff B": "Sweden",
-    "UEFA Playoff C": "Turkey",
-    "UEFA Playoff D": "Czech Republic",
-    "FIFA Playoff 1": "DR Congo",
-    "FIFA Playoff 2": "Iraq",
-}
-
 MODEL_DIR = "models"
 MODEL_PATH = os.path.join(MODEL_DIR, "poisson_artifacts.json")
 
 
 def train_poisson_ratings():
-    """Calculates weighted attack/defense strengths for final production 2026 runs."""
+    """Calculates weighted historical attack and defense strengths for all teams.
+
+    Checks the local directory for a pre-compiled JSON cache artifact. If an archive
+    is missing, it reads the modern processed Parquet match logs, weights outcomes
+    by fixture importance context, maps aggregated goals against global baselines,
+    and saves the calculated parameters to disk to avoid retraining.
+
+    Returns:
+        tuple: A parsed combination containing:
+            - ratings (dict): Team names mapping to nested 'attack' and 'defense' coefficients.
+            - global_home_avg (float): Global weighted average for home goals scored.
+            - global_away_avg (float): Global weighted average for away goals scored.
+    """
     if os.path.exists(MODEL_PATH):
-        print(f"💾 Loading pre-compiled Poisson model from cache: {MODEL_PATH}")
         with open(MODEL_PATH, "r") as f:
             artifacts = json.load(f)
         return (
@@ -35,7 +42,6 @@ def train_poisson_ratings():
             artifacts["global_away_avg"],
         )
 
-    print("🧠 Cache miss. Compiling team ratings from historical data...")
     os.makedirs(MODEL_DIR, exist_ok=True)
 
     processed_path = os.path.join(
@@ -127,17 +133,29 @@ def train_poisson_ratings():
 
     with open(MODEL_PATH, "w") as f:
         json.dump(artifacts, f, indent=4)
-    print(f"💾 Model architecture serialized and stored at: {MODEL_PATH}")
 
     return ratings, global_home_avg, global_away_avg
 
 
 def train_poisson_oof_predictions(feature_matrix):
+    r"""Calculates leak-proof, continuous out-of-fold Poisson predictions via cross-validation.
+
+    Uses a scikit-learn `TimeSeriesSplit` to slice the master feature matrix along
+    chronological lines. For each fold, it fits isolated training-set Poisson attack/defense
+    coefficients and scores the unseen testing horizon, outputting unbiased baseline numbers
+    specifically tailored for downstream meta-blender optimization.
+
+    Args:
+        feature_matrix (pd.DataFrame): Master feature matrix tracking historical matches,
+            containing `home_team`, `away_team`, `home_score`, and `away_score` data.
+
+    Returns:
+        tuple: A combination containing:
+            - oof_home_preds (np.ndarray): Array of float expectations ($\lambda$) for the
+                home-side goals generated when records were out-of-fold.
+            - oof_away_preds (np.ndarray): Array of float expectations ($\lambda$) for the
+                away-side goals generated when records were out-of-fold.
     """
-    Executes an identical chronological cross-validation loop to calculate
-    leak-proof, continuous out-of-fold Poisson predictions for the blender.
-    """
-    print("📋 Generating Out-of-Fold Poisson Baseline Horizon...")
     n_matches = len(feature_matrix)
     oof_home_preds = np.zeros(n_matches)
     oof_away_preds = np.zeros(n_matches)
@@ -153,8 +171,12 @@ def train_poisson_oof_predictions(feature_matrix):
             train_df["match_weight"] = 1.0
 
         total_weight = train_df["match_weight"].sum()
-        g_home = train_df["home_score"].sum() / len(train_df)
-        g_away = train_df["away_score"].sum() / len(train_df)
+        g_home = (
+            train_df["home_score"] * train_df["match_weight"]
+        ).sum() / total_weight
+        g_away = (
+            train_df["away_score"] * train_df["match_weight"]
+        ).sum() / total_weight
         g_neutral = (g_home + g_away) / 2.0
 
         # Calculate isolated fold statistics
@@ -220,30 +242,29 @@ def train_poisson_oof_predictions(feature_matrix):
     return oof_home_preds, oof_away_preds
 
 
-def get_venue_country(venue_string):
-    """Parses the stadium venue string to identify the physical host country."""
-    venue_lower = venue_string.lower()
-    if (
-        "mexico" in venue_lower
-        or "guadalajara" in venue_lower
-        or "monterrey" in venue_lower
-    ):
-        return "Mexico"
-    elif "toronto" in venue_lower or "vancouver" in venue_lower:
-        return "Canada"
-    else:
-        return "United States"
+def predict_poisson_match(home, away, venue_country, ratings, g_home_avg, g_away_avg):
+    """Generates expected goals, total corners, and card counts using pure Poisson parameters.
 
+    Evaluates relative attack and defense capabilities adjusted for host-nation stadium
+    proximity, feeding rate parameters into the Dixon-Coles discrete matrix solver.
 
-def predict_match_score(home, away, venue, ratings, g_home_avg, g_away_avg):
-    """Generates expected goal counts, corners, and cards using structural proxies."""
+    Args:
+        home (str): Name string identifying the designated home team entity.
+        away (str): Name string identifying the designated away team entity.
+        venue_country (str): Cleaned host nation country string ("Mexico", "Canada", "United States").
+        ratings (dict): Dictionary map of attack and defense team capability coefficients.
+        g_home_avg (float): Global dataset baseline for home goals scored.
+        g_away_avg (float): Global dataset baseline for away goals scored.
+
+    Returns:
+        tuple: Mode scores, corners, cards, and outcome win classification labels.
+    """
     home_rating = ratings.get(home, {"attack": 1.0, "defense": 1.0})
     away_rating = ratings.get(away, {"attack": 1.0, "defense": 1.0})
 
-    venue_country = get_venue_country(venue)
     g_neutral = (g_home_avg + g_away_avg) / 2.0
 
-    # 1. GOAL CALCULATIONS (Symmetrical Environmental Baselines)
+    # GOAL CALCULATIONS
     if home == venue_country:
         lambda_home = home_rating["attack"] * away_rating["defense"] * g_home_avg
         lambda_away = away_rating["attack"] * home_rating["defense"] * g_away_avg
@@ -254,23 +275,17 @@ def predict_match_score(home, away, venue, ratings, g_home_avg, g_away_avg):
         lambda_home = home_rating["attack"] * away_rating["defense"] * g_neutral
         lambda_away = away_rating["attack"] * home_rating["defense"] * g_neutral
 
-    # Directly integrate Dixon-Coles Poisson probability :
     pred_home_score, pred_away_score = get_dixon_coles_score(lambda_home, lambda_away)
 
-    # 2. CORNERS PROXY MODEL (scaled by matchup threat)
+    # PROXY METRICS
     home_corners = 5.5 * home_rating["attack"] * away_rating["defense"]
     away_corners = 5.5 * away_rating["attack"] * home_rating["defense"]
     total_corners = int(np.clip(np.round(home_corners + away_corners), 5, 16))
-
-    # 3. YELLOW CARDS PROXY MODEL (scaled by defensive pressure)
     home_cards = 3.0 * home_rating["defense"] * away_rating["attack"]
     away_cards = 3.0 * away_rating["defense"] * home_rating["attack"]
     total_yellows = int(np.clip(np.round(home_cards + away_cards), 1, 9))
-
-    # 4. RED CARDS (Most games have no red cards - high-variance, low-frequency anomalies)
     total_reds = 0
 
-    # 5. WINNING TEAM STRING
     if pred_home_score > pred_away_score:
         win_label = "home"
     elif pred_away_score > pred_home_score:
@@ -288,46 +303,19 @@ def predict_match_score(home, away, venue, ratings, g_home_avg, g_away_avg):
     )
 
 
-def print_team_power_rankings(ratings):
-    """Parses the ratings dictionary, computes a unified Dominance Ratio, and ranks teams from most dominant to least dominant."""
-    records = []
-    for team, metrics in ratings.items():
-        # Calculate dominance ratio
-        dominance_ratio = metrics["attack"] / metrics["defense"]
-
-        records.append(
-            {
-                "Team": team,
-                "Attack Power": metrics["attack"],
-                "Defense Power": metrics["defense"],
-                "Dominance Ratio": dominance_ratio,
-            }
-        )
-
-    df_rankings = pd.DataFrame(records)
-
-    # SORT BY DOMINANCE RATIO DESCENDING
-    df_rankings = df_rankings.sort_values(
-        by="Dominance Ratio", ascending=False
-    ).reset_index(drop=True)
-
-    print("\n🔥 Team Metric Power Rankings (Ranked by Dominance Ratio):")
-    print("=" * 100)
-    print(
-        f"{'Rank':<5} | {'Team':<32} | {'Attack Power':<15} | {'Defense Power':<15} | {'Dominance Ratio':<15}"
-    )
-    print("-" * 100)
-    for idx, row in df_rankings.iterrows():
-        print(
-            f"{idx + 1:<5} | {row['Team']:<32} | {row['Attack Power']:<15.3f} | {row['Defense Power']:<15.3f} | {row['Dominance Ratio']:<15.3f}"
-        )
-    print("=" * 100)
-
-
 def get_dixon_coles_score(lambda_home, lambda_away, rho=-0.10):
-    """Evaluates a joint probability distribution grid up to a 5-5 scoreline,
-    applies the Dixon-Coles low-score coupling adjustment, and returns
-    the absolute most probable integer scoreline (the distribution mode).
+    r"""Evaluates a joint probability grid up to a 5-5 scoreline with low-score coupling.
+
+    Constructs a 6x6 matrix of independent Poisson goal probabilities, applying a
+    Dixon-Coles $\tau$ parameter adjustment layer to fine-tune low-scoring joint states.
+
+    Args:
+        lambda_home (float): Continuous goal intensity parameter expectation for the home side.
+        lambda_away (float): Continuous goal intensity parameter expectation for the away side.
+        rho (float, optional): Dependence factor parameter optimizing low-score inflation.
+
+    Returns:
+        tuple: Calculated discrete goal selection coordinate pair counts (pred_home, pred_away).
     """
     best_prob = -1.0
     pred_home, pred_away = 0, 0
@@ -336,8 +324,8 @@ def get_dixon_coles_score(lambda_home, lambda_away, rho=-0.10):
     for x in range(6):
         for y in range(6):
             # Compute independent Poisson probabilities
-            prob_home = matrix_lambda_calc(lambda_home, x)
-            prob_away = matrix_lambda_calc(lambda_away, y)
+            prob_home = _matrix_lambda_calc(lambda_home, x)
+            prob_away = _matrix_lambda_calc(lambda_away, y)
             joint_prob = prob_home * prob_away
 
             # Apply Dixon-Coles tau adjustment layer for low-scoring states
@@ -362,6 +350,16 @@ def get_dixon_coles_score(lambda_home, lambda_away, rho=-0.10):
     return pred_home, pred_away
 
 
-def matrix_lambda_calc(lam, k):
-    """Helper PMF calculation to keep code fast and dependency-free."""
+def _matrix_lambda_calc(lam, k):
+    r"""Evaluates the standard Poisson Probability Mass Function (PMF).
+
+    Runs a mathematical helper calculation to return discrete probability scores.
+
+    Args:
+        lam (float): Continuous distribution mean scale rate parameter ($\lambda$).
+        k (int): Discrete feature frequency target count ($k$).
+
+    Returns:
+        float: Calculated probability value corresponding to exactly $k$ occurrences.
+    """
     return (lam**k * math.exp(-lam)) / math.factorial(k)

@@ -1,16 +1,36 @@
+"""Historical Feature Engineering and Time-Series Alignment Layer.
+
+This module processes match-grain dataframes into a rolling team-grain timeline to
+calculate leak-proof Exponentially Weighted Moving (EWM) performance statistics.
+It overlays point-in-time historical Elo snapshots and handles column schema
+alignment to output high-fidelity matrices optimized for downstream machine learning.
+"""
+
 import os
 
-import numpy as np
 import pandas as pd
 
 
-def build_leakproof_form_features(df):
+def build_leakproof_form_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Transforms match data into an interleaved timeline to compute leak-proof form.
+
+    Flattens raw match-grain data into a sequential, single-team observation index
+    to track rolling momentum. For each team, it calculates exponential moving
+    averages for goals scored, goals conceded, and win-rate probabilities across
+    short-term ($span=4$) and long-term ($span=10$) horizons.
+
+    Crucially, it executes a `.shift(1)` lookback transformation inside the group
+    aggregation step to ensure features for any given match are calculated purely
+    from historical matches, eliminating target data leakage.
+
+    Args:
+        df (pd.DataFrame): Primary match-grain dataframe containing columns `date`,
+            `home_team`, `away_team`, `home_score`, and `away_score`.
+
+    Returns:
+        pd.DataFrame: Augmented match-grain dataframe containing isolated, prefixed
+            historical form characteristics (`home_team_ewm_*` and `away_team_ewm_*`).
     """
-    Transforms a match-grain dataframe into a chronological team-grain timeline,
-    computes exponential moving performance vectors,
-    shifts them to prevent lookback leakage, and maps them back to matches.
-    """
-    print("🔄 Processing leak-proof historical EWM team form vectors...")
 
     # 1. Isolate home and away perspectives to create a unified team timeline
     home_perspective = df[["date", "home_team", "home_score", "away_score"]].rename(
@@ -95,10 +115,26 @@ def build_leakproof_form_features(df):
     return processed_df
 
 
-def compile_master_feature_matrix(matches_parquet_path, elo_engine):
-    """
-    Ingests clean historical matches, overlays EWM form vectors, overlays Elo snapshots,
-    and returns a clean, fully aligned training matrix for the ML engine.
+def compile_master_feature_matrix(
+    matches_parquet_path: str, elo_engine
+) -> tuple[pd.DataFrame, list[str]]:
+    """Compiles clean matches, momentum vectors, and Elo snapshots into a master matrix.
+
+    Ingests the historical modern-era match data, executes the team-grain feature
+    engineering sequence, and queries the pre-fitted Elo engine to map real-time
+    point-in-time rating snapshots and team differentials across all training rows.
+    It applies numerical categorical context tracking for neutral venues and formats
+    the schema explicitly for consumption by the training pipeline.
+
+    Args:
+        matches_parquet_path (str): The local path to the cleaned historical matches Parquet checkpoint.
+        elo_engine (EloEngine): An instantiated tracking object used to query individual Elo ratings.
+
+    Returns:
+        tuple: Fully aligned clean training matrix and the ordered list of feature input columns.
+
+    Raises:
+        FileNotFoundError: If the clean base historical file cannot be found.
     """
     if not os.path.exists(matches_parquet_path):
         raise FileNotFoundError(f"Missing base match file: {matches_parquet_path}")
@@ -112,11 +148,10 @@ def compile_master_feature_matrix(matches_parquet_path, elo_engine):
     df = build_leakproof_form_features(df)
 
     # 2. Extract Point-in-Time Historical Elo States
-    print("📈 Mapping chronological Elo snapshots across training matrix...")
     home_elos = []
     away_elos = []
 
-    # Interacts cleanly with elo_model.py by passing clean string team identifiers
+    # Interacts cleanly with src/elo.py by passing clean string team identifiers
     for idx, row in df.iterrows():
         h_team = row["home_team"]
         a_team = row["away_team"]
@@ -153,7 +188,7 @@ def compile_master_feature_matrix(matches_parquet_path, elo_engine):
 
     targets = ["home_score", "away_score"]
 
-    # 5. Extract matrix and rename 'date' to 'match_date' for direct ml_engine.py synergy
+    # 5. Extract matrix and rename 'date' to 'match_date' for direct XGBoost synergy
     final_matrix = (
         df[["date", "home_team", "away_team"] + feature_columns + targets]
         .dropna()
@@ -161,5 +196,4 @@ def compile_master_feature_matrix(matches_parquet_path, elo_engine):
         .reset_index(drop=True)
     )
 
-    print(f"✅ Feature matrix compilation successful! Shape: {final_matrix.shape}")
     return final_matrix, feature_columns

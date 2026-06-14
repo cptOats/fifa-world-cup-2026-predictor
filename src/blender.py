@@ -1,29 +1,52 @@
+"""Model Consensus Blending and Meta-Ensemble Optimization Layer.
+
+This module provides the optimization framework for combining distinct modeling
+layers (Poisson Ratings, Elo Engine, and Gradient-Boosted Trees). It leverages
+out-of-fold (OOF) cross-validation predictions to configure a joint Mean Squared
+Error (MSE) loss function, solving for optimal consensus weights using a bounded
+and constrained SciPy optimization routine.
+"""
+
+import logging
+
 import numpy as np
-import pandas as pd
 from scipy.optimize import minimize
 from sklearn.metrics import mean_squared_error
 
 
 def find_optimal_blend_weights(
     feature_matrix,
-    ratings,
     g_home,
     g_away,
-    elo_engine,
-    xgb_home,
-    xgb_away,
-    feature_columns,
     oof_home_preds,
     oof_away_preds,
     oof_poisson_home,
     oof_poisson_away,
 ):
-    """
-    Ingests out-of-fold predictions across all modeling layers,
-    and handles constrained optimization over the active validation horizon.
-    """
-    print("\n⚖️ Calibrating leak-proof optimal consensus blend weights...")
+    r"""Calibrates leak-proof optimal consensus blend weights across all modeling layers.
 
+    Extracts active cross-validation horizons to shield the ensemble layer from
+    data leakage. The function constructs a combined baseline for historical point-in-time
+    Elo predictions, defines a joint loss function optimizing over collective home and
+    away goal MSE, and resolves constraints where individual model weights must fall within
+    the boundaries $[0.0, 1.0]$ and strictly sum to $1.0$ ($\sum w_i = 1.0$). If the
+    optimization fails to converge, it gracefully defaults to a uniform distribution.
+
+    Args:
+        feature_matrix (pd.DataFrame): Master feature matrix tracking historical matches,
+            containing rating definitions and score targets.
+        g_home (float): Dataset global average score metric for home-side goal references.
+        g_away (float): Dataset global average score metric for away-side goal references.
+        oof_home_preds (np.ndarray): Continuous out-of-fold validation array for XGBoost home goals.
+        oof_away_preds (np.ndarray): Continuous out-of-fold validation array for XGBoost away goals.
+        oof_poisson_home (np.ndarray): Continuous out-of-fold validation array for Poisson home goals.
+        oof_poisson_away (np.ndarray): Continuous out-of-fold validation array for Poisson away goals.
+
+    Returns:
+        dict[str, float]: Consensus weight mapping dictionary containing the keys
+            'poisson', 'elo', and 'xgb' paired with their optimal fractional
+            coefficients.
+    """
     actual_home_goals = feature_matrix["home_score"].to_numpy()
     actual_away_goals = feature_matrix["away_score"].to_numpy()
 
@@ -62,17 +85,17 @@ def find_optimal_blend_weights(
 
     # 3. Define Clean Loss Function
     def loss_function(weights):
-        w_poisson, w_elo, w_xgboost = weights
+        w_poisson, w_elo, w_xgb = weights
 
         pred_home = (
             (w_poisson * p_home_active)
             + (w_elo * e_home_active)
-            + (w_xgboost * x_home_active)
+            + (w_xgb * x_home_active)
         )
         pred_away = (
             (w_poisson * p_away_active)
             + (w_elo * e_away_active)
-            + (w_xgboost * x_away_active)
+            + (w_xgb * x_away_active)
         )
 
         return (
@@ -94,15 +117,15 @@ def find_optimal_blend_weights(
     )
 
     if not res.success:
-        print(
-            "⚠️ Optimization failed to converge smoothly. Falling back to default balance."
+        logging.warning(
+            f"⚠️ Optimization failed to converge smoothly! Reason: {res.message}. Falling back to default uniform balance."
         )
-        return {"poisson": 0.3333, "elo": 0.3333, "xgboost": 0.3334}
+        return {"poisson": 0.3333, "elo": 0.3333, "xgb": 0.3334}
 
     optimized_weights = {
         "poisson": float(res.x[0]),
         "elo": float(res.x[1]),
-        "xgboost": float(res.x[2]),
+        "xgb": float(res.x[2]),
     }
 
     return optimized_weights

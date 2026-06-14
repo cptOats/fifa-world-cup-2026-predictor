@@ -1,19 +1,54 @@
+"""Machine Learning Engine and Gradient-Boosted Count Tree Pipeline Layer.
+
+This module provides the core gradient-boosting execution infrastructure for the
+prediction pipeline. It orchestrates chronological cross-validation backtests,
+computes real-time exponential time-decay sample weighting scales to prioritize
+recent team form, evaluates Poisson deviance benchmarks, and serializes production-grade
+XGBoost count regressors to the persistence layer.
+"""
+
 import os
 
 import numpy as np
-import pandas as pd
 import xgboost as xgb
 from sklearn.metrics import d2_tweedie_score
 from sklearn.model_selection import TimeSeriesSplit
 
 
 def train_production_xgboost_models(feature_matrix, feature_columns, alpha=0.002):
-    """
-    Chronological cross-validation audit calculating out-of-fold predictions,
-    applies exponential time-decay sample weighting, and serializes production models.
-    """
-    print("\n🏋️‍♂️ Initializing Gradient-Boosted Tree Training Matrix...")
+    r"""Trains production XGBoost goal-count models using chronological validation.
 
+    Isolates input feature structures and partitions targets by home and away score vectors.
+    It builds a dynamic time-decay matrix where historical fixtures are exponentially
+    down-weighted based on their days elapsed from the most recent match record.
+    The function runs a chronological backtest across three sequential data splits,
+    tracks leak-proof out-of-fold predictions, logs Poisson Deviance $D^2$ performance
+    metrics, and fits final expanded-horizon models saved as JSON artifacts.
+
+    Args:
+        feature_matrix (pd.DataFrame): Master compiled dataframe containing training
+            features, match scores (`home_score`, `away_score`), and the temporal
+            anchor index column `match_date`.
+        feature_columns (list[str]): Explicit list of feature string names to pass
+            into the tree regressor training matrices.
+        alpha (float, optional): Tuning parameter controlling the severity of the
+            exponential time-decay equation ($\text{weight} = e^{-\alpha \cdot \text{days}}$).
+            Higher values penalize older historical records faster. Defaults to 0.002.
+
+    Returns:
+        tuple: A 5-element combination tracking fitted structures and cross-validation logs:
+            - model_home (xgb.XGBRegressor): Final production home goal regressor model
+                fitted across the entire historical data horizon.
+            - model_away (xgb.XGBRegressor): Final production away goal regressor model
+                fitted across the entire historical data horizon.
+            - oof_home_preds (np.ndarray): Array containing continuous out-of-fold
+                predictions for home-side goal intensities.
+            - oof_away_preds (np.ndarray): Array containing continuous out-of-fold
+                predictions for away-side goal intensities.
+            - cv_metrics (dict[str, dict[str, float]]): Nested cross-validation map
+                storing calculated `home_deviance_r2` and `away_deviance_r2` floats
+                for every evaluation split.
+    """
     # 1. Isolate Features, Targets, and Temporal Anchor
     X = feature_matrix[feature_columns]
     y_home = feature_matrix["home_score"]
@@ -27,10 +62,11 @@ def train_production_xgboost_models(feature_matrix, feature_columns, alpha=0.002
 
     # 2. Chronological Backtest Audit with Out-of-Fold Tracking
     tscv = TimeSeriesSplit(n_splits=3)
-    print("📋 Executing Chronological Cross-Validation Audit with Time-Decay...")
 
     oof_home_preds = np.zeros(len(feature_matrix))
     oof_away_preds = np.zeros(len(feature_matrix))
+
+    cv_metrics = {}
 
     for fold, (train_idx, test_idx) in enumerate(tscv.split(X), 1):
         X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
@@ -63,9 +99,11 @@ def train_production_xgboost_models(feature_matrix, feature_columns, alpha=0.002
         # Calculate Deviance R-squared
         dev_r2_h = d2_tweedie_score(y_h_test, oof_home_preds[test_idx], power=1)
         dev_r2_a = d2_tweedie_score(y_a_test, oof_away_preds[test_idx], power=1)
-        print(
-            f"   ↳ Fold {fold} -> Home Deviance R²: {dev_r2_h:.3f} | Away Deviance R²: {dev_r2_a:.3f}"
-        )
+
+        cv_metrics[f"fold_{fold}"] = {
+            "home_deviance_r2": dev_r2_h,
+            "away_deviance_r2": dev_r2_a,
+        }
 
     # 3. Define Production Hyperparameters
     xgb_params = {
@@ -78,9 +116,6 @@ def train_production_xgboost_models(feature_matrix, feature_columns, alpha=0.002
         "colsample_bytree": 0.8,
         "random_state": 1989,
     }
-
-    print("\n🚀 Fitting final production models across full historical horizon...")
-
     # Train production models
     model_home = xgb.XGBRegressor(**xgb_params)
     model_home.fit(X, y_home, sample_weight=sample_weights)
@@ -97,10 +132,4 @@ def train_production_xgboost_models(feature_matrix, feature_columns, alpha=0.002
     model_home.save_model(path_home)
     model_away.save_model(path_away)
 
-    print(
-        "💾 Machine learning models successfully serialized to the persistence layer:"
-    )
-    print(f"   - Home Goal Engine: {path_home}")
-    print(f"   - Away Goal Engine: {path_away}")
-
-    return model_home, model_away, oof_home_preds, oof_away_preds
+    return model_home, model_away, oof_home_preds, oof_away_preds, cv_metrics

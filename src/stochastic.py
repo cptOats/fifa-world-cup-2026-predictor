@@ -1,4 +1,11 @@
-import os
+"""Stochastic Simulation and Probabilistic Forecasting Layer.
+
+This module houses the master Monte Carlo orchestration engine. It bypasses
+repetitive model evaluations during deep iteration runs by pre-computing a vectorized
+consensus parameter matrix cache ($O(1)$ lookup complexity). It handles thousands of
+randomized tournament simulations to compile explicit survival probabilities from the
+Group Stage through to the Final.
+"""
 
 import numpy as np
 import pandas as pd
@@ -24,16 +31,40 @@ def run_monte_carlo_master(
     blend_weights,
     n_simulations=10000,
 ):
-    """
-    Executes N randomized tournament simulations using an optimized global pre-computed
-    matchup matrix cache. Eliminates inline Pandas dataframe creation and model prediction overhead.
-    """
-    print(
-        f"\n🎲 Initializing Probabilistic Monte Carlo Engine ({n_simulations:,} runs)..."
-    )
+    r"""Executes randomized tournament simulations using an optimized global matchup cache.
 
+    Optimizes performance by evaluating all possible matchup combinations (**4,512** vectors)
+    across neutral and non-neutral states through the underlying machine learning layers in
+    a single vectorized batch before spawning the simulation loop.
+
+    Match outcomes are drawn directly from independent Poisson distributions utilizing
+    the pre-calculated ensemble consensus intensities ($\lambda$). Regular integer draws
+    in knockout rounds trigger a 30-minute Extra Time Poisson extension containing a decay scalar
+    for fatigue, while sudden-death penalty ties are resolved via randomized draws
+    weighted by relative team Elo vectors.
+
+    Args:
+        group_fixtures (pd.DataFrame): Dataframe tracking initial structural group stage pairs.
+        raw_knockout_template (pd.DataFrame): Master scheduling bracket layout spreadsheet.
+        ratings (dict): Base historical Poisson attack and defense metrics per team.
+        g_home (float): Dataset global average score metric for home-side goal references.
+        g_away (float): Dataset global average score metric for away-side goal references.
+        elo_engine (EloEngine): Pre-fitted tracking object instance evaluating team Elo scores.
+        xgb_home (xgb.XGBRegressor): Pre-fitted tree regressor tracking home goal counts.
+        xgb_away (xgb.XGBRegressor): Pre-fitted tree regressor tracking away goal counts.
+        feature_columns (list[str]): Explicit string column layout index passed to ML frames.
+        latest_team_form (dict): Current rolling exponentially weighted statistics per team.
+        blend_weights (dict[str, float]): Calibrated optimal consensus weight coefficients.
+        n_simulations (int, optional): Total iteration volume of randomized parallel universes.
+
+    Returns:
+        tuple[pd.DataFrame, dict]: Master survival dashboard matrix and an empty metadata log dictionary.
+    """
     # Initialize NumPy Generator with a fixed seed
     rng = np.random.default_rng(seed=69)
+
+    # Ensure venue country parsing can be executed inside the loops
+    from src.transform import get_venue_country
 
     participating_teams = list(
         set(group_fixtures["home_team"].unique())
@@ -60,68 +91,80 @@ def run_monte_carlo_master(
     FATIGUE_FACTOR = 0.80
 
     # --- VECTORIZED MATCHUP MATRIX PRE-COMPUTATION ---
-    print(
-        "   ↳ Vectorizing and caching consensus lambda matrices for all possible matchups..."
-    )
     matchup_rows = []
     matchup_keys = []
 
-    for h in participating_teams:
-        for a in participating_teams:
-            if h == a:
-                continue
-            matchup_keys.append((h, a))
-            matchup_rows.append(
-                {
-                    "home_elo_rating": elo_engine.get_rating(h),
-                    "away_elo_rating": elo_engine.get_rating(a),
-                    "elo_differential": elo_engine.get_rating(h)
-                    - elo_engine.get_rating(a),
-                    "is_neutral_venue": 1,
-                    "home_team_ewm_gf_4s": latest_team_form[h]["ewm_gf_4s"],
-                    "home_team_ewm_ga_4s": latest_team_form[h]["ewm_ga_4s"],
-                    "home_team_ewm_wr_4s": latest_team_form[h]["ewm_wr_4s"],
-                    "home_team_ewm_gf_10s": latest_team_form[h]["ewm_gf_10s"],
-                    "home_team_ewm_ga_10s": latest_team_form[h]["ewm_ga_10s"],
-                    "home_team_ewm_wr_10s": latest_team_form[h]["ewm_wr_10s"],
-                    "away_team_ewm_gf_4s": latest_team_form[a]["ewm_gf_4s"],
-                    "away_team_ewm_ga_4s": latest_team_form[a]["ewm_ga_4s"],
-                    "away_team_ewm_wr_4s": latest_team_form[a]["ewm_wr_4s"],
-                    "away_team_ewm_gf_10s": latest_team_form[a]["ewm_gf_10s"],
-                    "away_team_ewm_ga_10s": latest_team_form[a]["ewm_ga_10s"],
-                    "away_team_ewm_wr_10s": latest_team_form[a]["ewm_wr_10s"],
-                }
-            )
+    for neutral_state in [0, 1]:
+        for h in participating_teams:
+            for a in participating_teams:
+                if h == a:
+                    continue
+                matchup_keys.append((h, a, neutral_state))
+                matchup_rows.append(
+                    {
+                        "home_elo_rating": elo_engine.get_rating(h),
+                        "away_elo_rating": elo_engine.get_rating(a),
+                        "elo_differential": elo_engine.get_rating(h)
+                        - elo_engine.get_rating(a),
+                        "is_neutral_venue": neutral_state,
+                        "home_team_ewm_gf_4s": latest_team_form[h]["ewm_gf_4s"],
+                        "home_team_ewm_ga_4s": latest_team_form[h]["ewm_ga_4s"],
+                        "home_team_ewm_wr_4s": latest_team_form[h]["ewm_wr_4s"],
+                        "home_team_ewm_gf_10s": latest_team_form[h]["ewm_gf_10s"],
+                        "home_team_ewm_ga_10s": latest_team_form[h]["ewm_ga_10s"],
+                        "home_team_ewm_wr_10s": latest_team_form[h]["ewm_wr_10s"],
+                        "away_team_ewm_gf_4s": latest_team_form[a]["ewm_gf_4s"],
+                        "away_team_ewm_ga_4s": latest_team_form[a]["ewm_ga_4s"],
+                        "away_team_ewm_wr_4s": latest_team_form[a]["ewm_wr_4s"],
+                        "away_team_ewm_gf_10s": latest_team_form[a]["ewm_gf_10s"],
+                        "away_team_ewm_ga_10s": latest_team_form[a]["ewm_ga_10s"],
+                        "away_team_ewm_wr_10s": latest_team_form[a]["ewm_wr_10s"],
+                    }
+                )
 
-    # Send all 2,256 combinations through XGBoost in one single vectorized batch operation
+    # Single-pass batch predictions for all 4,512 variations
     matchup_df = pd.DataFrame(matchup_rows)[feature_columns]
     xgb_h_all = xgb_home.predict(matchup_df)
     xgb_a_all = xgb_away.predict(matchup_df)
 
     # Build the O(1) Consensus Parameter Map
     lambda_cache = {}
-    for idx, (h, a) in enumerate(matchup_keys):
-        h_poi = (
-            ratings.get(h, {}).get("attack", 1)
-            * ratings.get(a, {}).get("defense", 1)
-            * g_neutral
-        )
-        a_poi = (
-            ratings.get(a, {}).get("attack", 1)
-            * ratings.get(h, {}).get("defense", 1)
-            * g_neutral
-        )
-        elo_meta = elo_engine.predict_match(h, a)
+    for idx, (h, a, cache_neutral) in enumerate(matchup_keys):
+        # Apply symmetrical baseline adjustments for Poisson layers
+        if cache_neutral == 0:
+            h_poi = (
+                ratings.get(h, {}).get("attack", 1)
+                * ratings.get(a, {}).get("defense", 1)
+                * g_home
+            )
+            a_poi = (
+                ratings.get(a, {}).get("attack", 1)
+                * ratings.get(h, {}).get("defense", 1)
+                * g_away
+            )
+        else:
+            h_poi = (
+                ratings.get(h, {}).get("attack", 1)
+                * ratings.get(a, {}).get("defense", 1)
+                * g_neutral
+            )
+            a_poi = (
+                ratings.get(a, {}).get("attack", 1)
+                * ratings.get(h, {}).get("defense", 1)
+                * g_neutral
+            )
+
+        elo_meta = elo_engine.predict_elo_match(h, a)
 
         l_h = (
             (blend_weights["poisson"] * h_poi)
             + (blend_weights["elo"] * elo_meta["predicted_home_goals"])
-            + (blend_weights["xgboost"] * xgb_h_all[idx])
+            + (blend_weights["xgb"] * xgb_h_all[idx])
         )
         l_a = (
             (blend_weights["poisson"] * a_poi)
             + (blend_weights["elo"] * elo_meta["predicted_away_goals"])
-            + (blend_weights["xgboost"] * xgb_a_all[idx])
+            + (blend_weights["xgb"] * xgb_a_all[idx])
         )
 
         corners_exp = (
@@ -143,18 +186,13 @@ def run_monte_carlo_master(
             * ratings.get(h, {}).get("attack", 1)
         )
 
-        lambda_cache[(h, a)] = (l_h, l_a, corners_exp, yellows_exp)
+        lambda_cache[(h, a, cache_neutral)] = (l_h, l_a, corners_exp, yellows_exp)
 
-    # Convert core dataframes to lightweight lists of dicts to kill .iterrows() overhead completely
-    group_fixtures_list = group_fixtures[
-        ["match_id", "group", "home_team", "away_team"]
-    ].to_dict(orient="records")
-    knockout_template_list = raw_knockout_template[
-        ["match_id", "round", "slot_home", "slot_away"]
-    ].to_dict(orient="records")
+    # Convert core dataframes to lightweight dictionaries to completely eliminate iteration overhead
+    group_fixtures_list = group_fixtures.to_dict(orient="records")
+    knockout_template_list = raw_knockout_template.to_dict(orient="records")
 
     # 2. Start the Optimized Master Monte Carlo Loop
-    print("   ↳ Executing full tournament simulations...")
     for sim in range(n_simulations):
         group_results = []
 
@@ -166,7 +204,13 @@ def run_monte_carlo_master(
                 row["home_team"],
                 row["away_team"],
             )
-            l_h, l_a, c_exp, y_exp = lambda_cache[(home, away)]
+
+            # Resolve group-level co-host advantages if a venue column is available
+            venue_country = (
+                get_venue_country(row["venue"]) if "venue" in row else "Neutral"
+            )
+            is_neutral = 0 if (home == venue_country or away == venue_country) else 1
+            l_h, l_a, c_exp, y_exp = lambda_cache[(home, away, is_neutral)]
 
             group_results.append(
                 {
@@ -174,13 +218,11 @@ def run_monte_carlo_master(
                     "group": group,
                     "home_team": home,
                     "away_team": away,
-                    "predicted_home_goals": np.random.poisson(l_h),
-                    "predicted_away_goals": np.random.poisson(l_a),
-                    "corners": int(
-                        np.clip(np.round(np.random.normal(c_exp, 1.5)), 4, 18)
-                    ),
+                    "predicted_home_goals": rng.poisson(l_h),
+                    "predicted_away_goals": rng.poisson(l_a),
+                    "corners": int(np.clip(np.round(rng.normal(c_exp, 1.5)), 4, 18)),
                     "yellow_cards": int(
-                        np.clip(np.round(np.random.normal(y_exp, 1.2)), 0, 10)
+                        np.clip(np.round(rng.normal(y_exp, 1.2)), 0, 10)
                     ),
                     "red_cards": 0,
                 }
@@ -214,6 +256,7 @@ def run_monte_carlo_master(
                 row["slot_home"],
                 row["slot_away"],
             )
+            venue = row["venue"]
 
             if "Winner Group" in slot_home:
                 home = winners[slot_home.replace("Winner Group ", "").strip()]
@@ -245,22 +288,26 @@ def run_monte_carlo_master(
             else:
                 away = slot_away
 
-            # Instant O(1) Cache Parameter Retrieval
-            l_h, l_a, _, _ = lambda_cache[(home, away)]
+            # Dynamically compute stadium neutrality for the specific knockout pair
+            venue_country = get_venue_country(venue)
+            is_neutral = 0 if (home == venue_country or away == venue_country) else 1
 
-            h_goals = np.random.poisson(l_h)
-            a_goals = np.random.poisson(l_a)
+            # Dynamic Cache Extraction via composite key
+            l_h, l_a, _, _ = lambda_cache[(home, away, is_neutral)]
+
+            h_goals = rng.poisson(l_h)
+            a_goals = rng.poisson(l_a)
 
             if h_goals == a_goals:
-                h_goals += np.random.poisson(l_h * (ET_MULTIPLIER * FATIGUE_FACTOR))
-                a_goals += np.random.poisson(l_a * (ET_MULTIPLIER * FATIGUE_FACTOR))
+                h_goals += rng.poisson(l_h * (ET_MULTIPLIER * FATIGUE_FACTOR))
+                a_goals += rng.poisson(l_a * (ET_MULTIPLIER * FATIGUE_FACTOR))
 
                 if h_goals == a_goals:
                     h_elo_stat = elo_engine.get_rating(home)
                     a_elo_stat = elo_engine.get_rating(away)
                     winner = (
                         home
-                        if np.random.rand() < (h_elo_stat / (h_elo_stat + a_elo_stat))
+                        if rng.random() < (h_elo_stat / (h_elo_stat + a_elo_stat))
                         else away
                     )
                 else:
@@ -284,7 +331,6 @@ def run_monte_carlo_master(
                 metrics[winner]["3rd Place"] += 1
             elif r_name == "Final":
                 metrics[winner]["Champion"] += 1
-                metrics[loser]["Finalist"] += 1
 
     # 3. Compile and Format the Master Probability Table
     prob_list = []
@@ -307,17 +353,5 @@ def run_monte_carlo_master(
         .sort_values(by="Champion %", ascending=False)
         .reset_index(drop=True)
     )
-
-    print("\n📊 MONTE CARLO PROBABILISTIC FORECAST:")
-    print("=" * 125)
-    print(
-        f"{'Country':<22} | {'R32 %':<10} | {'R16 %':<10} | {'QF %':<10} | {'SF %':<10} | {'3rd %':<10} | {'Final %':<10} | {'Champion %':<10}"
-    )
-    print("-" * 125)
-    for idx, row in prob_df.iterrows():
-        print(
-            f"{row['Country']:<22} | {row['R32 %']:<10.1f} | {row['R16 %']:<10.1f} | {row['QF %']:<10.1f} | {row['SF %']:<10.1f} | {row['3rd %']:<10.1f} | {row['Final %']:<10.1f} | {row['Champion %']:.2f}"
-        )
-    print("=" * 125)
 
     return prob_df, {}
