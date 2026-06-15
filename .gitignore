@@ -4,15 +4,16 @@
 __pycache__/
 *.pyc
 __marimo__/
+my_dashboard_dir/
 .ipynb_checkpoints/
 
-# Project Caches
-models/
-
-# Raw and Processed Datasets
-data/raw/*
+# Datasets
+data/artifacts
 data/processed/
+data/raw/*
+data/runs/*
 
 # WHITELIST:
 !data/raw/group_fixtures.csv
 !data/raw/knockout_slots.csv
+!data/raw/.gitkeep

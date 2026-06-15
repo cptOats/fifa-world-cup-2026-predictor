@@ -15,8 +15,8 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import TimeSeriesSplit
 
-MODEL_DIR = "models"
-MODEL_PATH = os.path.join(MODEL_DIR, "poisson_artifacts.json")
+ARTIFACTS_DIR = os.path.join("data", "artifacts")
+POISSON_PATH = os.path.join(ARTIFACTS_DIR, "poisson_artifacts.json")
 
 
 def train_poisson_ratings():
@@ -33,8 +33,8 @@ def train_poisson_ratings():
             - global_home_avg (float): Global weighted average for home goals scored.
             - global_away_avg (float): Global weighted average for away goals scored.
     """
-    if os.path.exists(MODEL_PATH):
-        with open(MODEL_PATH, "r") as f:
+    if os.path.exists(POISSON_PATH):
+        with open(POISSON_PATH, "r") as f:
             artifacts = json.load(f)
         return (
             artifacts["ratings"],
@@ -42,7 +42,7 @@ def train_poisson_ratings():
             artifacts["global_away_avg"],
         )
 
-    os.makedirs(MODEL_DIR, exist_ok=True)
+    os.makedirs(ARTIFACTS_DIR, exist_ok=True)
 
     processed_path = os.path.join(
         "data", "processed", "clean_historical_matches.parquet"
@@ -131,7 +131,7 @@ def train_poisson_ratings():
         "ratings": ratings,
     }
 
-    with open(MODEL_PATH, "w") as f:
+    with open(POISSON_PATH, "w") as f:
         json.dump(artifacts, f, indent=4)
 
     return ratings, global_home_avg, global_away_avg
@@ -275,31 +275,22 @@ def predict_poisson_match(home, away, venue_country, ratings, g_home_avg, g_away
         lambda_home = home_rating["attack"] * away_rating["defense"] * g_neutral
         lambda_away = away_rating["attack"] * home_rating["defense"] * g_neutral
 
-    pred_home_score, pred_away_score = get_dixon_coles_score(lambda_home, lambda_away)
-
     # PROXY METRICS
     home_corners = 5.5 * home_rating["attack"] * away_rating["defense"]
     away_corners = 5.5 * away_rating["attack"] * home_rating["defense"]
     total_corners = int(np.clip(np.round(home_corners + away_corners), 5, 16))
+
     home_cards = 3.0 * home_rating["defense"] * away_rating["attack"]
     away_cards = 3.0 * away_rating["defense"] * home_rating["attack"]
     total_yellows = int(np.clip(np.round(home_cards + away_cards), 1, 9))
     total_reds = 0
 
-    if pred_home_score > pred_away_score:
-        win_label = "home"
-    elif pred_away_score > pred_home_score:
-        win_label = "away"
-    else:
-        win_label = "draw"
-
     return (
-        pred_home_score,
-        pred_away_score,
+        lambda_home,
+        lambda_away,
         total_corners,
         total_yellows,
         total_reds,
-        win_label,
     )
 
 

@@ -124,10 +124,10 @@ def train_production_xgboost_models(feature_matrix, feature_columns, alpha=0.002
     model_away.fit(X, y_away, sample_weight=sample_weights)
 
     # 4. Save Core Model Artifacts
-    models_dir = "models"
-    os.makedirs(models_dir, exist_ok=True)
-    path_home = os.path.join(models_dir, "xgb_home_core.json")
-    path_away = os.path.join(models_dir, "xgb_away_core.json")
+    ARTIFACTS_DIR = os.path.join("data", "artifacts")
+    os.makedirs(ARTIFACTS_DIR, exist_ok=True)
+    path_home = os.path.join(ARTIFACTS_DIR, "xgb_home_core.json")
+    path_away = os.path.join(ARTIFACTS_DIR, "xgb_away_core.json")
 
     model_home.save_model(path_home)
     model_away.save_model(path_away)

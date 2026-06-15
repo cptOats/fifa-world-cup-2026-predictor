@@ -147,8 +147,9 @@ def main():
         logging.info(
             "🧹 FORCE_RETRAIN active. Evicting stale model caches and processed artifacts..."
         )
-        if os.path.exists("models"):
-            shutil.rmtree("models")
+        ARTIFACTS_DIR = os.path.join("data", "artifacts")
+        if os.path.exists(ARTIFACTS_DIR):
+            shutil.rmtree(ARTIFACTS_DIR)
         if os.path.exists(os.path.join("data", "processed")):
             shutil.rmtree(os.path.join("data", "processed"))
 
@@ -192,12 +193,6 @@ def main():
     )
     elo_engine = EloEngine(k_factor=40)
     elo_engine.fit(modern_df)
-
-    elo_rankings = sorted(
-        [(team, elo_engine.get_rating(team)) for team in participating_teams],
-        key=lambda x: x[1],
-        reverse=True,
-    )
 
     # --- MACHINE LEARNING ENGINE PIPELINE LAYER ---
     logging.info("🌲 Training dynamic XGBoost count models...")
@@ -277,14 +272,14 @@ def main():
         away = row["away_team"]
         venue = row.get("venue", "Neutral Turf")
 
-        # Extract base estimators parameters
-        p_home_goals, p_away_goals, p_corners, p_yellows, p_reds, p_winner = (
-            predict_poisson_match(home, away, venue, ratings, g_home, g_away)
-        )
-        elo_meta = elo_engine.predict_elo_match(home, away)
-
         venue_country = get_venue_country(venue)
         is_neutral = 0 if (home == venue_country or away == venue_country) else 1
+
+        # Extract base estimators parameters
+        lambda_home_poisson, lambda_away_poisson, p_corners, p_yellows, p_reds = (
+            predict_poisson_match(home, away, venue_country, ratings, g_home, g_away)
+        )
+        elo_meta = elo_engine.predict_elo_match(home, away)
 
         live_match_vector = {
             "home_elo_rating": elo_engine.get_rating(home),
@@ -309,26 +304,14 @@ def main():
         xgb_h_pred = xgb_home.predict(match_df)[0]
         xgb_w_pred = xgb_away.predict(match_df)[0]
 
-        # Symmetrical baselines for the Poisson component
-        h_poisson_baseline = (
-            ratings.get(home, {}).get("attack", 1)
-            * ratings.get(away, {}).get("defense", 1)
-            * ((g_home + g_away) / 2.0)
-        )
-        a_poisson_baseline = (
-            ratings.get(away, {}).get("attack", 1)
-            * ratings.get(home, {}).get("defense", 1)
-            * ((g_home + g_away) / 2.0)
-        )
-
         # THE UNIFIED CONSENSUS EQUATION
         blend_home_raw = (
-            (blend_weights["poisson"] * h_poisson_baseline)
+            (blend_weights["poisson"] * lambda_home_poisson)
             + (blend_weights["elo"] * elo_meta["predicted_home_goals"])
             + (blend_weights["xgb"] * xgb_h_pred)
         )
         blend_away_raw = (
-            (blend_weights["poisson"] * a_poisson_baseline)
+            (blend_weights["poisson"] * lambda_away_poisson)
             + (blend_weights["elo"] * elo_meta["predicted_away_goals"])
             + (blend_weights["xgb"] * xgb_w_pred)
         )

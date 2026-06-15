@@ -35,13 +35,13 @@ def resolve_group_tables(predicted_fixtures_df):
     tables are sorted dynamically using official tournament tiebreaker rules.
 
     Args:
-    predicted_fixtures_df (pd.DataFrame): Pandas DataFrame containing simulated
-        group matches with columns `group`, `home_team`, `away_team`,
-        `predicted_home_goals`, and `predicted_away_goals`.
+        predicted_fixtures_df (pd.DataFrame): Pandas DataFrame containing simulated
+            group matches with columns `group`, `home_team`, `away_team`,
+            `predicted_home_goals`, and `predicted_away_goals`.
 
     Returns:
-    pd.DataFrame: Sorted group standings containing columns for points, goal matrix,
-        and an explicitly assigned structural `position` rank (1 to 4).
+        pd.DataFrame: Sorted group standings containing columns for points, goal matrix,
+            and an explicitly assigned structural `position` rank (1 to 4).
     """
     table_records = {}
 
@@ -245,29 +245,37 @@ def simulate_knockout_waterfall(
 ):
     """Simulates the knockout bracket tree sequentially from Round of 32 down to the Final.
 
-    Executes chronological structural resolution of the knockout pipeline. Evaluates
-    90-minute regulation scores, applies dynamic fatigue down-weighting models and disciplinary
-    card inflation scalars for 30-minute Extra Time extensions, and leverages raw expectation
-    differentials to resolve sudden-death penalty shootouts.
+    Executes chronological structural resolution of the knockout pipeline. Ingests
+    venue-aware continuous intensity parameters (lambda) from the Poisson engine,
+    integrates predictions across active estimators (Poisson, Elo, and XGBoost), and
+    applies a consensus blend weight layer to resolve regulation goals. Evaluates
+    90-minute regulation scores, applies dynamic fatigue down-weighting models and
+    disciplinary card inflation scalars for 30-minute Extra Time extensions, and leverages
+    continuous expectation differentials to resolve sudden-death penalty shootouts.
 
     Args:
-        group_tables_df (pd.DataFrame): Master parsed group stage standings data.
-        third_place_mapping (dict[int, str]): Bipartite mapping tracking third-place team paths.
-        ratings (dict): Attack/defense capability parameters parsed from Poisson model weights.
-        g_home_avg (float): Dataset global average score metric for home advantage references.
-        g_away_avg (float): Dataset global average score metric for away advantage references.
-        model_type (str, optional): Target predictive backend selection constraint. Choices include
-            'poisson', 'elo', 'xgb', or 'blend'. Defaults to "poisson".
-        elo_engine (EloEngine, optional): Pre-fitted object instance tracking Elo ratings.
-        xgb_home (xgb.XGBRegressor, optional): Pre-fitted tree regressor predicting home-side counts.
-        xgb_away (xgb.XGBRegressor, optional): Pre-fitted tree regressor predicting away-side counts.
-        feature_columns (list[str], optional): List of required string column references to slice
-            and feed the ML input matrix vector.
+        group_tables_df (pd.DataFrame): Master parsed group stage standings tables.
+        third_place_mapping (dict[int, str]): Bipartite mapping tracking allocated third-place
+            wildcard team locations keyed by knockout match_id.
+        ratings (dict): Team name strings mapping to nested 'attack' and 'defense'
+            historical coefficients.
+        g_home_avg (float): Global dataset baseline for home goals scored.
+        g_away_avg (float): Global dataset baseline for away goals scored.
+        model_type (str, optional): Target predictive estimator mode sequence constraint.
+            Choices include 'blend', 'poisson', 'elo', or 'xgb'. Defaults to "poisson".
+        elo_engine (EloEngine, optional): Pre-fitted object instance tracking world football
+            Elo ratings. Defaults to None.
+        xgb_home (xgb.XGBRegressor, optional): Pre-fitted gradient boosting tree regressor
+            predicting home-side count outcomes. Defaults to None.
+        xgb_away (xgb.XGBRegressor, optional): Pre-fitted gradient boosting tree regressor
+            predicting away-side count outcomes. Defaults to None.
+        feature_columns (list[str], optional): Explicit list of required string column references
+            used to slice and align the machine learning feature matrix. Defaults to None.
         latest_team_form (dict, optional): Context state lookup table tracking rolling exponentially
-            weighted moving metrics and model consensus weights.
+            weighted moving metrics and model consensus metadata weights. Defaults to None.
 
     Returns:
-        pd.DataFrame: Complete historical tournament ledger tracking simulated scores, secondary
+        pd.DataFrame: Master historical tournament ledger tracking simulated scores, secondary
             metrics (corners, cards), shootout markers, and definitive advancing winner identities.
     """
     from src.poisson import get_dixon_coles_score
@@ -350,18 +358,15 @@ def simulate_knockout_waterfall(
             lambda_home_90 = home_rating["attack"] * away_rating["defense"] * g_neutral
             lambda_away_90 = away_rating["attack"] * home_rating["defense"] * g_neutral
 
-        # Compute baseline secondary metrics (Corners, Cards) natively via Poisson positions
-        p_home_goals, p_away_goals, p_corners, p_yellows, p_reds, p_winner = (
+        # ✅ FIX 1: Unpack exactly 5 variables matching updated Poisson return matrix
+        lambda_home_poisson, lambda_away_poisson, p_corners, p_yellows, p_reds = (
             predict_poisson_match(
                 home_team, away_team, venue_country, ratings, g_home_avg, g_away_avg
             )
         )
 
         # FEATURE CONSTRUCTION
-        # 1. Establish a safe dictionary context (guards against latest_team_form being None)
         form_registry = latest_team_form if latest_team_form is not None else {}
-
-        # 2. Define the exact fallback baselines used during your main.py initialization
         fallback_form = {
             "ewm_gf_4s": 1.2,
             "ewm_ga_4s": 1.2,
@@ -371,11 +376,9 @@ def simulate_knockout_waterfall(
             "ewm_wr_10s": 0.35,
         }
 
-        # 3. Extract pure, guaranteed dictionaries for both competitors using safe fallbacks
         h_form = form_registry.get(home_team, fallback_form) or fallback_form
         a_form = form_registry.get(away_team, fallback_form) or fallback_form
 
-        # 4. Construct your vector safely—the type engine is completely happy now!
         live_match_vector = {
             "home_elo_rating": elo_engine.get_rating(home_team)
             if elo_engine
@@ -399,28 +402,27 @@ def simulate_knockout_waterfall(
             "home_team_ewm_wr_10s": h_form["ewm_wr_10s"],
             "away_team_ewm_gf_4s": a_form["ewm_gf_4s"],
             "away_team_ewm_ga_4s": a_form["ewm_ga_4s"],
-            "away_team_ewm_wr_4s": a_form["away_team_ewm_wr_4s"]
-            if "away_team_ewm_wr_4s" in locals()
-            else a_form["ewm_wr_4s"],
+            "away_team_ewm_wr_4s": a_form["ewm_wr_4s"],
             "away_team_ewm_gf_10s": a_form["ewm_gf_10s"],
             "away_team_ewm_ga_10s": a_form["ewm_ga_10s"],
             "away_team_ewm_wr_10s": a_form["ewm_wr_10s"],
         }
 
-        # Convert to DataFrame and slice strictly by your updated feature columns
+        # Convert to DataFrame and slice strictly by updated feature columns
         match_df = pd.DataFrame([live_match_vector])[feature_columns]
         xgb_h_pred = xgb_home.predict(match_df)[0] if xgb_home is not None else 0.0
         xgb_w_pred = xgb_away.predict(match_df)[0] if xgb_away is not None else 0.0
 
-        # Maintain default continuous variable state for downstream Extra Time evaluations
         raw_home = xgb_h_pred
         raw_away = xgb_w_pred
 
         # --- UNIFIED CORE COGNITIVE ROUTER (90 mins BASELINE) ---
         assert elo_engine is not None
+
         if model_type == "poisson":
-            pred_home_90 = p_home_goals
-            pred_away_90 = p_away_goals
+            pred_home_90, pred_away_90 = get_dixon_coles_score(
+                lambda_home_poisson, lambda_away_poisson
+            )
 
         elif model_type == "elo":
             elo_meta = elo_engine.predict_elo_match(home_team, away_team)
@@ -434,26 +436,15 @@ def simulate_knockout_waterfall(
         elif model_type == "blend":
             assert latest_team_form is not None
             b_w = latest_team_form["__meta_weights__"]
-
-            h_poisson_baseline = (
-                ratings.get(home_team, {}).get("attack", 1)
-                * ratings.get(away_team, {}).get("defense", 1)
-                * ((g_home_avg + g_away_avg) / 2.0)
-            )
-            a_poisson_baseline = (
-                ratings.get(away_team, {}).get("attack", 1)
-                * ratings.get(home_team, {}).get("defense", 1)
-                * ((g_home_avg + g_away_avg) / 2.0)
-            )
             elo_meta = elo_engine.predict_elo_match(home_team, away_team)
 
             raw_home = (
-                (b_w["poisson"] * h_poisson_baseline)
+                (b_w["poisson"] * lambda_home_poisson)
                 + (b_w["elo"] * elo_meta["predicted_home_goals"])
                 + (b_w["xgb"] * xgb_h_pred)
             )
             raw_away = (
-                (b_w["poisson"] * a_poisson_baseline)
+                (b_w["poisson"] * lambda_away_poisson)
                 + (b_w["elo"] * elo_meta["predicted_away_goals"])
                 + (b_w["xgb"] * xgb_w_pred)
             )
@@ -476,7 +467,7 @@ def simulate_knockout_waterfall(
 
         # --- TIMELINE RESOLUTION GATE (Normal vs Extra Time) ---
         is_penalty = False
-        tot_reds = 0
+        tot_reds = p_reds
 
         if pred_home_90 > pred_away_90:
             final_home_goals, final_away_goals = pred_home_90, pred_away_90
@@ -493,7 +484,7 @@ def simulate_knockout_waterfall(
             tot_yellows = int(np.clip(np.round(raw_yellows_90), 1, 9))
 
         else:
-            # 🚨 Regulation Integer Draw -> Triggers Extra Time (120 mins)
+            # Regulation Integer Draw -> Triggers Extra Time (120 mins)
             lambda_home_120 = lambda_home_90 * (1 + (ET_MULTIPLIER * FATIGUE_FACTOR))
             lambda_away_120 = lambda_away_90 * (1 + (ET_MULTIPLIER * FATIGUE_FACTOR))
 
@@ -505,7 +496,6 @@ def simulate_knockout_waterfall(
                 pred_home_120 = int(np.round(lambda_home_120))
                 pred_away_120 = int(np.round(lambda_away_120))
             elif model_type in ["xgb", "blend"]:
-                # Scale raw expectations for extra 30 mins
                 pred_home_120 = int(
                     np.round(raw_home * (1 + (ET_MULTIPLIER * FATIGUE_FACTOR)))
                 )
@@ -549,7 +539,6 @@ def simulate_knockout_waterfall(
                 is_penalty = True
 
                 if model_type in ["xgb", "blend"]:
-                    # Fractional continuous tree output acts as the native algorithmic tiebreaker
                     if raw_home >= raw_away:
                         advance_winner, advance_loser = home_team, away_team
                         winner_side = "home"
