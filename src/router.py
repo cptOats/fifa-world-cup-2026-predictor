@@ -358,7 +358,6 @@ def simulate_knockout_waterfall(
             lambda_home_90 = home_rating["attack"] * away_rating["defense"] * g_neutral
             lambda_away_90 = away_rating["attack"] * home_rating["defense"] * g_neutral
 
-        # ✅ FIX 1: Unpack exactly 5 variables matching updated Poisson return matrix
         lambda_home_poisson, lambda_away_poisson, p_corners, p_yellows, p_reds = (
             predict_poisson_match(
                 home_team, away_team, venue_country, ratings, g_home_avg, g_away_avg
@@ -466,6 +465,7 @@ def simulate_knockout_waterfall(
         )
 
         # --- TIMELINE RESOLUTION GATE (Normal vs Extra Time) ---
+        is_extra_time = False
         is_penalty = False
         tot_reds = p_reds
 
@@ -485,6 +485,7 @@ def simulate_knockout_waterfall(
 
         else:
             # Regulation Integer Draw -> Triggers Extra Time (120 mins)
+            is_extra_time = True
             lambda_home_120 = lambda_home_90 * (1 + (ET_MULTIPLIER * FATIGUE_FACTOR))
             lambda_away_120 = lambda_away_90 * (1 + (ET_MULTIPLIER * FATIGUE_FACTOR))
 
@@ -571,6 +572,7 @@ def simulate_knockout_waterfall(
                 "yellow_cards": tot_yellows,
                 "red_cards": tot_reds,
                 "match_winner": winner_side,
+                "extra_time": is_extra_time,
                 "penalties": is_penalty,
                 "winner_name_meta": advance_winner,
             }

@@ -41,7 +41,7 @@ from src.xgb import train_production_xgboost_models
 # --- MODEL CONFIGURATION TOGGLE ---
 MODEL_TYPE = "blend"  # "blend", "poisson", "elo", "xgb"
 RUN_MONTE_CARLO = True
-MONTE_CARLO_RUNS = 10000  # Recommend 10K+
+MONTE_CARLO_RUNS = 1000  # Recommend 10K+
 USE_PRIOR_NUDGE = True
 NUDGE_STRENGTH = 1.5  # Recommend ~1.5
 FORCE_RETRAIN = True
@@ -168,9 +168,11 @@ def main():
     group_fixtures["away_team"] = group_fixtures["away_team"].replace(
         DATACAMP_TO_KAGGLE
     )
-    participating_teams = set(group_fixtures["home_team"].unique()) | set(
+
+    raw_teams = set(group_fixtures["home_team"].unique()) | set(
         group_fixtures["away_team"].unique()
     )
+    participating_teams: list[str] = [str(team) for team in raw_teams]
 
     # --- ENTITY ALIGNMENT GATE FOR POWER RATINGS PRIORS ---
     if USE_PRIOR_NUDGE and TEAM_POWER:
@@ -307,12 +309,12 @@ def main():
         # THE UNIFIED CONSENSUS EQUATION
         blend_home_raw = (
             (blend_weights["poisson"] * lambda_home_poisson)
-            + (blend_weights["elo"] * elo_meta["predicted_home_goals"])
+            + (blend_weights["elo"] * float(elo_meta["predicted_home_goals"]))
             + (blend_weights["xgb"] * xgb_h_pred)
         )
         blend_away_raw = (
             (blend_weights["poisson"] * lambda_away_poisson)
-            + (blend_weights["elo"] * elo_meta["predicted_away_goals"])
+            + (blend_weights["elo"] * float(elo_meta["predicted_away_goals"]))
             + (blend_weights["xgb"] * xgb_w_pred)
         )
 
@@ -376,8 +378,9 @@ def main():
         latest_team_form=latest_team_form,
     )
 
-    logging.info("🧬 Consolidating schemas into master unified ledger...")
+    logging.info("🗄️ Consolidating schemas into master unified ledger...")
     predicted_fixtures["round"] = "Group " + predicted_fixtures["group"]
+    predicted_fixtures["extra_time"] = False
     predicted_fixtures["penalties"] = False
     predicted_fixtures["venue"] = group_fixtures.get("venue", "Neutral")
 
@@ -405,6 +408,7 @@ def main():
         "corners",
         "yellow_cards",
         "red_cards",
+        "extra_time",
         "penalties",
         "winner_name_meta",
     ]
@@ -423,6 +427,15 @@ def main():
 
     # 2. Save the Deterministic League Tables
     group_tables.to_csv(os.path.join(run_dir, "final_group_tables.csv"), index=False)
+
+    # 3. Compile and save official Wildcard Standings
+    third_places_df = group_tables[group_tables["position"] == 3].copy()
+    ranked_thirds_df = third_places_df.sort_values(
+        by=["points", "goals_diff", "goals_for"], ascending=[False, False, False]
+    ).reset_index(drop=True)
+    ranked_thirds_df.to_csv(
+        os.path.join(run_dir, "third_places_standings.csv"), index=False
+    )
 
     # 3. Compile and Save the Master Team Capabilities Lookup Matrix
     capability_records = []

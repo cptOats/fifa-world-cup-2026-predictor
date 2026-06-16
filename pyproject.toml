@@ -1,7 +1,7 @@
 [project]
 name = "fifa-world-cup-2026-predictor"
 version = "0.1.0"
-description = "Add your description here"
+description = "Ensemble modelling, tournament routing and visualization for FIFA World Cup 2026 predictions."
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
@@ -9,12 +9,49 @@ dependencies = [
     "marimo>=0.23.9",
     "numpy>=2.4.6",
     "pandas>=3.0.3",
-    "pandas-stubs>=3.0.3.260530",
     "plotly>=6.8.0",
     "pyarrow>=24.0.0",
     "scikit-learn>=1.9.0",
+    "scipy>=1.17.1",
     "xgboost>=3.2.0",
 ]
 
 [dependency-groups]
-dev = []
+dev = [
+    "pandas-stubs>=3.0.3.260530",
+    "plotly-stubs>=0.1.3",
+    "scipy-stubs>=1.17.1.5",
+]
+
+[tool.basedpyright]
+venvPath = "."
+venv = ".venv"
+
+# Skip error canning virtual environments,  caches, datasets
+exclude = [
+    "**/__pycache__",
+    ".venv",
+    ".uv",
+    "__marimo__",
+    ".ipynb_checkpoints",
+    "data",
+]
+
+# Expect dynamic types common in Pandas/NumPy
+typeCheckingMode = "standard"  # Robust type safety without pedantic noise
+
+# Silence the specific rules that cause warning cascades
+#reportUnknownMemberType = false
+#reportUnknownVariableType = false
+#reportUnknownArgumentType = false
+#reportUnknownParameterType = false
+#reportMissingParameterType = false
+#reportMissingTypeStubs = false
+
+[tool.ruff]
+
+[tool.ruff.lint]
+extend-select = ["I"]
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
