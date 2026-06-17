@@ -31,6 +31,9 @@ def run_monte_carlo_master(
     latest_team_form,
     blend_weights,
     n_simulations=10000,
+    use_prior_nudge=False,
+    nudge_strength=1.5,
+    team_power=None,
 ):
     r"""Executes randomized tournament simulations using an optimized global matchup cache.
 
@@ -180,6 +183,14 @@ def run_monte_carlo_master(
             + (blend_weights["elo"] * elo_meta["predicted_away_goals"])
             + (blend_weights["xgb"] * xgb_a_all[idx])
         )
+
+        # Apply the Bayesian Prior Nudge directly to the baseline expected intensities
+        if use_prior_nudge and team_power:
+            prior_nudge = (
+                (team_power.get(h, 75) - team_power.get(a, 75)) / 100 * nudge_strength
+            )
+            l_h = max(0.1, l_h + prior_nudge)
+            l_a = max(0.1, l_a - prior_nudge)
 
         corners_exp = (
             5.5

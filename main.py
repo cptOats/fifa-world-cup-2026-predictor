@@ -534,6 +534,9 @@ def main():
             latest_team_form=latest_team_form,
             blend_weights=blend_weights,
             n_simulations=MONTE_CARLO_RUNS,
+            use_prior_nudge=USE_PRIOR_NUDGE,
+            nudge_strength=NUDGE_STRENGTH,
+            team_power=TEAM_POWER,
         )
 
         prob_dashboard.to_csv(
