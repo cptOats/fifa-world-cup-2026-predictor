@@ -19,7 +19,9 @@ ARTIFACTS_DIR = os.path.join("data", "artifacts")
 POISSON_PATH = os.path.join(ARTIFACTS_DIR, "poisson_artifacts.json")
 
 
-def train_poisson_ratings():
+def train_poisson_ratings(
+    poisson_alpha=0.00047,
+) -> tuple[dict[str, dict[str, float]], float, float, float]:
     """Calculates weighted historical attack and defense strengths for all teams.
 
     Checks the local directory for a pre-compiled JSON cache artifact. If an archive
@@ -27,11 +29,11 @@ def train_poisson_ratings():
     by fixture importance context, maps aggregated goals against global baselines,
     and saves the calculated parameters to disk to avoid retraining.
 
+    Args:
+        poisson_alpha=0.00047: time decay.
+
     Returns:
-        tuple: A parsed combination containing:
-            - ratings (dict): Team names mapping to nested 'attack' and 'defense' coefficients.
-            - global_home_avg (float): Global weighted average for home goals scored.
-            - global_away_avg (float): Global weighted average for away goals scored.
+        tuple: (ratings_dict, global_home_avg, global_away_avg, global_neutral_avg)
     """
     if os.path.exists(POISSON_PATH):
         with open(POISSON_PATH, "r") as f:
@@ -40,6 +42,7 @@ def train_poisson_ratings():
             artifacts["ratings"],
             artifacts["global_home_avg"],
             artifacts["global_away_avg"],
+            artifacts["global_neutral_avg"],
         )
 
     os.makedirs(ARTIFACTS_DIR, exist_ok=True)
@@ -50,14 +53,42 @@ def train_poisson_ratings():
     df = pd.read_parquet(processed_path)
     train_df = df[df["match_weight"] > 0].copy()
 
-    total_weight = train_df["match_weight"].sum()
-    global_home_avg = (
-        train_df["home_score"] * train_df["match_weight"]
-    ).sum() / total_weight
-    global_away_avg = (
-        train_df["away_score"] * train_df["match_weight"]
-    ).sum() / total_weight
+    # Enforce chronological datetime calculation
+    train_df["date"] = pd.to_datetime(train_df["date"])
+    max_date = train_df["date"].max()
+    days_elapsed = (max_date - train_df["date"]).dt.days
 
+    # Apply exponential decay to the existing importance weight
+    time_decay = np.exp(-poisson_alpha * days_elapsed)
+    train_df["match_weight"] = train_df["match_weight"] * time_decay
+
+    # Symmetrical venue splitting across historical dataframes
+    non_neutral_df = train_df[train_df["neutral"] == 0].copy()
+    neutral_df = train_df[train_df["neutral"] == 1].copy()
+
+    # 1. Compute baseline home/away expectations exclusively on true non-neutral turf
+    total_non_neutral_weight = non_neutral_df["match_weight"].sum()
+    if total_non_neutral_weight > 0:
+        global_home_avg = (
+            non_neutral_df["home_score"] * non_neutral_df["match_weight"]
+        ).sum() / total_non_neutral_weight
+        global_away_avg = (
+            non_neutral_df["away_score"] * non_neutral_df["match_weight"]
+        ).sum() / total_non_neutral_weight
+    else:
+        global_home_avg, global_away_avg = 1.35, 1.35
+
+    # 2. Compute true neutral venue expectations by pooling goals uniformly
+    total_neutral_weight = neutral_df["match_weight"].sum()
+    if total_neutral_weight > 0:
+        neutral_goals_sum = (
+            neutral_df["home_score"] * neutral_df["match_weight"]
+        ).sum() + (neutral_df["away_score"] * neutral_df["match_weight"]).sum()
+        global_neutral_avg = neutral_goals_sum / (2 * total_neutral_weight)
+    else:
+        global_neutral_avg = (global_home_avg + global_away_avg) / 2.0
+
+    # 3. Compile individual team statistics matrices
     train_df["weighted_home_goals_scored"] = (
         train_df["home_score"] * train_df["match_weight"]
     )
@@ -115,9 +146,11 @@ def train_poisson_ratings():
         avg_scored = (h_sc + a_sc) / total_matches_weighted
         avg_conceded = (h_cn + a_cn) / total_matches_weighted
 
-        attack_rating = avg_scored / ((global_home_avg + global_away_avg) / 2)
-        defense_rating = avg_conceded / ((global_home_avg + global_away_avg) / 2)
+        # Normalize team ratings against the true expected baseline of a neutral field
+        attack_rating = avg_scored / global_neutral_avg
+        defense_rating = avg_conceded / global_neutral_avg
 
+        # Apply structural clipping boundaries to handle extreme outliers safely
         if attack_rating < 0.1000:
             attack_rating = 0.1000
         if defense_rating < 0.2500:
@@ -125,19 +158,21 @@ def train_poisson_ratings():
 
         ratings[team] = {"attack": attack_rating, "defense": defense_rating}
 
+    # Save to disk including the new neutral metric parameter
     artifacts = {
         "global_home_avg": float(global_home_avg),
         "global_away_avg": float(global_away_avg),
+        "global_neutral_avg": float(global_neutral_avg),
         "ratings": ratings,
     }
 
     with open(POISSON_PATH, "w") as f:
         json.dump(artifacts, f, indent=4)
 
-    return ratings, global_home_avg, global_away_avg
+    return ratings, global_home_avg, global_away_avg, global_neutral_avg
 
 
-def train_poisson_oof_predictions(feature_matrix):
+def train_poisson_oof_predictions(feature_matrix, poisson_alpha=0.00047):
     r"""Calculates leak-proof, continuous out-of-fold Poisson predictions via cross-validation.
 
     Uses a scikit-learn `TimeSeriesSplit` to slice the master feature matrix along
@@ -148,6 +183,7 @@ def train_poisson_oof_predictions(feature_matrix):
     Args:
         feature_matrix (pd.DataFrame): Master feature matrix tracking historical matches,
             containing `home_team`, `away_team`, `home_score`, and `away_score` data.
+        poisson_alpha=0.00047: time decay.
 
     Returns:
         tuple: A combination containing:
@@ -166,9 +202,16 @@ def train_poisson_oof_predictions(feature_matrix):
         train_df = feature_matrix.iloc[train_idx].copy()
         test_df = feature_matrix.iloc[test_idx]
 
-        # Use 1.0 default if match_weight was dropped during earlier matrix slicing
         if "match_weight" not in train_df.columns:
             train_df["match_weight"] = 1.0
+
+        # Calculate fold-specific decay using the fold's own timeline frontier
+        train_df["match_date"] = pd.to_datetime(train_df["match_date"])
+        fold_max_date = train_df["match_date"].max()
+        days_elapsed = (fold_max_date - train_df["match_date"]).dt.days
+
+        time_decay = np.exp(-poisson_alpha * days_elapsed)
+        train_df["match_weight"] = train_df["match_weight"] * time_decay
 
         total_weight = train_df["match_weight"].sum()
         g_home = (
@@ -242,7 +285,9 @@ def train_poisson_oof_predictions(feature_matrix):
     return oof_home_preds, oof_away_preds
 
 
-def predict_poisson_match(home, away, venue_country, ratings, g_home_avg, g_away_avg):
+def predict_poisson_match(
+    home, away, venue_country, ratings, g_home, g_away, g_neutral
+) -> tuple[float, float, float, float, float]:
     """Generates expected goals, total corners, and card counts using pure Poisson parameters.
 
     Evaluates relative attack and defense capabilities adjusted for host-nation stadium
@@ -255,6 +300,7 @@ def predict_poisson_match(home, away, venue_country, ratings, g_home_avg, g_away
         ratings (dict): Dictionary map of attack and defense team capability coefficients.
         g_home_avg (float): Global dataset baseline for home goals scored.
         g_away_avg (float): Global dataset baseline for away goals scored.
+        g_neutral (int): Int cast Boolean 1 = neutral.
 
     Returns:
         tuple: Mode scores, corners, cards, and outcome win classification labels.
@@ -262,36 +308,33 @@ def predict_poisson_match(home, away, venue_country, ratings, g_home_avg, g_away
     home_rating = ratings.get(home, {"attack": 1.0, "defense": 1.0})
     away_rating = ratings.get(away, {"attack": 1.0, "defense": 1.0})
 
-    g_neutral = (g_home_avg + g_away_avg) / 2.0
-
-    # GOAL CALCULATIONS
+    # Directional venue gating resolution
     if home == venue_country:
-        lambda_home = home_rating["attack"] * away_rating["defense"] * g_home_avg
-        lambda_away = away_rating["attack"] * home_rating["defense"] * g_away_avg
+        # Team A is the true host nation
+        lambda_home = home_rating["attack"] * away_rating["defense"] * g_home
+        lambda_away = away_rating["attack"] * home_rating["defense"] * g_away
+        is_neutral = 0
     elif away == venue_country:
-        lambda_home = home_rating["attack"] * away_rating["defense"] * g_away_avg
-        lambda_away = away_rating["attack"] * home_rating["defense"] * g_home_avg
+        # Team B is the true host nation (Prevents the asymmetry bug)
+        lambda_home = home_rating["attack"] * away_rating["defense"] * g_away
+        lambda_away = away_rating["attack"] * home_rating["defense"] * g_home
+        is_neutral = 0
     else:
+        # True Neutral match turf condition
         lambda_home = home_rating["attack"] * away_rating["defense"] * g_neutral
         lambda_away = away_rating["attack"] * home_rating["defense"] * g_neutral
+        is_neutral = 1
 
     # PROXY METRICS
-    home_corners = 5.5 * home_rating["attack"] * away_rating["defense"]
-    away_corners = 5.5 * away_rating["attack"] * home_rating["defense"]
-    total_corners = int(np.clip(np.round(home_corners + away_corners), 5, 16))
-
-    home_cards = 3.0 * home_rating["defense"] * away_rating["attack"]
-    away_cards = 3.0 * away_rating["defense"] * home_rating["attack"]
-    total_yellows = int(np.clip(np.round(home_cards + away_cards), 1, 9))
-    total_reds = 0
-
-    return (
-        lambda_home,
-        lambda_away,
-        total_corners,
-        total_yellows,
-        total_reds,
+    raw_corners = (5.5 * home_rating["attack"] * away_rating["defense"]) + (
+        5.5 * away_rating["attack"] * home_rating["defense"]
     )
+    raw_yellows = (3.0 * home_rating["defense"] * away_rating["attack"]) + (
+        3.0 * away_rating["defense"] * home_rating["attack"]
+    )
+    raw_reds = 0.12 if is_neutral == 0 else 0.10
+
+    return lambda_home, lambda_away, raw_corners, raw_yellows, raw_reds
 
 
 def get_dixon_coles_score(lambda_home, lambda_away, rho=-0.10):

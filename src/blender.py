@@ -37,7 +37,7 @@ def find_optimal_blend_weights(
         feature_matrix (pd.DataFrame): Master feature matrix tracking historical matches,
             containing rating definitions and score targets.
         g_home (float): Dataset global average score metric for home-side goal references.
-            g_away (float): Dataset global average score metric for away-side goal references.
+        g_away (float): Dataset global average score metric for away-side goal references.
         oof_home_preds (np.ndarray): Continuous out-of-fold validation array for XGBoost home goals.
         oof_away_preds (np.ndarray): Continuous out-of-fold validation array for XGBoost away goals.
         oof_poisson_home (np.ndarray): Continuous out-of-fold validation array for Poisson home goals.

@@ -24,7 +24,44 @@ DATACAMP_TO_KAGGLE = {
 }
 
 
-def _validate_entity_resolution(translation_dict):
+def load_historical_name_map(
+    former_names_path: str = "former_names.csv",
+) -> dict[str, str]:
+    """Loads former_names.csv and builds a defensive, accent-normalized mapping dictionary.
+
+    Returns:
+        dict[str, str]: A lookup dictionary mapping historical team names to modern unified names.
+    """
+    if not os.path.exists(former_names_path):
+        return {}
+
+    df_names = pd.read_csv(former_names_path)
+    name_map = {}
+
+    for _, row in df_names.iterrows():
+        current_name = str(row["current"]).strip()
+        former_name = str(row["former"]).strip()
+
+        # Map the primary name string
+        name_map[former_name] = current_name
+
+        # Symmetrical character normalization guardrails (e.g., Zaïre -> Zaire, Éire -> Eire)
+        normalized_name = (
+            former_name.replace("ï", "i")
+            .replace("Zaïre", "Zaire")
+            .replace("É", "E")
+            .replace("é", "e")
+        )
+        if normalized_name != former_name:
+            name_map[normalized_name] = current_name
+
+    # Additional standard manual overrides for international datasets if necessary
+    name_map["Zaire"] = "DR Congo"
+
+    return name_map
+
+
+def _validate_entity_resolution(translation_dict: dict[str, str]) -> None:
     """Validates naming alignment between upcoming tournament fixtures and historical logs.
 
     Maps current tournament fixture team names using the provided translation dictionary
@@ -49,6 +86,16 @@ def _validate_entity_resolution(translation_dict):
     ).union(set(fixtures_df["away_team"].replace(translation_dict).unique()))
 
     kaggle_df = pd.read_csv(os.path.join(raw_dir, "results.csv"))
+
+    name_map = load_historical_name_map("former_names.csv")
+    if name_map:
+        kaggle_df["home_team"] = kaggle_df["home_team"].map(
+            lambda x: name_map.get(str(x).strip(), x)
+        )
+        kaggle_df["away_team"] = kaggle_df["away_team"].map(
+            lambda x: name_map.get(str(x).strip(), x)
+        )
+
     kaggle_teams = set(kaggle_df["home_team"].unique()).union(
         set(kaggle_df["away_team"].unique())
     )
@@ -77,13 +124,12 @@ def _validate_entity_resolution(translation_dict):
         raise LookupError("Pipeline halted due to unresolved entity names.")
 
 
-def prepare_historical_features(translation_dict):
+def prepare_historical_features(translation_dict: dict[str, str]) -> str:
     """Ingests raw match data, verifies structural formatting, and builds core feature metrics.
 
     Triggers a defensive entity verification gate before parsing matrix logic. Once validated,
-    it filters records to isolate modern era games (post-2018 World Cup up to the 2026 tournament kickoff),
-    applies a penalty-based match importance weight matrix, and evaluates localized true home-field
-    advantages for multi-nation co-hosts.
+    it maps historical country variants to modern nomenclature, filters records using a
+    calibrated multi-cycle time window, applies match importance weights, and exports results.
 
     Args:
         translation_dict (dict[str, str]): A dictionary mapping source string entities
@@ -102,17 +148,33 @@ def prepare_historical_features(translation_dict):
 
     results_df = pd.read_csv(os.path.join(raw_dir, "results.csv"))
 
-    # Apply Modern Era Time Slice (Post 2018 World Cup)
-    TIME_SLICE_START = "2018-08-01"
+    # Harmonize historical names BEFORE slicing or filtering features
+    name_map = load_historical_name_map("former_names.csv")
+    if name_map:
+        results_df["home_team"] = results_df["home_team"].map(
+            lambda x: name_map.get(str(x).strip(), x)
+        )
+        results_df["away_team"] = results_df["away_team"].map(
+            lambda x: name_map.get(str(x).strip(), x)
+        )
+        if "country" in results_df.columns:
+            results_df["country"] = results_df["country"].map(
+                lambda x: name_map.get(str(x).strip(), x)
+            )
+
+    # Apply Modern Era Time Slice
+    TIME_SLICE_START = "1998-01-01"
     START_OF_TOURNAMENT = "2026-06-11"
+
     modern_df = results_df[
         (results_df["date"] >= TIME_SLICE_START)
         & (results_df["date"] < START_OF_TOURNAMENT)
     ].copy()
 
     # Assign Dynamic Match Weights
+    FRIENDLY_WEIGHT = 0.4
     modern_df["match_weight"] = np.where(
-        modern_df["tournament"] == "Friendly", 0.4, 1.0
+        modern_df["tournament"] == "Friendly", FRIENDLY_WEIGHT, 1.0
     )
 
     # Core Feature Generation
@@ -121,6 +183,18 @@ def prepare_historical_features(translation_dict):
         lambda row: row["home_team"] in co_hosts and row["country"] == row["home_team"],
         axis=1,
     )
+
+    # Guarantee that the native neutrality flag is explicitly clean and cast to integer types
+    if "neutral" in modern_df.columns:
+        modern_df["neutral"] = modern_df["neutral"].astype(int)
+    else:
+        modern_df["neutral"] = np.where(
+            (modern_df["home_team"] == modern_df["country"])
+            | (modern_df["away_team"] == modern_df["country"]),
+            0,
+            1,
+        )
+
     modern_df["total_goals"] = modern_df["home_score"] + modern_df["away_score"]
 
     # Export complete matrix to Parquet
@@ -130,7 +204,7 @@ def prepare_historical_features(translation_dict):
     return output_path
 
 
-def get_venue_country(venue_string):
+def get_venue_country(venue_string: str) -> str:
     """Parses stadium text parameters to map the physical hosting nation country.
 
     Inspects localized string tokens to correctly tag structural home-field environment
@@ -161,5 +235,4 @@ if __name__ == "__main__":
     print(
         "🔄 Standalone execution triggered. Rebuilding historical match feature matrix..."
     )
-    prepare_historical_features(DATACAMP_TO_KAGGLE)
     prepare_historical_features(DATACAMP_TO_KAGGLE)

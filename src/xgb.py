@@ -15,7 +15,7 @@ from sklearn.metrics import d2_tweedie_score
 from sklearn.model_selection import TimeSeriesSplit
 
 
-def train_production_xgboost_models(feature_matrix, feature_columns, alpha=0.002):
+def train_production_xgboost_models(feature_matrix, feature_columns, alpha=0.00047):
     r"""Trains production XGBoost goal-count models using chronological validation.
 
     Isolates input feature structures and partitions targets by home and away score vectors.
@@ -33,7 +33,9 @@ def train_production_xgboost_models(feature_matrix, feature_columns, alpha=0.002
             into the tree regressor training matrices.
         alpha (float, optional): Tuning parameter controlling the severity of the
             exponential time-decay equation ($\text{weight} = e^{-\alpha \cdot \text{days}}$).
-            Higher values penalize older historical records faster. Defaults to 0.002.
+            Higher values penalize older historical records faster. Defaults to 0.00047,
+            which targets a 4 year (1 cycle) half-life, try 0.00024 for 2 cycles.
+
 
     Returns:
         tuple: A 5-element combination tracking fitted structures and cross-validation logs:
@@ -54,25 +56,26 @@ def train_production_xgboost_models(feature_matrix, feature_columns, alpha=0.002
     y_home = feature_matrix["home_score"]
     y_away = feature_matrix["away_score"]
 
-    # Calculate exponential decay weights based on days elapsed from the most recent match
-    days_elapsed = (
-        feature_matrix["match_date"].max() - feature_matrix["match_date"]
-    ).dt.days
-    sample_weights = np.exp(-alpha * days_elapsed)
-
     # 2. Chronological Backtest Audit with Out-of-Fold Tracking
     tscv = TimeSeriesSplit(n_splits=3)
 
     oof_home_preds = np.zeros(len(feature_matrix))
     oof_away_preds = np.zeros(len(feature_matrix))
-
     cv_metrics = {}
 
     for fold, (train_idx, test_idx) in enumerate(tscv.split(X), 1):
         X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
         y_h_train, y_h_test = y_home.iloc[train_idx], y_home.iloc[test_idx]
         y_a_train, y_a_test = y_away.iloc[train_idx], y_away.iloc[test_idx]
-        w_train = sample_weights.iloc[train_idx]
+
+        # Calculate fold-specific decay relative to the training fold's maximum date
+        train_dates = feature_matrix["match_date"].iloc[train_idx]
+        fold_max_date = train_dates.max()
+        days_elapsed_fold = (fold_max_date - train_dates).dt.days
+        time_decay_fold = np.exp(-alpha * days_elapsed_fold)
+
+        # Generate compound weights
+        w_train = time_decay_fold * feature_matrix["match_weight"].iloc[train_idx]
 
         # Fit Home validation model
         h_cv_model = xgb.XGBRegressor(
@@ -105,7 +108,15 @@ def train_production_xgboost_models(feature_matrix, feature_columns, alpha=0.002
             "away_deviance_r2": dev_r2_a,
         }
 
-    # 3. Define Production Hyperparameters
+    # 3. Production Model Fit (Anchored to the absolute latest pre-tournament data cliff)
+    days_elapsed_prod = (
+        feature_matrix["match_date"].max() - feature_matrix["match_date"]
+    ).dt.days
+    time_decay_prod = np.exp(-alpha * days_elapsed_prod)
+
+    # Apply compound weights to production models
+    w_prod = time_decay_prod * feature_matrix["match_weight"]
+
     xgb_params = {
         "objective": "count:poisson",
         "eval_metric": "poisson-nloglik",
@@ -116,20 +127,17 @@ def train_production_xgboost_models(feature_matrix, feature_columns, alpha=0.002
         "colsample_bytree": 0.8,
         "random_state": 1989,
     }
-    # Train production models
+
     model_home = xgb.XGBRegressor(**xgb_params)
-    model_home.fit(X, y_home, sample_weight=sample_weights)
+    model_home.fit(X, y_home, sample_weight=w_prod)
 
     model_away = xgb.XGBRegressor(**xgb_params)
-    model_away.fit(X, y_away, sample_weight=sample_weights)
+    model_away.fit(X, y_away, sample_weight=w_prod)
 
     # 4. Save Core Model Artifacts
     ARTIFACTS_DIR = os.path.join("data", "artifacts")
     os.makedirs(ARTIFACTS_DIR, exist_ok=True)
-    path_home = os.path.join(ARTIFACTS_DIR, "xgb_home_core.json")
-    path_away = os.path.join(ARTIFACTS_DIR, "xgb_away_core.json")
-
-    model_home.save_model(path_home)
-    model_away.save_model(path_away)
+    model_home.save_model(os.path.join(ARTIFACTS_DIR, "xgb_home_core.json"))
+    model_away.save_model(os.path.join(ARTIFACTS_DIR, "xgb_away_core.json"))
 
     return model_home, model_away, oof_home_preds, oof_away_preds, cv_metrics

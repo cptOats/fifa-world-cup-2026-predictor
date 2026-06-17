@@ -7,6 +7,7 @@ multiplier scalars ($G$), and maps finalized ratings back into discrete expected
 """
 
 import numpy as np
+import pandas as pd
 
 
 class EloEngine:
@@ -43,17 +44,24 @@ class EloEngine:
             self.ratings[team] = self.default_elo
         return self.ratings[team]
 
-    def _calculate_expected_score(self, r_home, r_away):
-        """Computes the logistic win expectancy for a matchup on neutral turf.
+    def _calculate_expected_score(
+        self, r_home, r_away, is_neutral=0, home_advantage=100
+    ):
+        """Computes the logistic win expectancy for a matchup incorporating venue states.
 
         Args:
             r_home (float): Pre-match Elo rating float assigned to the home side.
             r_away (float): Pre-match Elo rating float assigned to the away side.
+            is_neutral (int, optional): Binary marker flag (0 or 1) indicating neutral turf.
+            home_advantage (int, optional): Flat rating point inflation advantage for hosting.
 
         Returns:
             tuple[float, float]: Win expectation probabilities for home and away sides.
         """
-        w_home = 1 / (10 ** (-(r_home - r_away) / 400) + 1)
+        # Symmetrical neutrality override: Host premium collapses to 0 on neutral grounds
+        actual_home_adv = 0 if is_neutral == 1 else home_advantage
+
+        w_home = 1 / (10 ** (-(r_home + actual_home_adv - r_away) / 400) + 1)
         w_away = 1.0 - w_home
         return w_home, w_away
 
@@ -75,13 +83,13 @@ class EloEngine:
         else:
             return (11.0 + goal_diff) / 8.0
 
-    def fit(self, historical_matches_df):
+    def fit(self, historical_matches_df: pd.DataFrame):
         """Processes a match ledger chronologically to update team ratings step-by-step.
 
         Args:
             historical_matches_df (pd.DataFrame): Dataframe containing historical results.
         """
-        # Ensure chronological processing to keep the thermodynamic updates valid
+        # Structural safeguard: Enforce strict sequence resolution across rolling timelines
         sorted_matches = historical_matches_df.sort_values(by="date").copy()
 
         for _, row in sorted_matches.iterrows():
@@ -89,13 +97,17 @@ class EloEngine:
             away = row["away_team"]
             h_goals = int(row["home_score"])
             a_goals = int(row["away_score"])
+            is_neutral = int(row.get("neutral", 0))
+            match_weight = float(row.get("match_weight", 1.0))
 
             # 1. Fetch current ratings before the whistle blows
             r_home = self.get_rating(home)
             r_away = self.get_rating(away)
 
-            # 2. Compute probability expectations
-            w_home, w_away = self._calculate_expected_score(r_home, r_away)
+            # 2. Compute probability expectations passing the neutral flag
+            w_home, w_away = self._calculate_expected_score(
+                r_home, r_away, is_neutral=is_neutral
+            )
 
             # 3. Map match outcomes (Win = 1.0, Draw = 0.5, Loss = 0.0)
             if h_goals > a_goals:
@@ -109,15 +121,19 @@ class EloEngine:
             g_factor = self._get_goal_margin_multiplier(h_goals, a_goals)
 
             # 5. Execute the delta adjustment update step
-            self.ratings[home] += self.k_factor * g_factor * (actual_home - w_home)
-            self.ratings[away] += self.k_factor * g_factor * (actual_away - w_away)
+            current_k = self.k_factor * match_weight
+            self.ratings[home] += current_k * g_factor * (actual_home - w_home)
+            self.ratings[away] += current_k * g_factor * (actual_away - w_away)
 
-    def predict_elo_match(self, home_team, away_team, baseline_goals=1.35, alpha=2.2):
+    def predict_elo_match(
+        self, home_team, away_team, is_neutral=0, baseline_goals=1.35, alpha=2.2
+    ):
         """Translates final Elo delta vectors back into discrete integer score lines.
 
         Args:
             home_team (str): Standardized country string name of the home team.
             away_team (str): Standardized country string name of the away team.
+            is_neutral (int, optional): Binary marker flag (0 or 1) indicating neutral turf.
             baseline_goals (float, optional): Average expected single-side goals parameter.
             alpha (float, optional): Sensitivity multiplier mapping Elo gaps to goal counts.
 
@@ -127,7 +143,10 @@ class EloEngine:
         r_home = self.get_rating(home_team)
         r_away = self.get_rating(away_team)
 
-        w_home, _ = self._calculate_expected_score(r_home, r_away)
+        # Added parameter signature injection to prevent unbound variable crashes
+        w_home, _ = self._calculate_expected_score(
+            r_home, r_away, is_neutral=is_neutral
+        )
 
         # Convert the continuous probability advantage into expected goal lambdas
         lambda_home = max(0.1, baseline_goals + alpha * (w_home - 0.5))

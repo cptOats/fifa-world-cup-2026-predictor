@@ -22,7 +22,9 @@ Dashboard Layout Matrix:
 
     4. 🏟️ DETERMINISTIC HORIZON
        Group Stage tables and matches.
+       3rd Place Wildcards.
        Knockout Waterfall matches.
+       Tournament Statistics.
 
     5. 🧪 MICRO HORIZON SANDBOX
        Head 2 head sandbox simulation match.
@@ -203,34 +205,84 @@ def _(DARK_THEME, mo):
 
 
 @app.cell
-def _(glob, json, os, pd):
-    # 1. Discover the latest execution run folder dynamically
-    run_folders = sorted(glob.glob(os.path.join("data", "runs", "run_*")))
-    if not run_folders:
+def _(glob, mo, os):
+    # 1. Discover all execution folders by true chronological modification time
+    all_runs = sorted(
+        glob.glob(os.path.join("data", "runs", "run_*")), key=os.path.getmtime
+    )
+    if not all_runs:
         raise FileNotFoundError(
             "❌ Operational error: No simulation artifacts found in data/runs/."
         )
 
-    latest_run_dir = run_folders[-1]
-    run_id = os.path.basename(latest_run_dir)
+    # 2. Extract clean string folder names (basenames)
+    run_names = [os.path.basename(r) for r in all_runs]
 
-    # 2. Ingest structured datasets into memory
+    # 3. Reverse the array order so the newest runs appear at the top of the dropdown list
+    run_choices = list(reversed(run_names))
+
+    # 4. Target the clean string name of the newest run as the default option
+    latest_run_name = run_names[-1]
+
+    # 5. Instantiate the dropdown using the foolproof string list strategy
+    run_dropdown = mo.ui.dropdown(
+        options=run_choices,
+        value=latest_run_name,
+        label="📂 SELECT SIMULATION RUN PROFILE",
+    )
+
+    run_selector_panel = mo.md(
+        f"""
+        <div style="background: #1a1a1a; padding: 14px; border-radius: 6px; border: 1px solid #00adb5; margin-bottom: 20px;">
+            {run_dropdown}
+        </div>
+        """
+    )
+
+    run_selector_panel
+    return (run_dropdown,)
+
+
+@app.cell
+def _(json, os, pd, run_dropdown):
+    # 1. Get the clean folder name string from the dropdown selection state
+    run_id = run_dropdown.value
+
+    # 2. 🌟 FIXED: Explicitly reconstruct the accurate path relative to project root
+    active_run_dir = os.path.join("data", "runs", run_id)
+
+    # 3. Ingest selected run datasets into active dashboard scope
     df_tournament = pd.read_csv(
-        os.path.join(latest_run_dir, "predicted_tournament.csv")
+        os.path.join(active_run_dir, "predicted_tournament.csv")
     )
-    df_tables = pd.read_csv(os.path.join(latest_run_dir, "final_group_tables.csv"))
-    df_thirds = pd.read_csv(os.path.join(latest_run_dir, "third_places_standings.csv"))
+    df_tables = pd.read_csv(os.path.join(active_run_dir, "final_group_tables.csv"))
+    df_thirds = pd.read_csv(os.path.join(active_run_dir, "third_places_standings.csv"))
     df_capabilities = pd.read_csv(
-        os.path.join(latest_run_dir, "pre_tournament_capabilities.csv")
+        os.path.join(active_run_dir, "pre_tournament_capabilities.csv")
     )
 
-    # Safely check for optional Monte Carlo stochastic arrays
-    forecast_path = os.path.join(latest_run_dir, "monte_carlo_forecast.csv")
+    # Defensive infrastructure fallback if auditing older run branches
+    matchups_path = os.path.join(active_run_dir, "pre_computed_matchups.csv")
+    if os.path.exists(matchups_path):
+        df_matchups = pd.read_csv(matchups_path)
+    else:
+        df_matchups = pd.DataFrame(
+            columns=[
+                "home_team",
+                "away_team",
+                "is_neutral_venue",
+                "ensemble_lambda_home",
+                "ensemble_lambda_away",
+            ]
+        )
+
+    # Safely unpack optional stochastic Monte Carlo matrix arrays
+    forecast_path = os.path.join(active_run_dir, "monte_carlo_forecast.csv")
     has_stochastic = os.path.exists(forecast_path)
     df_forecast = pd.read_csv(forecast_path) if has_stochastic else None
 
-    # 3. Parse system config states from JSON metadata
-    with open(os.path.join(latest_run_dir, "metadata.json"), "r") as f:
+    # 4. Parse running parameters from JSON configuration sheet
+    with open(os.path.join(active_run_dir, "metadata.json"), "r") as f:
         metadata = json.load(f)
 
     config = metadata["config"]
@@ -239,6 +291,7 @@ def _(glob, json, os, pd):
         config,
         df_capabilities,
         df_forecast,
+        df_matchups,
         df_tables,
         df_thirds,
         df_tournament,
@@ -353,8 +406,9 @@ def _(
         stochastic_visual = mo.md(
             """
             ### 🎲 STOCHASTIC PROBABILITY ANALYSIS
-            > 🔴 Monte Carlo suite disabled for active simulation run:
-            > switch `RUN_MONTE_CARLO = True` to populate this predictive node.
+            > 🔴 Monte Carlo suite disabled for active simulation run.
+            >
+            > ➡️ `RUN_MONTE_CARLO = True` to populate this predictive node.
             """
         )
     else:
@@ -615,10 +669,10 @@ def _(df_thirds, mo):
     else:
         # 2. Re-index and build a clean display DataFrame matching your layout matrix
         df_display = df_thirds.copy().reset_index(drop=True)
-    
+
         # Drop the redundant group position column before parsing the global rank
         df_display = df_display.drop(columns=["position"], errors="ignore")
-    
+
         df_display.index = df_display.index + 1
         df_display = df_display.reset_index().rename(columns={"index": "Rank"})
 
@@ -803,9 +857,9 @@ def _(DARK_THEME, apply_mission_control_layout, df_tournament, go, mo, np, pd):
     t_goals = (
         stat_df["predicted_home_goals"].sum() + stat_df["predicted_away_goals"].sum()
     )
-    t_corners = stat_df["corners"].sum()
-    t_yellows = stat_df["yellow_cards"].sum()
-    t_reds = stat_df["red_cards"].sum()
+    t_corners = int(round(stat_df["corners"].sum()))
+    t_yellows = int(round(stat_df["yellow_cards"].sum()))
+    t_reds = int(round(stat_df["red_cards"].sum()))
 
     # 3. Compute aggregate profiles for each phase
     phase_metrics = []
@@ -1000,7 +1054,7 @@ def _(DARK_THEME, df_capabilities, mo):
 
 
 @app.cell
-def _(DARK_THEME, df_capabilities, mo, np, sandbox_form, weights):
+def _(DARK_THEME, config, df_matchups, mo, np, sandbox_form):
     # 1. Absolute silent fallback state before submission occurs
     mo.stop(
         sandbox_form.value is None,
@@ -1023,68 +1077,48 @@ def _(DARK_THEME, df_capabilities, mo, np, sandbox_form, weights):
         ),
     )
 
-    # 3. Extract baseline capabilities
-    sim_stats_a = df_capabilities[df_capabilities["Country"] == sim_team_a].iloc[0]
-    sim_stats_b = df_capabilities[df_capabilities["Country"] == sim_team_b].iloc[0]
+    # 3. PURE O(1) LOOKUP FROM PRE-COMPUTED DATA ARTIFACT
+    # Select a stadium country where neither team has a home-court advantage to preserve neutrality
+    host_country = "United States"
+    if sim_team_a == "United States" or sim_team_b == "United States":
+        host_country = "Mexico"
 
-    GLOBAL_NEUTRAL_AVG = 1.35
+    match_row = df_matchups[
+        (df_matchups["home_team"] == sim_team_a)
+        & (df_matchups["away_team"] == sim_team_b)
+        & (df_matchups["is_neutral_venue"] == host_country)
+    ]
 
-    # 4. REBUILD THE ACTIVE ENSEMBLE MODEL
-    p_lambda_a = (
-        float(sim_stats_a["Poisson_Attack"])
-        * float(sim_stats_b["Poisson_Defense"])
-        * GLOBAL_NEUTRAL_AVG
-    )
-    p_lambda_b = (
-        float(sim_stats_b["Poisson_Attack"])
-        * float(sim_stats_a["Poisson_Defense"])
-        * GLOBAL_NEUTRAL_AVG
-    )
+    if not match_row.empty:
+        lambda_a = float(match_row["ensemble_lambda_home"].values[0])
+        lambda_b = float(match_row["ensemble_lambda_away"].values[0])
+    else:
+        # Fallback security defaults if data boundaries are missing
+        lambda_a, lambda_b = 1.35, 1.35
 
-    elo_dr = float(sim_stats_a["Elo_Rating"]) - float(sim_stats_b["Elo_Rating"])
-    e_lambda_a = max(0.1, GLOBAL_NEUTRAL_AVG + (elo_dr / 400))
-    e_lambda_b = max(0.1, GLOBAL_NEUTRAL_AVG - (elo_dr / 400))
-
-    x_lambda_a = max(
-        0.1,
-        (float(sim_stats_a["Short_Term_Form_GF"]) * 0.6)
-        + (float(sim_stats_a["Poisson_Attack"]) * 0.4),
-    )
-    x_lambda_b = max(
-        0.1,
-        (float(sim_stats_b["Short_Term_Form_GF"]) * 0.6)
-        + (float(sim_stats_b["Poisson_Attack"]) * 0.4),
-    )
-
-    w_p, w_e, w_x = (
-        weights.get("poisson", 1.0),
-        weights.get("elo", 0.0),
-        weights.get("xgb", 0.0),
-    )
-
-    lambda_a = (w_p * p_lambda_a) + (w_e * e_lambda_a) + (w_x * x_lambda_a)
-    lambda_b = (w_p * p_lambda_b) + (w_e * e_lambda_b) + (w_x * x_lambda_b)
-
-    # 5. Determine Regulation 90min Score
+    # 4. Determine Regulation 90min Score
     pred_a_goals, pred_b_goals = get_dixon_coles_score(lambda_a, lambda_b)
 
-    # 6. KNOCKOUT LOGIC GATE (Extra Time & Pens) - needs fixing upstream first? calculate stochastic 30mins += 90mins, rather than recalculating full 120mins?
+    # 5. Additive Extra Time & Penalty Logic
+    ET_MULTIPLIER = 1 / 3
+    FATIGUE_FACTOR = 0.80
+
     _has_et, _has_pens = False, False
     if is_ko and pred_a_goals == pred_b_goals:
-        et_mult = (1 / 3) * 0.8
+        et_mult = ET_MULTIPLIER * FATIGUE_FACTOR
         et_lambda_a = lambda_a * et_mult
         et_lambda_b = lambda_b * et_mult
 
-        et_pred_a, et_pred_b = get_dixon_coles_score(
-            lambda_a + et_lambda_a, lambda_b + et_lambda_b
-        )
+        et_goals_a, et_goals_b = get_dixon_coles_score(et_lambda_a, et_lambda_b)
 
-        if et_pred_a != et_pred_b:
+        # Accumulate cleanly onto the 90-minute regulation baseline
+        pred_a_goals += et_goals_a
+        pred_b_goals += et_goals_b
+
+        if et_goals_a != et_goals_b:
             _has_et = True
-            pred_a_goals, pred_b_goals = et_pred_a, et_pred_b
         else:
             _has_pens = True
-            pred_a_goals, pred_b_goals = et_pred_a, et_pred_b
 
     sim_winner = "Draw"
     if pred_a_goals > pred_b_goals or (_has_pens and lambda_a >= lambda_b):
@@ -1103,10 +1137,17 @@ def _(DARK_THEME, df_capabilities, mo, np, sandbox_form, weights):
         else ""
     )
 
-    # 7. STOCHASTIC PROBABILITY ENGINE (10,000 Iterations Top 3 Scoreline Build)
+    # 6. STOCHASTIC PROBABILITY ENGINE (Dynamic Universe Sizing)
     stoch_html = ""
     if is_stoch:
-        runs = 10000
+        # Evaluate if the main tournament run was executed stochastically
+        if config.get("run_monte_carlo", False):
+            # Safe boundary tracking using active configuration parameters
+            runs = int(config.get("monte_carlo_runs", 10000))
+        else:
+            # Defensive override: Fall back to a statistically stable, low-overhead baseline
+            runs = 10000
+
         sims_a = np.random.poisson(lambda_a, runs)
         sims_b = np.random.poisson(lambda_b, runs)
 
@@ -1136,7 +1177,7 @@ def _(DARK_THEME, df_capabilities, mo, np, sandbox_form, weights):
 
         stoch_html = f"""
         <div style="border-top: 1px solid #2d2d2d; margin-top: 15px; padding-top: 12px;">
-            <div style="font-size: 11px; color: {DARK_THEME["accent"]}; margin-bottom: 10px; font-weight: bold; letter-spacing: 0.5px;">🎲 MONTE CARLO PROBABILITY DISTRIBUTION</div>
+            <div style="font-size: 11px; color: {DARK_THEME["accent"]}; margin-bottom: 10px; font-weight: bold; letter-spacing: 0.5px;">🎲 MONTE CARLO PROBABILITY DISTRIBUTION ({runs:,} RUNS)</div>
             <div style="display: flex; justify-content: space-between; font-size: 13px; color: #fff; margin-bottom: 14px; padding: 0 4px;">
                 <span>{sim_team_a}: <b>{wins_a:.1f}%</b></span>
                 <span>Draw: <b>{draws:.1f}%</b></span>
@@ -1149,7 +1190,7 @@ def _(DARK_THEME, df_capabilities, mo, np, sandbox_form, weights):
         </div>
         """
 
-    # 8. Render the Matchup Output Card (Full-Width Formations)
+    # 7. Render the Matchup Output Card (Full-Width Formations)
     card_html = f"""
     <div style="background-color: {DARK_THEME["paper"]}; border: 1px solid #00adb5; border-radius: 6px; padding: 16px; margin-top: 20px; font-family: monospace; max-width: 100%;">
         <div style="color: {DARK_THEME["accent"]}; font-size: 11px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; font-weight: bold;">

@@ -41,7 +41,7 @@ from src.xgb import train_production_xgboost_models
 # --- MODEL CONFIGURATION TOGGLE ---
 MODEL_TYPE = "blend"  # "blend", "poisson", "elo", "xgb"
 RUN_MONTE_CARLO = True
-MONTE_CARLO_RUNS = 1000  # Recommend 10K+
+MONTE_CARLO_RUNS = 10000  # Recommend 10K+
 USE_PRIOR_NUDGE = True
 NUDGE_STRENGTH = 1.5  # Recommend ~1.5
 FORCE_RETRAIN = True
@@ -119,19 +119,17 @@ logging.basicConfig(
 def main():
     """Executes the end-to-end World Cup prediction pipeline.
 
-    This orchestration function manages the entire simulation workflow, which
-    includes data validation, entity resolution, and historical feature engineering.
-    It fits multiple underlying estimators (Poisson Ratings, Elo Engine, and
-    XGBoost Count Models), dynamically calculates optimal consensus blend weights
-    using a bounded SciPy solver, and adjusts predictions with a Bayesian prior nudge.
+        This orchestration function manages the entire simulation workflow, which
+        includes data validation, entity resolution, and historical feature engineering.
+        It fits multiple underlying estimators (Poisson Ratings, Elo Engine, and
+        XGBoost Count Models), dynamically calculates optimal consensus blend weights
+        using a bounded SciPy solver, and adjusts predictions with a Bayesian prior nudge.
 
-    The execution handles the sequential logic of the tournament by simulating the
-    full Group Stage, routing third-place qualifiers, advancing teams through the
-    Knockout Waterfall phase, and optionally spawning parallel stochastic Monte
-    Carlo universes for probabilistic forecasting.
-
-    All generated matrices, Elo logs, and execution metadata are compiled and
-    committed as artifacts to the run directory.
+        The execution handles the sequential logic of the tournament by simulating the
+        full Group Stage using pre-computed venue neutrality layers, routing third-place
+        qualifiers via an optimized static layout matrix, advancing teams through the
+        Knockout Waterfall phase, and optionally spawning parallel stochastic Monte
+        Carlo universes for probabilistic forecasting.
 
     Raises:
         AssertionError: If `USE_PRIOR_NUDGE` is active and any participating team in the
@@ -169,6 +167,15 @@ def main():
         DATACAMP_TO_KAGGLE
     )
 
+    # Pre-compute venue countries and neutrality flags for Group Stage instantly
+    group_fixtures["venue_country"] = group_fixtures["venue"].apply(get_venue_country)
+    group_fixtures["is_neutral"] = np.where(
+        (group_fixtures["home_team"] == group_fixtures["venue_country"])
+        | (group_fixtures["away_team"] == group_fixtures["venue_country"]),
+        0,
+        1,
+    )
+
     raw_teams = set(group_fixtures["home_team"].unique()) | set(
         group_fixtures["away_team"].unique()
     )
@@ -188,7 +195,7 @@ def main():
     logging.info(
         "🧮 Resolving Maximum Likelihood Estimations for Poisson coefficients..."
     )
-    ratings, g_home, g_away = train_poisson_ratings()
+    ratings, g_home, g_away, g_neutral = train_poisson_ratings()
 
     logging.info(
         "📈 Synchronizing continuous World Football Elo ratings across time series..."
@@ -272,16 +279,16 @@ def main():
         group_letter = row["group"]
         home = row["home_team"]
         away = row["away_team"]
-        venue = row.get("venue", "Neutral Turf")
-
-        venue_country = get_venue_country(venue)
-        is_neutral = 0 if (home == venue_country or away == venue_country) else 1
+        venue_country = row["venue_country"]
+        is_neutral = row["is_neutral"]
 
         # Extract base estimators parameters
         lambda_home_poisson, lambda_away_poisson, p_corners, p_yellows, p_reds = (
-            predict_poisson_match(home, away, venue_country, ratings, g_home, g_away)
+            predict_poisson_match(
+                home, away, venue_country, ratings, g_home, g_away, g_neutral
+            )
         )
-        elo_meta = elo_engine.predict_elo_match(home, away)
+        elo_meta = elo_engine.predict_elo_match(home, away, is_neutral=is_neutral)
 
         live_match_vector = {
             "home_elo_rating": elo_engine.get_rating(home),
@@ -370,6 +377,7 @@ def main():
         ratings=ratings,
         g_home_avg=g_home,
         g_away_avg=g_away,
+        g_neutral_avg=g_neutral,
         model_type=MODEL_TYPE,
         elo_engine=elo_engine,
         xgb_home=xgb_home,
@@ -428,7 +436,7 @@ def main():
     # 2. Save the Deterministic League Tables
     group_tables.to_csv(os.path.join(run_dir, "final_group_tables.csv"), index=False)
 
-    # 3. Compile and save official Wildcard Standings
+    # 3. Compile and Save official Wildcard Standings
     third_places_df = group_tables[group_tables["position"] == 3].copy()
     ranked_thirds_df = third_places_df.sort_values(
         by=["points", "goals_diff", "goals_for"], ascending=[False, False, False]
@@ -437,7 +445,7 @@ def main():
         os.path.join(run_dir, "third_places_standings.csv"), index=False
     )
 
-    # 3. Compile and Save the Master Team Capabilities Lookup Matrix
+    # 4. Compile and Save the Master Team Capabilities Lookup Matrix
     capability_records = []
     for team in participating_teams:
         p_rat = ratings.get(team, {"attack": 1.0, "defense": 1.0})
@@ -506,12 +514,19 @@ def main():
             os.path.join("data", "raw", "knockout_slots.csv")
         )
 
-        prob_dashboard, _ = run_monte_carlo_master(
+        # Pre-compute knockout venue countries before entering the parallel engine
+        raw_knockout_template["venue_country"] = raw_knockout_template["venue"].apply(
+            get_venue_country
+        )
+
+        # Capture the metadata dictionary instead of discarding it with an underscore
+        prob_dashboard, mc_metadata = run_monte_carlo_master(
             group_fixtures=group_fixtures,
             raw_knockout_template=raw_knockout_template,
             ratings=ratings,
             g_home=g_home,
             g_away=g_away,
+            g_neutral=g_neutral,
             elo_engine=elo_engine,
             xgb_home=xgb_home,
             xgb_away=xgb_away,
@@ -523,6 +538,23 @@ def main():
 
         prob_dashboard.to_csv(
             os.path.join(run_dir, "monte_carlo_forecast.csv"), index=False
+        )
+
+        # Extract the passed-back cache safely to export the pre-compiled matchup database
+        lambda_cache = mc_metadata.get("lambda_cache", {})
+        compiled_matchups = []
+        for (h, a, cache_neutral), (l_h, l_a, c_exp, y_exp) in lambda_cache.items():
+            compiled_matchups.append(
+                {
+                    "home_team": h,
+                    "away_team": a,
+                    "is_neutral_venue": cache_neutral,
+                    "ensemble_lambda_home": l_h,
+                    "ensemble_lambda_away": l_a,
+                }
+            )
+        pd.DataFrame(compiled_matchups).to_csv(
+            os.path.join(run_dir, "pre_computed_matchups.csv"), index=False
         )
         logging.info(
             "🔮 Stochastic simulation complete. Probability matrix cached to disk."

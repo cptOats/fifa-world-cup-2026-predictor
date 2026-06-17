@@ -190,7 +190,11 @@ def compile_master_feature_matrix(
 
     # 5. Extract matrix and rename 'date' to 'match_date' for direct XGBoost synergy
     final_matrix = (
-        df[["date", "home_team", "away_team"] + feature_columns + targets]
+        df[
+            ["date", "home_team", "away_team", "match_weight"]
+            + feature_columns
+            + targets
+        ]
         .dropna()
         .rename(columns={"date": "match_date"})
         .reset_index(drop=True)

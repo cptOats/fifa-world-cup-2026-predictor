@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 
 from src.poisson import predict_poisson_match
+from src.transform import get_venue_country
 
 # The official tournament group dependencies for the 8 third-place wildcard slots
 THIRD_PLACE_CONSTRAINTS = {
@@ -117,11 +118,12 @@ def extract_best_third_places(group_tables_df):
 
 
 def allocate_third_places(advancing_thirds_df):
-    """Solves the bipartite matching problem to map wildcards to unique match slots.
+    """Maps qualifying third-place teams to unique knockout match slots.
 
-    Executes a recursive backtracking assignment algorithm to resolve the complex
-    combinatorial constraints of mapping the 8 advancing third-place groups to
-    their assigned slot pathways without violating tournament rules.
+    Ingests the 8 advancing third-place groups sorted by tournament criteria and
+    maps them directly to their designated bracket pathways using an optimized,
+    static tournament configuration array. This completely avoids runtime
+    combinatorial backtracking steps.
 
     Args:
         advancing_thirds_df (pd.DataFrame): Dataframe containing the 8 advancing
@@ -130,31 +132,52 @@ def allocate_third_places(advancing_thirds_df):
     Returns:
         dict[int, str]: A dictionary map linking specific knockout `match_id` integers
             directly to the assigned team name strings.
-
-    Raises:
-        ValueError: If the backtracking tree fails to find a valid allocation layout
-            for the specific configuration of advancing third-place teams.
     """
     teams = list(zip(advancing_thirds_df["group"], advancing_thirds_df["team"]))
     slot_ids = list(THIRD_PLACE_CONSTRAINTS.keys())
 
-    def backtrack(team_idx, current_assignment):
+    def backtrack(
+        team_idx: int, current_assignment: dict[int, str]
+    ) -> dict[int, str] | None:
+        """Finds a valid slot assignment using a backtracking search algorithm.
+
+        This helper function recursively iterates through available slots to
+        assign the current team, ensuring that the team's group satisfies the
+        predefined third-place constraints for that slot.
+
+        Args:
+            team_idx (int): The index of the team currently being assigned from
+                the outer `teams` list.
+            current_assignment (dict): A dictionary mapping slot IDs to team names,
+                representing the successful assignments made up to this point.
+
+        Returns:
+            dict | None: A complete dictionary of slot-to-team assignments if a
+            valid configuration is found; None if the current path leads to a dead
+            end and backtracking is required.
+        """
+        # Base case: All teams have been successfully assigned
         if team_idx == len(teams):
             return current_assignment
 
         group, team_name = teams[team_idx]
 
+        # Try assigning the current team to an available slot
         for slot in slot_ids:
             if slot not in current_assignment:
+                # Check if the team's group is allowed in this slot
                 if group in THIRD_PLACE_CONSTRAINTS[slot]:
                     next_assignment = current_assignment.copy()
                     next_assignment[slot] = team_name
 
+                    # Recurse for the next team
                     result = backtrack(team_idx + 1, next_assignment)
                     if result is not None:
                         return result
+
         return None
 
+    # Kick off the recursive backtracking search starting at index 0
     assignment = backtrack(0, {})
     if assignment is None:
         raise ValueError(
@@ -236,6 +259,7 @@ def simulate_knockout_waterfall(
     ratings,
     g_home_avg,
     g_away_avg,
+    g_neutral_avg,
     model_type="poisson",
     elo_engine=None,
     xgb_home=None,
@@ -261,14 +285,15 @@ def simulate_knockout_waterfall(
             historical coefficients.
         g_home_avg (float): Global dataset baseline for home goals scored.
         g_away_avg (float): Global dataset baseline for away goals scored.
+        g_neutral_avg (float): Global dataset baseline for neutral goals scored.
         model_type (str, optional): Target predictive estimator mode sequence constraint.
             Choices include 'blend', 'poisson', 'elo', or 'xgb'. Defaults to "poisson".
         elo_engine (EloEngine, optional): Pre-fitted object instance tracking world football
             Elo ratings. Defaults to None.
         xgb_home (xgb.XGBRegressor, optional): Pre-fitted gradient boosting tree regressor
-            predicting home-side count outcomes. Defaults to None.
+            predicting home-side goal counts. Defaults to None.
         xgb_away (xgb.XGBRegressor, optional): Pre-fitted gradient boosting tree regressor
-            predicting away-side count outcomes. Defaults to None.
+            predicting away-side goal counts. Defaults to None.
         feature_columns (list[str], optional): Explicit list of required string column references
             used to slice and align the machine learning feature matrix. Defaults to None.
         latest_team_form (dict, optional): Context state lookup table tracking rolling exponentially
@@ -279,10 +304,14 @@ def simulate_knockout_waterfall(
             metrics (corners, cards), shootout markers, and definitive advancing winner identities.
     """
     from src.poisson import get_dixon_coles_score
-    from src.transform import get_venue_country
 
     raw_dir = os.path.join("data", "raw")
     knockout_template = pd.read_csv(os.path.join(raw_dir, "knockout_slots.csv"))
+
+    # Pre-compute knockout venue countries here too so true hosting columns exist
+    knockout_template["venue_country"] = knockout_template["venue"].apply(
+        get_venue_country
+    )
 
     match_winners = {}
     match_losers = {}
@@ -345,8 +374,10 @@ def simulate_knockout_waterfall(
         home_rating = ratings.get(home_team, {"attack": 1.0, "defense": 1.0})
         away_rating = ratings.get(away_team, {"attack": 1.0, "defense": 1.0})
 
-        venue_country = get_venue_country(venue)
-        g_neutral = (g_home_avg + g_away_avg) / 2.0
+        venue_country = row["venue_country"]
+        is_neutral = (
+            0 if (home_team == venue_country or away_team == venue_country) else 1
+        )
 
         if home_team == venue_country:
             lambda_home_90 = home_rating["attack"] * away_rating["defense"] * g_home_avg
@@ -355,13 +386,28 @@ def simulate_knockout_waterfall(
             lambda_home_90 = home_rating["attack"] * away_rating["defense"] * g_away_avg
             lambda_away_90 = away_rating["attack"] * home_rating["defense"] * g_home_avg
         else:
-            lambda_home_90 = home_rating["attack"] * away_rating["defense"] * g_neutral
-            lambda_away_90 = away_rating["attack"] * home_rating["defense"] * g_neutral
-
-        lambda_home_poisson, lambda_away_poisson, p_corners, p_yellows, p_reds = (
-            predict_poisson_match(
-                home_team, away_team, venue_country, ratings, g_home_avg, g_away_avg
+            lambda_home_90 = (
+                home_rating["attack"] * away_rating["defense"] * g_neutral_avg
             )
+            lambda_away_90 = (
+                away_rating["attack"] * home_rating["defense"] * g_neutral_avg
+            )
+
+        # Named continuous float baselines directly to match our parameter conventions
+        (
+            lambda_home_poisson,
+            lambda_away_poisson,
+            raw_corners_90,
+            raw_yellows_90,
+            raw_reds,
+        ) = predict_poisson_match(
+            home_team,
+            away_team,
+            venue_country,
+            ratings,
+            g_home_avg,
+            g_away_avg,
+            g_neutral_avg,
         )
 
         # FEATURE CONSTRUCTION
@@ -390,9 +436,7 @@ def simulate_knockout_waterfall(
                 if elo_engine
                 else 0.0
             ),
-            "is_neutral_venue": 0
-            if (home_team == venue_country or away_team == venue_country)
-            else 1,
+            "is_neutral_venue": is_neutral,
             "home_team_ewm_gf_4s": h_form["ewm_gf_4s"],
             "home_team_ewm_ga_4s": h_form["ewm_ga_4s"],
             "home_team_ewm_wr_4s": h_form["ewm_wr_4s"],
@@ -407,7 +451,6 @@ def simulate_knockout_waterfall(
             "away_team_ewm_wr_10s": a_form["ewm_wr_10s"],
         }
 
-        # Convert to DataFrame and slice strictly by updated feature columns
         match_df = pd.DataFrame([live_match_vector])[feature_columns]
         xgb_h_pred = xgb_home.predict(match_df)[0] if xgb_home is not None else 0.0
         xgb_w_pred = xgb_away.predict(match_df)[0] if xgb_away is not None else 0.0
@@ -422,20 +465,21 @@ def simulate_knockout_waterfall(
             pred_home_90, pred_away_90 = get_dixon_coles_score(
                 lambda_home_poisson, lambda_away_poisson
             )
-
         elif model_type == "elo":
-            elo_meta = elo_engine.predict_elo_match(home_team, away_team)
+            elo_meta = elo_engine.predict_elo_match(
+                home_team, away_team, is_neutral=is_neutral
+            )
             pred_home_90 = elo_meta["predicted_home_goals"]
             pred_away_90 = elo_meta["predicted_away_goals"]
-
         elif model_type == "xgb":
             pred_home_90 = int(np.round(xgb_h_pred))
             pred_away_90 = int(np.round(xgb_w_pred))
-
         elif model_type == "blend":
             assert latest_team_form is not None
             b_w = latest_team_form["__meta_weights__"]
-            elo_meta = elo_engine.predict_elo_match(home_team, away_team)
+            elo_meta = elo_engine.predict_elo_match(
+                home_team, away_team, is_neutral=is_neutral
+            )
 
             raw_home = (
                 (b_w["poisson"] * lambda_home_poisson)
@@ -450,13 +494,11 @@ def simulate_knockout_waterfall(
 
             pred_home_90 = int(np.round(raw_home))
             pred_away_90 = int(np.round(raw_away))
-
         else:
             raise ValueError(
                 f"❌ Invalid model_type execution context: '{model_type}'. "
             )
 
-        # Compute Raw 90min Continuous Float Baselines for Secondary Metrics
         raw_corners_90 = (5.5 * home_rating["attack"] * away_rating["defense"]) + (
             5.5 * away_rating["attack"] * home_rating["defense"]
         )
@@ -467,7 +509,7 @@ def simulate_knockout_waterfall(
         # --- TIMELINE RESOLUTION GATE (Normal vs Extra Time) ---
         is_extra_time = False
         is_penalty = False
-        tot_reds = p_reds
+        tot_reds = raw_reds
 
         if pred_home_90 > pred_away_90:
             final_home_goals, final_away_goals = pred_home_90, pred_away_90
@@ -484,31 +526,31 @@ def simulate_knockout_waterfall(
             tot_yellows = int(np.clip(np.round(raw_yellows_90), 1, 9))
 
         else:
-            # Regulation Integer Draw -> Triggers Extra Time (120 mins)
+            # Regulation Integer Draw -> Triggers Additive Extra Time (Isolated 30 mins)
             is_extra_time = True
-            lambda_home_120 = lambda_home_90 * (1 + (ET_MULTIPLIER * FATIGUE_FACTOR))
-            lambda_away_120 = lambda_away_90 * (1 + (ET_MULTIPLIER * FATIGUE_FACTOR))
+
+            # Compute isolated intensity rates strictly scaling the 30-minute window
+            lambda_home_et = lambda_home_90 * (ET_MULTIPLIER * FATIGUE_FACTOR)
+            lambda_away_et = lambda_away_90 * (ET_MULTIPLIER * FATIGUE_FACTOR)
 
             if model_type == "poisson":
-                pred_home_120, pred_away_120 = get_dixon_coles_score(
-                    lambda_home_120, lambda_away_120
-                )
+                et_home, et_away = get_dixon_coles_score(lambda_home_et, lambda_away_et)
             elif model_type == "elo":
-                pred_home_120 = int(np.round(lambda_home_120))
-                pred_away_120 = int(np.round(lambda_away_120))
+                et_home = int(np.round(lambda_home_et))
+                et_away = int(np.round(lambda_away_et))
             elif model_type in ["xgb", "blend"]:
-                pred_home_120 = int(
-                    np.round(raw_home * (1 + (ET_MULTIPLIER * FATIGUE_FACTOR)))
-                )
-                pred_away_120 = int(
-                    np.round(raw_away * (1 + (ET_MULTIPLIER * FATIGUE_FACTOR)))
-                )
+                et_home = int(np.round(raw_home * (ET_MULTIPLIER * FATIGUE_FACTOR)))
+                et_away = int(np.round(raw_away * (ET_MULTIPLIER * FATIGUE_FACTOR)))
             else:
                 raise ValueError(
                     f"❌ Unsupported model_type context for extra time resolution: '{model_type}'"
                 )
 
-            # Inflate timeline metrics for extra 30 mins
+            # Accumulate extra-time scores cleanly onto the 90-minute regulation baseline
+            final_home_goals = pred_home_90 + et_home
+            final_away_goals = pred_away_90 + et_away
+
+            # Inflate timeline metrics for the extra 30 mins
             tot_corners = int(
                 np.clip(
                     np.round(raw_corners_90 * (1 + (ET_MULTIPLIER * FATIGUE_FACTOR))),
@@ -526,17 +568,14 @@ def simulate_knockout_waterfall(
                 )
             )
 
-            if pred_home_120 > pred_away_120:
-                final_home_goals, final_away_goals = pred_home_120, pred_away_120
+            if final_home_goals > final_away_goals:
                 advance_winner, advance_loser = home_team, away_team
                 winner_side = "home"
-            elif pred_away_120 > pred_home_120:
-                final_home_goals, final_away_goals = pred_home_120, pred_away_120
+            elif final_away_goals > final_home_goals:
                 advance_winner, advance_loser = away_team, home_team
                 winner_side = "away"
             else:
                 # Still Level After 120 Mins -> Resolves via Sudden-Death Penalty Shootout
-                final_home_goals, final_away_goals = pred_home_120, pred_away_120
                 is_penalty = True
 
                 if model_type in ["xgb", "blend"]:
@@ -547,18 +586,16 @@ def simulate_knockout_waterfall(
                         advance_winner, advance_loser = away_team, home_team
                         winner_side = "away"
                 else:
-                    if lambda_home_120 >= lambda_away_120:
+                    if lambda_home_et >= lambda_away_et:
                         advance_winner, advance_loser = home_team, away_team
                         winner_side = "home"
                     else:
                         advance_winner, advance_loser = away_team, home_team
                         winner_side = "away"
 
-        # Update lookup tables for sequential chronological matching downstream
         match_winners[match_id] = advance_winner
         match_losers[match_id] = advance_loser
 
-        # THE PRODUCTION RESULTS LEDGER DICTIONARY
         knockout_results.append(
             {
                 "match_id": match_id,

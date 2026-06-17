@@ -2,7 +2,7 @@
 
 This module houses the master Monte Carlo orchestration engine. It bypasses
 repetitive model evaluations during deep iteration runs by pre-computing a vectorized
-consensus parameter matrix cache ($O(1)$ lookup complexity). It handles thousands of
+consensus parameter matrix cache (O(1) lookup complexity). It handles thousands of
 randomized tournament simulations to compile explicit survival probabilities from the
 Group Stage through to the Final.
 """
@@ -23,6 +23,7 @@ def run_monte_carlo_master(
     ratings,
     g_home,
     g_away,
+    g_neutral,
     elo_engine,
     xgb_home,
     xgb_away,
@@ -49,6 +50,7 @@ def run_monte_carlo_master(
         ratings (dict): Base historical Poisson attack and defense metrics per team.
         g_home (float): Dataset global average score metric for home-side goal references.
         g_away (float): Dataset global average score metric for away-side goal references.
+        g_neutral (float): Dataset global average score metric for neutral venue references.
         elo_engine (EloEngine): Pre-fitted tracking object instance evaluating team Elo scores.
         xgb_home (xgb.XGBRegressor): Pre-fitted tree regressor tracking home goal counts.
         xgb_away (xgb.XGBRegressor): Pre-fitted tree regressor tracking away goal counts.
@@ -62,9 +64,6 @@ def run_monte_carlo_master(
     """
     # Initialize NumPy Generator with a fixed seed
     rng = np.random.default_rng(seed=69)
-
-    # Ensure venue country parsing can be executed inside the loops
-    from src.transform import get_venue_country
 
     participating_teams = list(
         set(group_fixtures["home_team"].unique())
@@ -86,7 +85,6 @@ def run_monte_carlo_master(
         for team in participating_teams
     }
 
-    g_neutral = (g_home + g_away) / 2.0
     ET_MULTIPLIER = 1 / 3
     FATIGUE_FACTOR = 0.80
 
@@ -94,19 +92,24 @@ def run_monte_carlo_master(
     matchup_rows = []
     matchup_keys = []
 
-    for neutral_state in [0, 1]:
+    #    Extract unique hosting countries directly from active fixtures
+    unique_venues = list(group_fixtures["venue_country"].unique())
+
+    for v_country in unique_venues:
         for h in participating_teams:
             for a in participating_teams:
                 if h == a:
                     continue
-                matchup_keys.append((h, a, neutral_state))
+
+                is_neutral_flag = 0 if (h == v_country or a == v_country) else 1
+                matchup_keys.append((h, a, v_country))
                 matchup_rows.append(
                     {
                         "home_elo_rating": elo_engine.get_rating(h),
                         "away_elo_rating": elo_engine.get_rating(a),
                         "elo_differential": elo_engine.get_rating(h)
                         - elo_engine.get_rating(a),
-                        "is_neutral_venue": neutral_state,
+                        "is_neutral_venue": is_neutral_flag,
                         "home_team_ewm_gf_4s": latest_team_form[h]["ewm_gf_4s"],
                         "home_team_ewm_ga_4s": latest_team_form[h]["ewm_ga_4s"],
                         "home_team_ewm_wr_4s": latest_team_form[h]["ewm_wr_4s"],
@@ -122,16 +125,16 @@ def run_monte_carlo_master(
                     }
                 )
 
-    # Single-pass batch predictions for all 4,512 variations
     matchup_df = pd.DataFrame(matchup_rows)[feature_columns]
     xgb_h_all = xgb_home.predict(matchup_df)
     xgb_a_all = xgb_away.predict(matchup_df)
 
-    # Build the O(1) Consensus Parameter Map
     lambda_cache = {}
-    for idx, (h, a, cache_neutral) in enumerate(matchup_keys):
-        # Apply symmetrical baseline adjustments for Poisson layers
-        if cache_neutral == 0:
+    for idx, (h, a, v_country) in enumerate(matchup_keys):
+        is_neutral_flag = 0 if (h == v_country or a == v_country) else 1
+
+        # Directional Poisson verification inside cache loop
+        if h == v_country:
             h_poi = (
                 ratings.get(h, {}).get("attack", 1)
                 * ratings.get(a, {}).get("defense", 1)
@@ -141,6 +144,17 @@ def run_monte_carlo_master(
                 ratings.get(a, {}).get("attack", 1)
                 * ratings.get(h, {}).get("defense", 1)
                 * g_away
+            )
+        elif a == v_country:
+            h_poi = (
+                ratings.get(h, {}).get("attack", 1)
+                * ratings.get(a, {}).get("defense", 1)
+                * g_away
+            )
+            a_poi = (
+                ratings.get(a, {}).get("attack", 1)
+                * ratings.get(h, {}).get("defense", 1)
+                * g_home
             )
         else:
             h_poi = (
@@ -154,7 +168,7 @@ def run_monte_carlo_master(
                 * g_neutral
             )
 
-        elo_meta = elo_engine.predict_elo_match(h, a)
+        elo_meta = elo_engine.predict_elo_match(h, a, is_neutral=is_neutral_flag)
 
         l_h = (
             (blend_weights["poisson"] * h_poi)
@@ -186,7 +200,7 @@ def run_monte_carlo_master(
             * ratings.get(h, {}).get("attack", 1)
         )
 
-        lambda_cache[(h, a, cache_neutral)] = (l_h, l_a, corners_exp, yellows_exp)
+        lambda_cache[(h, a, v_country)] = (l_h, l_a, corners_exp, yellows_exp)
 
     # Convert core dataframes to lightweight dictionaries to completely eliminate iteration overhead
     group_fixtures_list = group_fixtures.to_dict(orient="records")
@@ -205,12 +219,9 @@ def run_monte_carlo_master(
                 row["away_team"],
             )
 
-            # Resolve group-level co-host advantages if a venue column is available
-            venue_country = (
-                get_venue_country(row["venue"]) if "venue" in row else "Neutral"
-            )
-            is_neutral = 0 if (home == venue_country or away == venue_country) else 1
-            l_h, l_a, c_exp, y_exp = lambda_cache[(home, away, is_neutral)]
+            # Extract venue directly to query our O(1) cache
+            venue_country = row["venue_country"]
+            l_h, l_a, c_exp, y_exp = lambda_cache[(home, away, venue_country)]
 
             group_results.append(
                 {
@@ -256,7 +267,6 @@ def run_monte_carlo_master(
                 row["slot_home"],
                 row["slot_away"],
             )
-            venue = row["venue"]
 
             if "Winner Group" in slot_home:
                 home = winners[slot_home.replace("Winner Group ", "").strip()]
@@ -288,12 +298,9 @@ def run_monte_carlo_master(
             else:
                 away = slot_away
 
-            # Dynamically compute stadium neutrality for the specific knockout pair
-            venue_country = get_venue_country(venue)
-            is_neutral = 0 if (home == venue_country or away == venue_country) else 1
-
-            # Dynamic Cache Extraction via composite key
-            l_h, l_a, _, _ = lambda_cache[(home, away, is_neutral)]
+            # Extract venue directly to pull from the consensus parameters cache
+            venue_country = row["venue_country"]
+            l_h, l_a, _, _ = lambda_cache[(home, away, venue_country)]
 
             h_goals = rng.poisson(l_h)
             a_goals = rng.poisson(l_a)
@@ -354,4 +361,4 @@ def run_monte_carlo_master(
         .reset_index(drop=True)
     )
 
-    return prob_df, {}
+    return prob_df, {"lambda_cache": lambda_cache}
