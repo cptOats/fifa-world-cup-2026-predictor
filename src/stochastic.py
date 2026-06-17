@@ -92,49 +92,70 @@ def run_monte_carlo_master(
     FATIGUE_FACTOR = 0.80
 
     # --- VECTORIZED MATCHUP MATRIX PRE-COMPUTATION ---
-    matchup_rows = []
     matchup_keys = []
-
-    #    Extract unique hosting countries directly from active fixtures
     unique_venues = list(group_fixtures["venue_country"].unique())
+
+    # Build forward and swapped feature matrices
+    rows_fwd = []
+    rows_swp = []
+
+    def _build_xgb_dict(h, a, is_neut):
+        return {
+            "home_elo_rating": elo_engine.get_rating(h),
+            "away_elo_rating": elo_engine.get_rating(a),
+            "elo_differential": elo_engine.get_rating(h) - elo_engine.get_rating(a),
+            "is_neutral_venue": is_neut,
+            "home_team_ewm_gf_4s": latest_team_form[h]["ewm_gf_4s"],
+            "home_team_ewm_ga_4s": latest_team_form[h]["ewm_ga_4s"],
+            "home_team_ewm_wr_4s": latest_team_form[h]["ewm_wr_4s"],
+            "home_team_ewm_gf_10s": latest_team_form[h]["ewm_gf_10s"],
+            "home_team_ewm_ga_10s": latest_team_form[h]["ewm_ga_10s"],
+            "home_team_ewm_wr_10s": latest_team_form[h]["ewm_wr_10s"],
+            "away_team_ewm_gf_4s": latest_team_form[a]["ewm_gf_4s"],
+            "away_team_ewm_ga_4s": latest_team_form[a]["ewm_ga_4s"],
+            "away_team_ewm_wr_4s": latest_team_form[a]["ewm_wr_4s"],
+            "away_team_ewm_gf_10s": latest_team_form[a]["ewm_gf_10s"],
+            "away_team_ewm_ga_10s": latest_team_form[a]["ewm_ga_10s"],
+            "away_team_ewm_wr_10s": latest_team_form[a]["ewm_wr_10s"],
+        }
 
     for v_country in unique_venues:
         for h in participating_teams:
             for a in participating_teams:
                 if h == a:
                     continue
-
                 is_neutral_flag = 0 if (h == v_country or a == v_country) else 1
                 matchup_keys.append((h, a, v_country))
-                matchup_rows.append(
-                    {
-                        "home_elo_rating": elo_engine.get_rating(h),
-                        "away_elo_rating": elo_engine.get_rating(a),
-                        "elo_differential": elo_engine.get_rating(h)
-                        - elo_engine.get_rating(a),
-                        "is_neutral_venue": is_neutral_flag,
-                        "home_team_ewm_gf_4s": latest_team_form[h]["ewm_gf_4s"],
-                        "home_team_ewm_ga_4s": latest_team_form[h]["ewm_ga_4s"],
-                        "home_team_ewm_wr_4s": latest_team_form[h]["ewm_wr_4s"],
-                        "home_team_ewm_gf_10s": latest_team_form[h]["ewm_gf_10s"],
-                        "home_team_ewm_ga_10s": latest_team_form[h]["ewm_ga_10s"],
-                        "home_team_ewm_wr_10s": latest_team_form[h]["ewm_wr_10s"],
-                        "away_team_ewm_gf_4s": latest_team_form[a]["ewm_gf_4s"],
-                        "away_team_ewm_ga_4s": latest_team_form[a]["ewm_ga_4s"],
-                        "away_team_ewm_wr_4s": latest_team_form[a]["ewm_wr_4s"],
-                        "away_team_ewm_gf_10s": latest_team_form[a]["ewm_gf_10s"],
-                        "away_team_ewm_ga_10s": latest_team_form[a]["ewm_ga_10s"],
-                        "away_team_ewm_wr_10s": latest_team_form[a]["ewm_wr_10s"],
-                    }
-                )
+                rows_fwd.append(_build_xgb_dict(h, a, is_neutral_flag))
+                rows_swp.append(_build_xgb_dict(a, h, is_neutral_flag))
 
-    matchup_df = pd.DataFrame(matchup_rows)[feature_columns]
-    xgb_h_all = xgb_home.predict(matchup_df)
-    xgb_a_all = xgb_away.predict(matchup_df)
+    df_fwd = pd.DataFrame(rows_fwd)[feature_columns]
+    df_swp = pd.DataFrame(rows_swp)[feature_columns]
+
+    # Batch execute both perspectives
+    xgb_h_fwd = xgb_home.predict(df_fwd)
+    xgb_a_fwd = xgb_away.predict(df_fwd)
+    xgb_h_swp = xgb_home.predict(df_swp)
+    xgb_a_swp = xgb_away.predict(df_swp)
 
     lambda_cache = {}
     for idx, (h, a, v_country) in enumerate(matchup_keys):
         is_neutral_flag = 0 if (h == v_country or a == v_country) else 1
+
+        # RESOLVE MIRRORED XGBOOST INFERENCE
+        if h == v_country:
+            xgb_h_val = xgb_h_fwd[idx]
+            xgb_a_val = xgb_a_fwd[idx]
+        elif a == v_country:
+            xgb_h_val = xgb_a_swp[
+                idx
+            ]  # Team A gets the 'away' perspective of the swapped model
+            xgb_a_val = xgb_h_swp[
+                idx
+            ]  # Team B gets the 'home' perspective of the swapped model
+        else:
+            xgb_h_val = (xgb_h_fwd[idx] + xgb_a_swp[idx]) / 2.0
+            xgb_a_val = (xgb_a_fwd[idx] + xgb_h_swp[idx]) / 2.0
 
         # Directional Poisson verification inside cache loop
         if h == v_country:
@@ -176,12 +197,12 @@ def run_monte_carlo_master(
         l_h = (
             (blend_weights["poisson"] * h_poi)
             + (blend_weights["elo"] * elo_meta["predicted_home_goals"])
-            + (blend_weights["xgb"] * xgb_h_all[idx])
+            + (blend_weights["xgb"] * xgb_h_val)
         )
         l_a = (
             (blend_weights["poisson"] * a_poi)
             + (blend_weights["elo"] * elo_meta["predicted_away_goals"])
-            + (blend_weights["xgb"] * xgb_a_all[idx])
+            + (blend_weights["xgb"] * xgb_a_val)
         )
 
         # Apply the Bayesian Prior Nudge directly to the baseline expected intensities
@@ -218,7 +239,7 @@ def run_monte_carlo_master(
     knockout_template_list = raw_knockout_template.to_dict(orient="records")
 
     # 2. Start the Optimized Master Monte Carlo Loop
-    for sim in range(n_simulations):
+    for _ in range(n_simulations):
         group_results = []
 
         # --- PHASE A: GROUP STAGE SAMPLING ---

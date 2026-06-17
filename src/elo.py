@@ -3,7 +3,7 @@
 This module provides a class-based implementation of the custom World Football Elo
 rating system. It tracks continuous team capability values across chronological
 historical datasets, evaluates logistic win expectancies, applies goal-differential
-multiplier scalars ($G$), and maps finalized ratings back into discrete expected score lines.
+multiplier scalars, and maps finalized ratings back into discrete expected score lines.
 """
 
 import numpy as np
@@ -155,15 +155,12 @@ class EloEngine:
         pred_home = int(np.round(lambda_home))
         pred_away = int(np.round(lambda_away))
 
-        if pred_home > pred_away:
-            winner = "home"
-        elif pred_away > pred_home:
-            winner = "away"
-        else:
-            winner = "draw"
-
         return {
             "predicted_home_goals": pred_home,
             "predicted_away_goals": pred_away,
-            "winning_team": winner,
+            "lambda_home": lambda_home,
+            "lambda_away": lambda_away,
+            "winner": "home"
+            if pred_home > pred_away
+            else ("away" if pred_away > pred_home else "draw"),
         }

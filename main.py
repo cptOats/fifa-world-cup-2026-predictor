@@ -41,7 +41,7 @@ from src.xgb import train_production_xgboost_models
 # --- MODEL CONFIGURATION TOGGLE ---
 MODEL_TYPE = "blend"  # "blend", "poisson", "elo", "xgb"
 RUN_MONTE_CARLO = True
-MONTE_CARLO_RUNS = 10000  # Recommend 10K+
+MONTE_CARLO_RUNS = 100  # Recommend 10K+
 USE_PRIOR_NUDGE = True
 NUDGE_STRENGTH = 1.5  # Recommend ~1.5
 FORCE_RETRAIN = True
@@ -274,13 +274,13 @@ def main():
     logging.info("⚽ Commencing simulation of full Group Stage schedule...")
     group_results = []
 
-    for idx, row in group_fixtures.iterrows():
+    for _, row in group_fixtures.iterrows():
         match_id = int(row["match_id"])
         group_letter = row["group"]
         home = row["home_team"]
         away = row["away_team"]
         venue_country = row["venue_country"]
-        is_neutral = row["is_neutral"]
+        is_neutral = 0 if (home == venue_country or away == venue_country) else 1
 
         # Extract base estimators parameters
         lambda_home_poisson, lambda_away_poisson, p_corners, p_yellows, p_reds = (
@@ -290,38 +290,54 @@ def main():
         )
         elo_meta = elo_engine.predict_elo_match(home, away, is_neutral=is_neutral)
 
-        live_match_vector = {
-            "home_elo_rating": elo_engine.get_rating(home),
-            "away_elo_rating": elo_engine.get_rating(away),
-            "elo_differential": elo_engine.get_rating(home)
-            - elo_engine.get_rating(away),
-            "is_neutral_venue": is_neutral,
-            "home_team_ewm_gf_4s": latest_team_form[home]["ewm_gf_4s"],
-            "home_team_ewm_ga_4s": latest_team_form[home]["ewm_ga_4s"],
-            "home_team_ewm_wr_4s": latest_team_form[home]["ewm_wr_4s"],
-            "home_team_ewm_gf_10s": latest_team_form[home]["ewm_gf_10s"],
-            "home_team_ewm_ga_10s": latest_team_form[home]["ewm_ga_10s"],
-            "home_team_ewm_wr_10s": latest_team_form[home]["ewm_wr_10s"],
-            "away_team_ewm_gf_4s": latest_team_form[away]["ewm_gf_4s"],
-            "away_team_ewm_ga_4s": latest_team_form[away]["ewm_ga_4s"],
-            "away_team_ewm_wr_4s": latest_team_form[away]["ewm_wr_4s"],
-            "away_team_ewm_gf_10s": latest_team_form[away]["ewm_gf_10s"],
-            "away_team_ewm_ga_10s": latest_team_form[away]["ewm_ga_10s"],
-            "away_team_ewm_wr_10s": latest_team_form[away]["ewm_wr_10s"],
-        }
-        match_df = pd.DataFrame([live_match_vector])[feature_columns]
-        xgb_h_pred = xgb_home.predict(match_df)[0]
-        xgb_w_pred = xgb_away.predict(match_df)[0]
+        # Define the feature builder inline for symmetrical evaluation
+        def _get_xgb_vec(h_t, a_t, is_neut):
+            return {
+                "home_elo_rating": elo_engine.get_rating(h_t),
+                "away_elo_rating": elo_engine.get_rating(a_t),
+                "elo_differential": elo_engine.get_rating(h_t)
+                - elo_engine.get_rating(a_t),
+                "is_neutral_venue": is_neut,
+                "home_team_ewm_gf_4s": latest_team_form[h_t]["ewm_gf_4s"],
+                "home_team_ewm_ga_4s": latest_team_form[h_t]["ewm_ga_4s"],
+                "home_team_ewm_wr_4s": latest_team_form[h_t]["ewm_wr_4s"],
+                "home_team_ewm_gf_10s": latest_team_form[h_t]["ewm_gf_10s"],
+                "home_team_ewm_ga_10s": latest_team_form[h_t]["ewm_ga_10s"],
+                "home_team_ewm_wr_10s": latest_team_form[h_t]["ewm_wr_10s"],
+                "away_team_ewm_gf_4s": latest_team_form[a_t]["ewm_gf_4s"],
+                "away_team_ewm_ga_4s": latest_team_form[a_t]["ewm_ga_4s"],
+                "away_team_ewm_wr_4s": latest_team_form[a_t]["ewm_wr_4s"],
+                "away_team_ewm_gf_10s": latest_team_form[a_t]["ewm_gf_10s"],
+                "away_team_ewm_ga_10s": latest_team_form[a_t]["ewm_ga_10s"],
+                "away_team_ewm_wr_10s": latest_team_form[a_t]["ewm_wr_10s"],
+            }
+
+        df_fwd = pd.DataFrame([_get_xgb_vec(home, away, is_neutral)])[feature_columns]
+        df_swp = pd.DataFrame([_get_xgb_vec(away, home, is_neutral)])[feature_columns]
+
+        h_fwd = xgb_home.predict(df_fwd)[0]
+        a_fwd = xgb_away.predict(df_fwd)[0]
+        h_swp = xgb_home.predict(df_swp)[0]
+        a_swp = xgb_away.predict(df_swp)[0]
+
+        # MIRRORED INFERENCE ROUTER
+        if home == venue_country:
+            xgb_h_pred, xgb_w_pred = h_fwd, a_fwd
+        elif away == venue_country:
+            xgb_h_pred, xgb_w_pred = a_swp, h_swp
+        else:
+            xgb_h_pred = (h_fwd + a_swp) / 2.0
+            xgb_w_pred = (a_fwd + h_swp) / 2.0
 
         # THE UNIFIED CONSENSUS EQUATION
         blend_home_raw = (
             (blend_weights["poisson"] * lambda_home_poisson)
-            + (blend_weights["elo"] * float(elo_meta["predicted_home_goals"]))
+            + (blend_weights["elo"] * float(elo_meta["lambda_home"]))
             + (blend_weights["xgb"] * xgb_h_pred)
         )
         blend_away_raw = (
             (blend_weights["poisson"] * lambda_away_poisson)
-            + (blend_weights["elo"] * float(elo_meta["predicted_away_goals"]))
+            + (blend_weights["elo"] * float(elo_meta["lambda_away"]))
             + (blend_weights["xgb"] * xgb_w_pred)
         )
 
@@ -337,6 +353,7 @@ def main():
 
         final_home_goals = int(np.round(max(0, blend_home_raw)))
         final_away_goals = int(np.round(max(0, blend_away_raw)))
+
         winner_side = (
             "home"
             if final_home_goals > final_away_goals
@@ -378,7 +395,7 @@ def main():
         g_home_avg=g_home,
         g_away_avg=g_away,
         g_neutral_avg=g_neutral,
-        model_type=MODEL_TYPE,
+        blend_weights=blend_weights,
         elo_engine=elo_engine,
         xgb_home=xgb_home,
         xgb_away=xgb_away,
