@@ -1,11 +1,4 @@
-"""Machine Learning Engine and Gradient-Boosted Count Tree Pipeline Layer.
-
-This module provides the core gradient-boosting execution infrastructure for the
-prediction pipeline. It orchestrates chronological cross-validation backtests,
-computes real-time exponential time-decay sample weighting scales to prioritize
-recent team form, evaluates Poisson deviance benchmarks, and serializes production-grade
-XGBoost count regressors to the persistence layer.
-"""
+"""Machine Learning: Gradient-Boosted Count Tree (XGBoost) Model."""
 
 import os
 
@@ -16,41 +9,8 @@ from sklearn.model_selection import TimeSeriesSplit
 
 
 def train_production_xgboost_models(feature_matrix, feature_columns, alpha=0.00047):
-    r"""Trains production XGBoost goal-count models using chronological validation.
+    """Trains production XGBoost goal-count models using chronological validation."""
 
-    Isolates input feature structures and partitions targets by home and away score vectors.
-    It builds a dynamic time-decay matrix where historical fixtures are exponentially
-    down-weighted based on their days elapsed from the most recent match record.
-    The function runs a chronological backtest across three sequential data splits,
-    tracks leak-proof out-of-fold predictions, logs Poisson Deviance $D^2$ performance
-    metrics, and fits final expanded-horizon models saved as JSON artifacts.
-
-    Args:
-        feature_matrix (pd.DataFrame): Master compiled dataframe containing training
-            features, match scores (`home_score`, `away_score`), and the temporal
-            anchor index column `match_date`.
-        feature_columns (list[str]): Explicit list of feature string names to pass
-            into the tree regressor training matrices.
-        alpha (float, optional): Tuning parameter controlling the severity of the
-            exponential time-decay equation ($\text{weight} = e^{-\alpha \cdot \text{days}}$).
-            Higher values penalize older historical records faster. Defaults to 0.00047,
-            which targets a 4 year (1 cycle) half-life, try 0.00024 for 2 cycles.
-
-
-    Returns:
-        tuple: A 5-element combination tracking fitted structures and cross-validation logs:
-            - model_home (xgb.XGBRegressor): Final production home goal regressor model
-                fitted across the entire historical data horizon.
-            - model_away (xgb.XGBRegressor): Final production away goal regressor model
-                fitted across the entire historical data horizon.
-            - oof_home_preds (np.ndarray): Array containing continuous out-of-fold
-                predictions for home-side goal intensities.
-            - oof_away_preds (np.ndarray): Array containing continuous out-of-fold
-                predictions for away-side goal intensities.
-            - cv_metrics (dict[str, dict[str, float]]): Nested cross-validation map
-                storing calculated `home_deviance_r2` and `away_deviance_r2` floats
-                for every evaluation split.
-    """
     # 1. Isolate Features, Targets, and Temporal Anchor
     X = feature_matrix[feature_columns]
     y_home = feature_matrix["home_score"]

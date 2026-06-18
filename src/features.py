@@ -1,10 +1,4 @@
-"""Historical Feature Engineering and Time-Series Alignment Layer.
-
-This module processes match-grain dataframes into a rolling team-grain timeline to
-calculate leak-proof Exponentially Weighted Moving (EWM) performance statistics.
-It overlays point-in-time historical Elo snapshots and handles column schema
-alignment to output high-fidelity matrices optimized for downstream machine learning.
-"""
+"""Historical Feature Engineering and Time-Series Alignment Layer."""
 
 import os
 
@@ -12,25 +6,7 @@ import pandas as pd
 
 
 def build_leakproof_form_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Transforms match data into an interleaved timeline to compute leak-proof form.
-
-    Flattens raw match-grain data into a sequential, single-team observation index
-    to track rolling momentum. For each team, it calculates exponential moving
-    averages for goals scored, goals conceded, and win-rate probabilities across
-    short-term ($span=4$) and long-term ($span=10$) horizons.
-
-    Crucially, it executes a `.shift(1)` lookback transformation inside the group
-    aggregation step to ensure features for any given match are calculated purely
-    from historical matches, eliminating target data leakage.
-
-    Args:
-        df (pd.DataFrame): Primary match-grain dataframe containing columns `date`,
-            `home_team`, `away_team`, `home_score`, and `away_score`.
-
-    Returns:
-        pd.DataFrame: Augmented match-grain dataframe containing isolated, prefixed
-            historical form characteristics (`home_team_ewm_*` and `away_team_ewm_*`).
-    """
+    """Transforms match data into an interleaved timeline to compute leak-proof form."""
 
     # 1. Isolate home and away perspectives to create a unified team timeline
     home_perspective = df[["date", "home_team", "home_score", "away_score"]].rename(
@@ -118,24 +94,8 @@ def build_leakproof_form_features(df: pd.DataFrame) -> pd.DataFrame:
 def compile_master_feature_matrix(
     matches_parquet_path: str, elo_engine
 ) -> tuple[pd.DataFrame, list[str]]:
-    """Compiles clean matches, momentum vectors, and Elo snapshots into a master matrix.
+    """Compiles clean matches, momentum vectors, and Elo snapshots into a master matrix."""
 
-    Ingests the historical modern-era match data, executes the team-grain feature
-    engineering sequence, and queries the pre-fitted Elo engine to map real-time
-    point-in-time rating snapshots and team differentials across all training rows.
-    It applies numerical categorical context tracking for neutral venues and formats
-    the schema explicitly for consumption by the training pipeline.
-
-    Args:
-        matches_parquet_path (str): The local path to the cleaned historical matches Parquet checkpoint.
-        elo_engine (EloEngine): An instantiated tracking object used to query individual Elo ratings.
-
-    Returns:
-        tuple: Fully aligned clean training matrix and the ordered list of feature input columns.
-
-    Raises:
-        FileNotFoundError: If the clean base historical file cannot be found.
-    """
     if not os.path.exists(matches_parquet_path):
         raise FileNotFoundError(f"Missing base match file: {matches_parquet_path}")
 

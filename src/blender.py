@@ -1,17 +1,10 @@
-"""Model Consensus Blending and Meta-Ensemble Optimization Layer.
-
-This module provides the optimization framework for combining distinct modeling
-layers (Poisson Ratings, Elo Engine, and Gradient-Boosted Trees). It leverages
-out-of-fold (OOF) cross-validation predictions to configure a joint Mean Squared
-Error (MSE) loss function, solving for optimal consensus weights using a bounded
-and constrained SciPy optimization routine.
-"""
+"""Model Consensus Blending and Meta-Ensemble Optimization Layer."""
 
 import logging
 
 import numpy as np
 import pandas as pd
-from scipy.optimize import minimize
+from scipy.optimize import Bounds, LinearConstraint, minimize
 from sklearn.metrics import mean_squared_error
 
 
@@ -24,30 +17,8 @@ def find_optimal_blend_weights(
     oof_poisson_home: np.ndarray,
     oof_poisson_away: np.ndarray,
 ) -> dict[str, float]:
-    r"""Calibrates leak-proof optimal consensus blend weights across all modeling layers.
+    """Calibrates leak-proof optimal consensus blend weights across all modeling layers."""
 
-    Extracts active cross-validation horizons to shield the ensemble layer from
-    data leakage. The function constructs a combined baseline for historical point-in-time
-    Elo predictions, defines a joint loss function optimizing over collective home and
-    away goal MSE, and resolves constraints where individual model weights must fall within
-    the boundaries $[0.0, 1.0]$ and strictly sum to $1.0$ ($\sum w_i = 1.0$). If the
-    optimization fails to converge, it gracefully defaults to a uniform distribution.
-
-    Args:
-        feature_matrix (pd.DataFrame): Master feature matrix tracking historical matches,
-            containing rating definitions and score targets.
-        g_home (float): Dataset global average score metric for home-side goal references.
-        g_away (float): Dataset global average score metric for away-side goal references.
-        oof_home_preds (np.ndarray): Continuous out-of-fold validation array for XGBoost home goals.
-        oof_away_preds (np.ndarray): Continuous out-of-fold validation array for XGBoost away goals.
-        oof_poisson_home (np.ndarray): Continuous out-of-fold validation array for Poisson home goals.
-        oof_poisson_away (np.ndarray): Continuous out-of-fold validation array for Poisson away goals.
-
-    Returns:
-        dict[str, float]: Consensus weight mapping dictionary containing the keys
-            'poisson', 'elo', and 'xgb' paired with their optimal fractional
-            coefficients.
-    """
     actual_home_goals = feature_matrix["home_score"].to_numpy()
     actual_away_goals = feature_matrix["away_score"].to_numpy()
 
@@ -78,6 +49,8 @@ def find_optimal_blend_weights(
 
     # 3. Define Clean Loss Function
     def loss_function(weights):
+        """Loss Function"""
+
         w_poisson, w_elo, w_xgb = weights
 
         pred_home = (
@@ -97,8 +70,6 @@ def find_optimal_blend_weights(
         ) / 2.0
 
     # 4. Enforce Optimization Bounds and Constraints
-    from scipy.optimize import Bounds, LinearConstraint
-
     bounds = Bounds([0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
     constraints = LinearConstraint([[1.0, 1.0, 1.0]], lb=[1.0], ub=[1.0])
     initial_guess = [0.3333, 0.3333, 0.3333]

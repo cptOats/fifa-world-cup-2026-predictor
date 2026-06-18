@@ -1,29 +1,12 @@
-"""World Football Elo Rating and Match Prediction Engine.
-
-This module provides a class-based implementation of the custom World Football Elo
-rating system. It tracks continuous team capability values across chronological
-historical datasets, evaluates logistic win expectancies, applies goal-differential
-multiplier scalars, and maps finalized ratings back into discrete expected score lines.
-"""
+"""Dynamic Elo Rating Model."""
 
 import numpy as np
 import pandas as pd
 
 
 class EloEngine:
-    """A thermodynamic rating system that evaluates and tracks football team capabilities.
+    """A thermodynamic rating system that evaluates and tracks football team capabilities."""
 
-    This engine implements a rolling rating mechanism where points are traded between
-    opponents based on match outcomes relative to pre-match logistic expectancies. It
-    supports dynamic goal margin weighting index adjustments to prevent rating dilution
-    during high-scoring matches.
-
-    Attributes:
-        k_factor (int): Controls the maximum point volatility scale per match update.
-        default_elo (int): Initial baseline score assigned to unrated team entities.
-        ratings (dict[str, float]): Dynamic ledger mapping country name strings to
-            their running calculated Elo rating floats.
-    """
 
     def __init__(self, k_factor=40, default_elo=1500):
         """Initializes the Elo engine with baseline scaling constraints."""
@@ -31,33 +14,20 @@ class EloEngine:
         self.default_elo = default_elo
         self.ratings = {}
 
+
     def get_rating(self, team):
-        """Safely fetches a team's current rating, initializing it if absent.
+        """Safely fetches a team's current rating, initializing it if absent."""
 
-        Args:
-            team (str): Standardized country string name of the target team.
-
-        Returns:
-            float: The current running Elo rating score assigned to the team.
-        """
         if team not in self.ratings:
             self.ratings[team] = self.default_elo
         return self.ratings[team]
 
+
     def _calculate_expected_score(
         self, r_home, r_away, is_neutral=0, home_advantage=100
     ):
-        """Computes the logistic win expectancy for a matchup incorporating venue states.
+        """Computes the logistic win expectancy for a matchup incorporating venue states."""
 
-        Args:
-            r_home (float): Pre-match Elo rating float assigned to the home side.
-            r_away (float): Pre-match Elo rating float assigned to the away side.
-            is_neutral (int, optional): Binary marker flag (0 or 1) indicating neutral turf.
-            home_advantage (int, optional): Flat rating point inflation advantage for hosting.
-
-        Returns:
-            tuple[float, float]: Win expectation probabilities for home and away sides.
-        """
         # Symmetrical neutrality override: Host premium collapses to 0 on neutral grounds
         actual_home_adv = 0 if is_neutral == 1 else home_advantage
 
@@ -65,16 +35,10 @@ class EloEngine:
         w_away = 1.0 - w_home
         return w_home, w_away
 
+
     def _get_goal_margin_multiplier(self, home_goals, away_goals):
-        """Calculates the standard World Football Elo goal differential index scalar.
+        """Calculates the standard World Football Elo goal differential index scalar."""
 
-        Args:
-            home_goals (int): Integer score achieved by the designated home side.
-            away_goals (int): Integer score achieved by the designated away side.
-
-        Returns:
-            float: The calculated multiplier factor ($G$) used to scale ratings updates.
-        """
         goal_diff = abs(home_goals - away_goals)
         if goal_diff <= 1:
             return 1.0
@@ -83,12 +47,10 @@ class EloEngine:
         else:
             return (11.0 + goal_diff) / 8.0
 
-    def fit(self, historical_matches_df: pd.DataFrame):
-        """Processes a match ledger chronologically to update team ratings step-by-step.
 
-        Args:
-            historical_matches_df (pd.DataFrame): Dataframe containing historical results.
-        """
+    def fit(self, historical_matches_df: pd.DataFrame):
+        """Processes a match ledger chronologically to update team ratings step-by-step."""
+
         # Structural safeguard: Enforce strict sequence resolution across rolling timelines
         sorted_matches = historical_matches_df.sort_values(by="date").copy()
 
@@ -125,21 +87,11 @@ class EloEngine:
             self.ratings[home] += current_k * g_factor * (actual_home - w_home)
             self.ratings[away] += current_k * g_factor * (actual_away - w_away)
 
+
     def predict_elo_match(
         self, home_team, away_team, is_neutral=0, baseline_goals=1.35, alpha=2.2
     ):
-        """Translates final Elo delta vectors back into discrete integer score lines.
-
-        Args:
-            home_team (str): Standardized country string name of the home team.
-            away_team (str): Standardized country string name of the away team.
-            is_neutral (int, optional): Binary marker flag (0 or 1) indicating neutral turf.
-            baseline_goals (float, optional): Average expected single-side goals parameter.
-            alpha (float, optional): Sensitivity multiplier mapping Elo gaps to goal counts.
-
-        Returns:
-            dict[str, Any]: Results dictionary tracking predicted goals and winner markers.
-        """
+        """Translates final Elo delta vectors back into discrete integer score lines."""
         r_home = self.get_rating(home_team)
         r_away = self.get_rating(away_team)
 

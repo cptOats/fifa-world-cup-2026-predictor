@@ -46,7 +46,7 @@ typeCheckingMode = "standard"  # Robust type safety without pedantic noise
 #reportUnknownArgumentType = false
 #reportUnknownParameterType = false
 #reportMissingParameterType = false
-#reportMissingTypeStubs = false
+reportMissingTypeStubs = false
 
 [tool.ruff]
 

@@ -1,8 +1,4 @@
-"""Data Transformation, Entity Resolution, and Feature Engineering Layer.
-
-Data cleaning to execute rigid string validation gates, neutralizing downstream entity mismatch errors.
-Handles temporal slicing, and compiles optimized feature matrices for model consumption.
-"""
+"""Data Transformation, Entity Resolution, and Feature Engineering Layer."""
 
 import logging
 import os
@@ -27,11 +23,8 @@ DATACAMP_TO_KAGGLE = {
 def load_historical_name_map(
     former_names_path: str = "former_names.csv",
 ) -> dict[str, str]:
-    """Loads former_names.csv and builds a defensive, accent-normalized mapping dictionary.
+    """Loads former_names.csv and builds a defensive, accent-normalized mapping dictionary."""
 
-    Returns:
-        dict[str, str]: A lookup dictionary mapping historical team names to modern unified names.
-    """
     if not os.path.exists(former_names_path):
         return {}
 
@@ -62,21 +55,8 @@ def load_historical_name_map(
 
 
 def _validate_entity_resolution(translation_dict: dict[str, str]) -> None:
-    """Validates naming alignment between upcoming tournament fixtures and historical logs.
+    """Validates naming alignment between upcoming tournament fixtures and historical logs."""
 
-    Maps current tournament fixture team names using the provided translation dictionary
-    and checks them against known historical team entities in the match ledger. Known regional
-    playoff placeholder strings are safely bypassed. If an unmapped country variant is
-    discovered, execution is halted with actionable error logging.
-
-    Args:
-        translation_dict (dict[str, str]): A dictionary mapping source string entities
-            (e.g., DataCamp keys) to standardized target naming equivalents (e.g., Kaggle keys).
-
-    Raises:
-        LookupError: If unrecognized country name string variants remain unresolved
-            after applying the translation mapping step.
-    """
     raw_dir = os.path.join("data", "raw")
     fixtures_df = pd.read_csv(os.path.join(raw_dir, "group_fixtures.csv"))
 
@@ -124,21 +104,11 @@ def _validate_entity_resolution(translation_dict: dict[str, str]) -> None:
         raise LookupError("Pipeline halted due to unresolved entity names.")
 
 
-def prepare_historical_features(translation_dict: dict[str, str]) -> str:
-    """Ingests raw match data, verifies structural formatting, and builds core feature metrics.
+def prepare_historical_features(
+    translation_dict: dict[str, str], training_variables: dict[str, str | float]
+) -> str:
+    """Ingests raw match data, verifies structural formatting, and builds core feature metrics."""
 
-    Triggers a defensive entity verification gate before parsing matrix logic. Once validated,
-    it maps historical country variants to modern nomenclature, filters records using a
-    calibrated multi-cycle time window, applies match importance weights, and exports results.
-
-    Args:
-        translation_dict (dict[str, str]): A dictionary mapping source string entities
-            to master historical naming conventions.
-
-    Returns:
-        str: The localized absolute file path where the completed Apache Parquet matrix checkpoint
-            was written.
-    """
     # Execute defensive string verification gate before handling any heavy matrix logic
     _validate_entity_resolution(translation_dict)
 
@@ -163,18 +133,17 @@ def prepare_historical_features(translation_dict: dict[str, str]) -> str:
             )
 
     # Apply Modern Era Time Slice
-    TIME_SLICE_START = "1998-01-01"
-    START_OF_TOURNAMENT = "2026-06-11"
-
     modern_df = results_df[
-        (results_df["date"] >= TIME_SLICE_START)
-        & (results_df["date"] < START_OF_TOURNAMENT)
+        (results_df["date"] >= training_variables["time_slice_start"])
+        & (results_df["date"] < training_variables["start_of_tournament"])
     ].copy()
 
     # Assign Dynamic Match Weights
-    FRIENDLY_WEIGHT = 0.4
+
     modern_df["match_weight"] = np.where(
-        modern_df["tournament"] == "Friendly", FRIENDLY_WEIGHT, 1.0
+        modern_df["tournament"] == "Friendly",
+        training_variables["friendly_weight"],
+        1.0,
     )
 
     # Core Feature Generation
@@ -205,18 +174,8 @@ def prepare_historical_features(translation_dict: dict[str, str]) -> str:
 
 
 def get_venue_country(venue_string: str) -> str:
-    """Parses stadium text parameters to map the physical hosting nation country.
+    """Parses stadium text parameters to map the physical hosting nation country."""
 
-    Inspects localized string tokens to correctly tag structural home-field environment
-    advantages across the 2026 multi-host landscape (USA, Mexico, Canada).
-
-    Args:
-        venue_string (str): The descriptive stadium name string from the schedule ledger.
-
-    Returns:
-        str: Standardized string name representation of the host country
-            ("Mexico", "Canada", or "United States").
-    """
     venue_lower = venue_string.lower()
     if (
         "mexico" in venue_lower
@@ -228,11 +187,3 @@ def get_venue_country(venue_string: str) -> str:
         return "Canada"
     else:
         return "United States"
-
-
-if __name__ == "__main__":
-    # Standalone developer manual cache rebuilding
-    print(
-        "🔄 Standalone execution triggered. Rebuilding historical match feature matrix..."
-    )
-    prepare_historical_features(DATACAMP_TO_KAGGLE)

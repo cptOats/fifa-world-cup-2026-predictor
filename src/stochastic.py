@@ -1,15 +1,12 @@
-"""Stochastic Simulation and Probabilistic Forecasting Layer.
+"""Stochastic Simulation and Probabilistic Forecasting Engine."""
 
-This module houses the master Monte Carlo orchestration engine. It bypasses
-repetitive model evaluations during deep iteration runs by pre-computing a vectorized
-consensus parameter matrix cache (O(1) lookup complexity). It handles thousands of
-randomized tournament simulations to compile explicit survival probabilities from the
-Group Stage through to the Final.
-"""
+import json
+from collections import Counter
 
 import numpy as np
 import pandas as pd
 
+from src.match_engine import batch_evaluate_consensus, simulate_stochastic_match
 from src.router import (
     allocate_third_places,
     extract_best_third_places,
@@ -30,42 +27,14 @@ def run_monte_carlo_master(
     feature_columns,
     latest_team_form,
     blend_weights,
+    match_rules,
     n_simulations=10000,
     use_prior_nudge=False,
     nudge_strength=1.5,
     team_power=None,
 ):
-    r"""Executes randomized tournament simulations using an optimized global matchup cache.
+    """Executes randomized tournament simulations using an optimized global matchup cache."""
 
-    Optimizes performance by evaluating all possible matchup combinations (**4,512** vectors)
-    across neutral and non-neutral states through the underlying machine learning layers in
-    a single vectorized batch before spawning the simulation loop.
-
-    Match outcomes are drawn directly from independent Poisson distributions utilizing
-    the pre-calculated ensemble consensus intensities ($\lambda$). Regular integer draws
-    in knockout rounds trigger a 30-minute Extra Time Poisson extension containing a decay scalar
-    for fatigue, while sudden-death penalty ties are resolved via randomized draws
-    weighted by relative team Elo vectors.
-
-    Args:
-        group_fixtures (pd.DataFrame): Dataframe tracking initial structural group stage pairs.
-        raw_knockout_template (pd.DataFrame): Master scheduling bracket layout spreadsheet.
-        ratings (dict): Base historical Poisson attack and defense metrics per team.
-        g_home (float): Dataset global average score metric for home-side goal references.
-        g_away (float): Dataset global average score metric for away-side goal references.
-        g_neutral (float): Dataset global average score metric for neutral venue references.
-        elo_engine (EloEngine): Pre-fitted tracking object instance evaluating team Elo scores.
-        xgb_home (xgb.XGBRegressor): Pre-fitted tree regressor tracking home goal counts.
-        xgb_away (xgb.XGBRegressor): Pre-fitted tree regressor tracking away goal counts.
-        feature_columns (list[str]): Explicit string column layout index passed to ML frames.
-        latest_team_form (dict): Current rolling exponentially weighted statistics per team.
-        blend_weights (dict[str, float]): Calibrated optimal consensus weight coefficients.
-        n_simulations (int, optional): Total iteration volume of randomized parallel universes.
-
-    Returns:
-        tuple[pd.DataFrame, dict]: Master survival dashboard matrix and an empty metadata log dictionary.
-    """
-    # Initialize NumPy Generator with a fixed seed
     rng = np.random.default_rng(seed=69)
 
     participating_teams = list(
@@ -73,7 +42,6 @@ def run_monte_carlo_master(
         | set(group_fixtures["away_team"].unique())
     )
 
-    # 1. Initialize Global Probability Counters
     metrics = {
         team: {
             "Group Stage Exit": 0,
@@ -88,157 +56,38 @@ def run_monte_carlo_master(
         for team in participating_teams
     }
 
-    ET_MULTIPLIER = 1 / 3
-    FATIGUE_FACTOR = 0.80
-
-    # --- VECTORIZED MATCHUP MATRIX PRE-COMPUTATION ---
+    # 1. GENERATE ALL POSSIBLE MATCHUP KEYS
     matchup_keys = []
     unique_venues = list(group_fixtures["venue_country"].unique())
-
-    # Build forward and swapped feature matrices
-    rows_fwd = []
-    rows_swp = []
-
-    def _build_xgb_dict(h, a, is_neut):
-        return {
-            "home_elo_rating": elo_engine.get_rating(h),
-            "away_elo_rating": elo_engine.get_rating(a),
-            "elo_differential": elo_engine.get_rating(h) - elo_engine.get_rating(a),
-            "is_neutral_venue": is_neut,
-            "home_team_ewm_gf_4s": latest_team_form[h]["ewm_gf_4s"],
-            "home_team_ewm_ga_4s": latest_team_form[h]["ewm_ga_4s"],
-            "home_team_ewm_wr_4s": latest_team_form[h]["ewm_wr_4s"],
-            "home_team_ewm_gf_10s": latest_team_form[h]["ewm_gf_10s"],
-            "home_team_ewm_ga_10s": latest_team_form[h]["ewm_ga_10s"],
-            "home_team_ewm_wr_10s": latest_team_form[h]["ewm_wr_10s"],
-            "away_team_ewm_gf_4s": latest_team_form[a]["ewm_gf_4s"],
-            "away_team_ewm_ga_4s": latest_team_form[a]["ewm_ga_4s"],
-            "away_team_ewm_wr_4s": latest_team_form[a]["ewm_wr_4s"],
-            "away_team_ewm_gf_10s": latest_team_form[a]["ewm_gf_10s"],
-            "away_team_ewm_ga_10s": latest_team_form[a]["ewm_ga_10s"],
-            "away_team_ewm_wr_10s": latest_team_form[a]["ewm_wr_10s"],
-        }
-
     for v_country in unique_venues:
         for h in participating_teams:
             for a in participating_teams:
-                if h == a:
-                    continue
-                is_neutral_flag = 0 if (h == v_country or a == v_country) else 1
-                matchup_keys.append((h, a, v_country))
-                rows_fwd.append(_build_xgb_dict(h, a, is_neutral_flag))
-                rows_swp.append(_build_xgb_dict(a, h, is_neutral_flag))
+                if h != a:
+                    matchup_keys.append((h, a, v_country))
 
-    df_fwd = pd.DataFrame(rows_fwd)[feature_columns]
-    df_swp = pd.DataFrame(rows_swp)[feature_columns]
+    # 2. CALL THE CENTRALIZED MATCH ENGINE BATCH PROCESSOR
+    lambda_cache = batch_evaluate_consensus(
+        matchup_keys=matchup_keys,
+        ratings=ratings,
+        g_home=g_home,
+        g_away=g_away,
+        g_neutral=g_neutral,
+        blend_weights=blend_weights,
+        elo_engine=elo_engine,
+        match_rules=match_rules,
+        xgb_home=xgb_home,
+        xgb_away=xgb_away,
+        feature_columns=feature_columns,
+        latest_team_form=latest_team_form,
+        use_prior_nudge=use_prior_nudge,
+        nudge_strength=nudge_strength,
+        team_power=team_power,
+    )
 
-    # Batch execute both perspectives
-    xgb_h_fwd = xgb_home.predict(df_fwd)
-    xgb_a_fwd = xgb_away.predict(df_fwd)
-    xgb_h_swp = xgb_home.predict(df_swp)
-    xgb_a_swp = xgb_away.predict(df_swp)
-
-    lambda_cache = {}
-    for idx, (h, a, v_country) in enumerate(matchup_keys):
-        is_neutral_flag = 0 if (h == v_country or a == v_country) else 1
-
-        # RESOLVE MIRRORED XGBOOST INFERENCE
-        if h == v_country:
-            xgb_h_val = xgb_h_fwd[idx]
-            xgb_a_val = xgb_a_fwd[idx]
-        elif a == v_country:
-            xgb_h_val = xgb_a_swp[
-                idx
-            ]  # Team A gets the 'away' perspective of the swapped model
-            xgb_a_val = xgb_h_swp[
-                idx
-            ]  # Team B gets the 'home' perspective of the swapped model
-        else:
-            xgb_h_val = (xgb_h_fwd[idx] + xgb_a_swp[idx]) / 2.0
-            xgb_a_val = (xgb_a_fwd[idx] + xgb_h_swp[idx]) / 2.0
-
-        # Directional Poisson verification inside cache loop
-        if h == v_country:
-            h_poi = (
-                ratings.get(h, {}).get("attack", 1)
-                * ratings.get(a, {}).get("defense", 1)
-                * g_home
-            )
-            a_poi = (
-                ratings.get(a, {}).get("attack", 1)
-                * ratings.get(h, {}).get("defense", 1)
-                * g_away
-            )
-        elif a == v_country:
-            h_poi = (
-                ratings.get(h, {}).get("attack", 1)
-                * ratings.get(a, {}).get("defense", 1)
-                * g_away
-            )
-            a_poi = (
-                ratings.get(a, {}).get("attack", 1)
-                * ratings.get(h, {}).get("defense", 1)
-                * g_home
-            )
-        else:
-            h_poi = (
-                ratings.get(h, {}).get("attack", 1)
-                * ratings.get(a, {}).get("defense", 1)
-                * g_neutral
-            )
-            a_poi = (
-                ratings.get(a, {}).get("attack", 1)
-                * ratings.get(h, {}).get("defense", 1)
-                * g_neutral
-            )
-
-        elo_meta = elo_engine.predict_elo_match(h, a, is_neutral=is_neutral_flag)
-
-        l_h = (
-            (blend_weights["poisson"] * h_poi)
-            + (blend_weights["elo"] * elo_meta["predicted_home_goals"])
-            + (blend_weights["xgb"] * xgb_h_val)
-        )
-        l_a = (
-            (blend_weights["poisson"] * a_poi)
-            + (blend_weights["elo"] * elo_meta["predicted_away_goals"])
-            + (blend_weights["xgb"] * xgb_a_val)
-        )
-
-        # Apply the Bayesian Prior Nudge directly to the baseline expected intensities
-        if use_prior_nudge and team_power:
-            prior_nudge = (
-                (team_power.get(h, 75) - team_power.get(a, 75)) / 100 * nudge_strength
-            )
-            l_h = max(0.1, l_h + prior_nudge)
-            l_a = max(0.1, l_a - prior_nudge)
-
-        corners_exp = (
-            5.5
-            * ratings.get(h, {}).get("attack", 1)
-            * ratings.get(a, {}).get("defense", 1)
-        ) + (
-            5.5
-            * ratings.get(a, {}).get("attack", 1)
-            * ratings.get(h, {}).get("defense", 1)
-        )
-        yellows_exp = (
-            3.0
-            * ratings.get(h, {}).get("defense", 1)
-            * ratings.get(a, {}).get("attack", 1)
-        ) + (
-            3.0
-            * ratings.get(a, {}).get("defense", 1)
-            * ratings.get(h, {}).get("attack", 1)
-        )
-
-        lambda_cache[(h, a, v_country)] = (l_h, l_a, corners_exp, yellows_exp)
-
-    # Convert core dataframes to lightweight dictionaries to completely eliminate iteration overhead
     group_fixtures_list = group_fixtures.to_dict(orient="records")
     knockout_template_list = raw_knockout_template.to_dict(orient="records")
 
-    # 2. Start the Optimized Master Monte Carlo Loop
+    # 3. START THE OPTIMIZED MASTER MONTE CARLO LOOP
     for _ in range(n_simulations):
         group_results = []
 
@@ -250,10 +99,7 @@ def run_monte_carlo_master(
                 row["home_team"],
                 row["away_team"],
             )
-
-            # Extract venue directly to query our O(1) cache
-            venue_country = row["venue_country"]
-            l_h, l_a, c_exp, y_exp = lambda_cache[(home, away, venue_country)]
+            l_h, l_a, c_exp, y_exp = lambda_cache[(home, away, row["venue_country"])]
 
             group_results.append(
                 {
@@ -271,8 +117,7 @@ def run_monte_carlo_master(
                 }
             )
 
-        sim_fixtures_df = pd.DataFrame(group_results)
-        tables = resolve_group_tables(sim_fixtures_df)
+        tables = resolve_group_tables(group_results)
         top_thirds = extract_best_third_places(tables)
         third_place_assignments = allocate_third_places(top_thirds)
 
@@ -281,16 +126,17 @@ def run_monte_carlo_master(
 
         for team in participating_teams:
             pos = tables[tables["team"] == team]["position"].values[0]
-            if pos == 1 or pos == 2:
-                metrics[team]["Round of 32"] += 1
-            elif pos == 3 and team in third_place_assignments.values():
+            if (
+                pos == 1
+                or pos == 2
+                or (pos == 3 and team in third_place_assignments.values())
+            ):
                 metrics[team]["Round of 32"] += 1
             else:
                 metrics[team]["Group Stage Exit"] += 1
 
         # --- PHASE B: SEQUENTIAL KNOCKOUT WATERFALL SAMPLING ---
-        match_winners = {}
-        match_losers = {}
+        match_winners, match_losers = {}, {}
 
         for row in knockout_template_list:
             m_id, r_name, slot_home, slot_away = (
@@ -300,64 +146,56 @@ def run_monte_carlo_master(
                 row["slot_away"],
             )
 
-            if "Winner Group" in slot_home:
-                home = winners[slot_home.replace("Winner Group ", "").strip()]
-            elif "Runner-up Group" in slot_home:
-                home = runners[slot_home.replace("Runner-up Group ", "").strip()]
-            elif "Best 3rd" in slot_home:
-                home = third_place_assignments[m_id]
-            elif "Winner Match" in slot_home:
-                home = match_winners[
-                    int(slot_home.replace("Winner Match ", "").strip())
-                ]
-            elif "Loser Match" in slot_home:
-                home = match_losers[int(slot_home.replace("Loser Match ", "").strip())]
-            else:
-                home = slot_home
+            # (Omitted dict mapping for brevity, same as your original resolution logic)
+            home = (
+                winners[slot_home.replace("Winner Group ", "").strip()]
+                if "Winner Group" in slot_home
+                else runners[slot_home.replace("Runner-up Group ", "").strip()]
+                if "Runner-up Group" in slot_home
+                else third_place_assignments[m_id]
+                if "Best 3rd" in slot_home
+                else match_winners[int(slot_home.replace("Winner Match ", "").strip())]
+                if "Winner Match" in slot_home
+                else match_losers[int(slot_home.replace("Loser Match ", "").strip())]
+                if "Loser Match" in slot_home
+                else slot_home
+            )
 
-            if "Winner Group" in slot_away:
-                away = winners[slot_away.replace("Winner Group ", "").strip()]
-            elif "Runner-up Group" in slot_away:
-                away = runners[slot_away.replace("Runner-up Group ", "").strip()]
-            elif "Best 3rd" in slot_away:
-                away = third_place_assignments[m_id]
-            elif "Winner Match" in slot_away:
-                away = match_winners[
-                    int(slot_away.replace("Winner Match ", "").strip())
-                ]
-            elif "Loser Match" in slot_away:
-                away = match_losers[int(slot_away.replace("Loser Match ", "").strip())]
-            else:
-                away = slot_away
+            away = (
+                winners[slot_away.replace("Winner Group ", "").strip()]
+                if "Winner Group" in slot_away
+                else runners[slot_away.replace("Runner-up Group ", "").strip()]
+                if "Runner-up Group" in slot_away
+                else third_place_assignments[m_id]
+                if "Best 3rd" in slot_away
+                else match_winners[int(slot_away.replace("Winner Match ", "").strip())]
+                if "Winner Match" in slot_away
+                else match_losers[int(slot_away.replace("Loser Match ", "").strip())]
+                if "Loser Match" in slot_away
+                else slot_away
+            )
 
-            # Extract venue directly to pull from the consensus parameters cache
-            venue_country = row["venue_country"]
-            l_h, l_a, _, _ = lambda_cache[(home, away, venue_country)]
+            l_h, l_a, _, _ = lambda_cache[(home, away, row["venue_country"])]
 
-            h_goals = rng.poisson(l_h)
-            a_goals = rng.poisson(l_a)
+            # CENTRALIZED STOCHASTIC MATCH RESOLUTION
+            h_goals_arr, a_goals_arr = simulate_stochastic_match(
+                l_h,
+                l_a,
+                elo_engine.get_rating(home),
+                elo_engine.get_rating(away),
+                rng,
+                match_rules=match_rules,
+                is_knockout=True,
+                n_runs=1,
+            )
 
-            if h_goals == a_goals:
-                h_goals += rng.poisson(l_h * (ET_MULTIPLIER * FATIGUE_FACTOR))
-                a_goals += rng.poisson(l_a * (ET_MULTIPLIER * FATIGUE_FACTOR))
-
-                if h_goals == a_goals:
-                    h_elo_stat = elo_engine.get_rating(home)
-                    a_elo_stat = elo_engine.get_rating(away)
-                    winner = (
-                        home
-                        if rng.random() < (h_elo_stat / (h_elo_stat + a_elo_stat))
-                        else away
-                    )
-                else:
-                    winner = home if h_goals > a_goals else away
-            else:
-                winner = home if h_goals > a_goals else away
-
+            winner = home if h_goals_arr[0] > a_goals_arr[0] else away
             loser = away if winner == home else home
+
             match_winners[m_id] = winner
             match_losers[m_id] = loser
 
+            # Tracking stage progression
             if r_name == "Round of 32":
                 metrics[winner]["Round of 16"] += 1
             elif r_name == "Round of 16":
@@ -371,7 +209,7 @@ def run_monte_carlo_master(
             elif r_name == "Final":
                 metrics[winner]["Champion"] += 1
 
-    # 3. Compile and Format the Master Probability Table
+    # 4. COMPILE MASTER PROBABILITY TABLE
     prob_list = []
     for team, stages in metrics.items():
         prob_list.append(
@@ -393,4 +231,51 @@ def run_monte_carlo_master(
         .reset_index(drop=True)
     )
 
-    return prob_df, {"lambda_cache": lambda_cache}
+    # 5. PRE-COMPUTE FAT ARTIFACT FOR THE DASHBOARD SANDBOX
+    compiled_matchups = []
+    fat_runs = 10000
+
+    for (h, a, cache_neutral), (l_h, l_a, c_exp, y_exp) in lambda_cache.items():
+        elo_h = elo_engine.get_rating(h)
+        elo_a = elo_engine.get_rating(a)
+
+        # Vectorized Group Stage Probabilities
+        grp_h, grp_a = simulate_stochastic_match(
+            l_h, l_a, elo_h, elo_a, rng, match_rules, is_knockout=False, n_runs=fat_runs
+        )
+
+        grp_win_h = np.sum(grp_h > grp_a) / fat_runs * 100
+        grp_win_a = np.sum(grp_a > grp_h) / fat_runs * 100
+        grp_draw = np.sum(grp_h == grp_a) / fat_runs * 100
+
+        scores = [f"{sh} - {sa}" for sh, sa in zip(grp_h, grp_a)]
+        top_scores = Counter(scores).most_common(3)
+        top_str = json.dumps(
+            [{"score": s, "pct": (c / fat_runs) * 100} for s, c in top_scores]
+        )
+
+        # Vectorized Knockout Stage Probabilities (Automated ET/Pens resolution)
+        ko_h, ko_a = simulate_stochastic_match(
+            l_h, l_a, elo_h, elo_a, rng, match_rules, is_knockout=True, n_runs=fat_runs
+        )
+
+        ko_win_h = np.sum(ko_h > ko_a) / fat_runs * 100
+        ko_win_a = np.sum(ko_a > ko_h) / fat_runs * 100
+
+        compiled_matchups.append(
+            {
+                "home_team": h,
+                "away_team": a,
+                "is_neutral_venue": cache_neutral,
+                "ensemble_lambda_home": l_h,
+                "ensemble_lambda_away": l_a,
+                "grp_win_home": grp_win_h,
+                "grp_draw": grp_draw,
+                "grp_win_away": grp_win_a,
+                "ko_win_home": ko_win_h,
+                "ko_win_away": ko_win_a,
+                "top_scorelines_json": top_str,
+            }
+        )
+
+    return prob_df, {"fat_matchups": compiled_matchups}

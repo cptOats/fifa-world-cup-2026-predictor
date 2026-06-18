@@ -1,11 +1,4 @@
-"""Poisson Statistical Modeling and Match Prediction Engine.
-
-This module provides the core probabilistic execution layers for the tournament
-prediction pipeline. It calculates weighted historical attack and defense strengths
-for international football teams, generates leak-proof out-of-fold (OOF) baseline
-expectations via chronological cross-validation, and provides a low-scoring
-Dixon-Coles coupling adjustment layer to predict integer match scores.
-"""
+"""Dixon-Coles Poisson Model."""
 
 import json
 import math
@@ -15,26 +8,15 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import TimeSeriesSplit
 
-ARTIFACTS_DIR = os.path.join("data", "artifacts")
-POISSON_PATH = os.path.join(ARTIFACTS_DIR, "poisson_artifacts.json")
-
 
 def train_poisson_ratings(
     poisson_alpha=0.00047,
 ) -> tuple[dict[str, dict[str, float]], float, float, float]:
-    """Calculates weighted historical attack and defense strengths for all teams.
+    """Calculates weighted historical attack and defense strengths for all teams."""
 
-    Checks the local directory for a pre-compiled JSON cache artifact. If an archive
-    is missing, it reads the modern processed Parquet match logs, weights outcomes
-    by fixture importance context, maps aggregated goals against global baselines,
-    and saves the calculated parameters to disk to avoid retraining.
+    ARTIFACTS_DIR = os.path.join("data", "artifacts")
+    POISSON_PATH = os.path.join(ARTIFACTS_DIR, "poisson_artifacts.json")
 
-    Args:
-        poisson_alpha=0.00047: time decay.
-
-    Returns:
-        tuple: (ratings_dict, global_home_avg, global_away_avg, global_neutral_avg)
-    """
     if os.path.exists(POISSON_PATH):
         with open(POISSON_PATH, "r") as f:
             artifacts = json.load(f)
@@ -173,25 +155,8 @@ def train_poisson_ratings(
 
 
 def train_poisson_oof_predictions(feature_matrix, poisson_alpha=0.00047):
-    r"""Calculates leak-proof, continuous out-of-fold Poisson predictions via cross-validation.
+    """Calculates leak-proof, continuous out-of-fold Poisson predictions via cross-validation."""
 
-    Uses a scikit-learn `TimeSeriesSplit` to slice the master feature matrix along
-    chronological lines. For each fold, it fits isolated training-set Poisson attack/defense
-    coefficients and scores the unseen testing horizon, outputting unbiased baseline numbers
-    specifically tailored for downstream meta-blender optimization.
-
-    Args:
-        feature_matrix (pd.DataFrame): Master feature matrix tracking historical matches,
-            containing `home_team`, `away_team`, `home_score`, and `away_score` data.
-        poisson_alpha=0.00047: time decay.
-
-    Returns:
-        tuple: A combination containing:
-            - oof_home_preds (np.ndarray): Array of float expectations ($\lambda$) for the
-                home-side goals generated when records were out-of-fold.
-            - oof_away_preds (np.ndarray): Array of float expectations ($\lambda$) for the
-                away-side goals generated when records were out-of-fold.
-    """
     n_matches = len(feature_matrix)
     oof_home_preds = np.zeros(n_matches)
     oof_away_preds = np.zeros(n_matches)
@@ -288,23 +253,8 @@ def train_poisson_oof_predictions(feature_matrix, poisson_alpha=0.00047):
 def predict_poisson_match(
     home, away, venue_country, ratings, g_home, g_away, g_neutral
 ) -> tuple[float, float, float, float, float]:
-    """Generates expected goals, total corners, and card counts using pure Poisson parameters.
+    """Generates expected goals, total corners, and card counts using pure Poisson parameters."""
 
-    Evaluates relative attack and defense capabilities adjusted for host-nation stadium
-    proximity, feeding rate parameters into the Dixon-Coles discrete matrix solver.
-
-    Args:
-        home (str): Name string identifying the designated home team entity.
-        away (str): Name string identifying the designated away team entity.
-        venue_country (str): Cleaned host nation country string ("Mexico", "Canada", "United States").
-        ratings (dict): Dictionary map of attack and defense team capability coefficients.
-        g_home_avg (float): Global dataset baseline for home goals scored.
-        g_away_avg (float): Global dataset baseline for away goals scored.
-        g_neutral (int): Int cast Boolean 1 = neutral.
-
-    Returns:
-        tuple: Mode scores, corners, cards, and outcome win classification labels.
-    """
     home_rating = ratings.get(home, {"attack": 1.0, "defense": 1.0})
     away_rating = ratings.get(away, {"attack": 1.0, "defense": 1.0})
 
@@ -336,21 +286,9 @@ def predict_poisson_match(
 
     return lambda_home, lambda_away, raw_corners, raw_yellows, raw_reds
 
-
+# Unused function
 def get_dixon_coles_score(lambda_home, lambda_away, rho=-0.10):
-    r"""Evaluates a joint probability grid up to a 5-5 scoreline with low-score coupling.
-
-    Constructs a 6x6 matrix of independent Poisson goal probabilities, applying a
-    Dixon-Coles $\tau$ parameter adjustment layer to fine-tune low-scoring joint states.
-
-    Args:
-        lambda_home (float): Continuous goal intensity parameter expectation for the home side.
-        lambda_away (float): Continuous goal intensity parameter expectation for the away side.
-        rho (float, optional): Dependence factor parameter optimizing low-score inflation.
-
-    Returns:
-        tuple: Calculated discrete goal selection coordinate pair counts (pred_home, pred_away).
-    """
+    """Evaluates a joint probability grid up to a 5-5 scoreline with low-score coupling."""
     best_prob = -1.0
     pred_home, pred_away = 0, 0
 
@@ -383,17 +321,7 @@ def get_dixon_coles_score(lambda_home, lambda_away, rho=-0.10):
 
     return pred_home, pred_away
 
-
+# Unused function
 def _matrix_lambda_calc(lam, k):
-    r"""Evaluates the standard Poisson Probability Mass Function (PMF).
-
-    Runs a mathematical helper calculation to return discrete probability scores.
-
-    Args:
-        lam (float): Continuous distribution mean scale rate parameter ($\lambda$).
-        k (int): Discrete feature frequency target count ($k$).
-
-    Returns:
-        float: Calculated probability value corresponding to exactly $k$ occurrences.
-    """
+    """Evaluates the standard Poisson Probability Mass Function."""
     return (lam**k * math.exp(-lam)) / math.factorial(k)

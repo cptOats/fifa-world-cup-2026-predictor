@@ -51,7 +51,6 @@ def _():
     import os
 
     import marimo as mo
-    import numpy as np
     import pandas as pd
     import plotly.graph_objects as go
 
@@ -90,7 +89,6 @@ def _():
         go,
         json,
         mo,
-        np,
         os,
         pd,
     )
@@ -248,7 +246,7 @@ def _(json, os, pd, run_dropdown):
     # 1. Get the clean folder name string from the dropdown selection state
     run_id = run_dropdown.value
 
-    # 2. 🌟 FIXED: Explicitly reconstruct the accurate path relative to project root
+    # 2. Explicitly reconstruct the accurate path relative to project root
     active_run_dir = os.path.join("data", "runs", run_id)
 
     # 3. Ingest selected run datasets into active dashboard scope
@@ -287,6 +285,8 @@ def _(json, os, pd, run_dropdown):
 
     config = metadata["config"]
     weights = metadata["ensemble_weights"]
+    match_rules = metadata.get("match_rules", {"et_multiplier": 1.0/3.0, "fatigue_factor": 0.80})
+
     return (
         config,
         df_capabilities,
@@ -298,12 +298,12 @@ def _(json, os, pd, run_dropdown):
         has_stochastic,
         run_id,
         weights,
+        match_rules,
     )
 
 
 @app.cell
 def _(config, mo, run_id, weights):
-    # Technical metric banner
     # 1. Resolve clean status strings ahead of time to keep the layout matrix readable
     nudge_status = "🟢 ACTIVE" if config["use_prior_nudge"] else "🔴 DISABLED"
     nudge_val = (
@@ -846,13 +846,13 @@ def _(DARK_THEME, df_tournament, mo, pd):
 
 @app.cell
 def _(DARK_THEME, apply_mission_control_layout, df_tournament, go, mo, np, pd):
-    # 1. Segment the master tournament ledger into distinct execution scopes
     stat_df = df_tournament.copy()
-    stat_df["phase"] = np.where(
-        stat_df["round"].str.startswith("Group"), "Group Stage", "Knockout Stage"
+    stat_df["phase"] = (
+        stat_df["round"]
+        .str.startswith("Group", na=False)
+        .map({True: "Group Stage", False: "Knockout Stage"})
     )
 
-    # 2. Compute absolute tournament-wide sums for our top KPI block and calculations
     t_matches = len(stat_df)
     t_goals = (
         stat_df["predicted_home_goals"].sum() + stat_df["predicted_away_goals"].sum()
@@ -861,7 +861,6 @@ def _(DARK_THEME, apply_mission_control_layout, df_tournament, go, mo, np, pd):
     t_yellows = int(round(stat_df["yellow_cards"].sum()))
     t_reds = int(round(stat_df["red_cards"].sum()))
 
-    # 3. Compute aggregate profiles for each phase
     phase_metrics = []
     for phase_name in ["Group Stage", "Knockout Stage"]:
         phase_sub = stat_df[stat_df["phase"] == phase_name]
@@ -911,10 +910,8 @@ def _(DARK_THEME, apply_mission_control_layout, df_tournament, go, mo, np, pd):
         columns=["Avg Reds", "Total Reds"], errors="ignore"
     )
 
-    # 4. Isolate only stage divisions for graph plotting
     df_graph = df_analytics[df_analytics["Phase"] != "Tournament"].copy()
 
-    # 5. Generate high-fidelity Plotly grouped comparisons for per-game rates
     fig_analytics = go.Figure()
 
     rate_columns = [
@@ -945,7 +942,6 @@ def _(DARK_THEME, apply_mission_control_layout, df_tournament, go, mo, np, pd):
     )
     fig_analytics = apply_mission_control_layout(fig_analytics)
 
-    # 6. Build UI components isolated from each other
     kpi_banner = mo.Html(
         f"""
         <hr style="border-color: #2d2d2d; margin: 20px 0;">
@@ -998,10 +994,8 @@ def _(DARK_THEME, apply_mission_control_layout, df_tournament, go, mo, np, pd):
 
 @app.cell
 def _(DARK_THEME, df_capabilities, mo):
-    # 1. Grab an ordered list of all active countries
     all_countries = sorted(df_capabilities["Country"].unique())
 
-    # 2. Define your controls natively
     team_a_ctrl = mo.ui.dropdown(
         options=all_countries, value=all_countries[0], label="🏷️ TEAM A"
     )
@@ -1013,7 +1007,6 @@ def _(DARK_THEME, df_capabilities, mo):
     is_ko_ctrl = mo.ui.checkbox(label="🏆 Knockout", value=False)
     is_stoch_ctrl = mo.ui.checkbox(label="🎲 Stochastic", value=False)
 
-    # 3. Headings live out here in the Light DOM, so your global 'Inter' styles apply perfectly
     headings = mo.md("""
     ---
 
@@ -1021,7 +1014,6 @@ def _(DARK_THEME, df_capabilities, mo):
     ### ⚔️ INTERACTIVE MATCHUP SANDBOX
     """)
 
-    # 4. Clean container layout structure for the controls only
     layout_text = f"""
     <div style="background: {DARK_THEME["paper"]}; padding: 20px; border-radius: 6px; border: 1px solid #333;">
         <div style="display: flex; gap: 20px; margin-bottom: 15px;">
@@ -1035,35 +1027,25 @@ def _(DARK_THEME, df_capabilities, mo):
     </div>
     """
 
-    # 5. Bind elements via batch
     sandbox_layout = mo.md(layout_text).batch(
         team_a=team_a_ctrl, team_b=team_b_ctrl, is_ko=is_ko_ctrl, is_stoch=is_stoch_ctrl
     )
 
-    # 6. Wrap layout into a buffered form
     sandbox_form = sandbox_layout.form(
         bordered=False,
         submit_button_label="⚡ RUN SIMULATION",
         submit_button_tooltip="Execute the active ensemble blend for this matchup",
     )
 
-    # 7. Render the headings and form stacked together natively
     ui_panel = mo.vstack([headings, sandbox_form])
     ui_panel
     return (sandbox_form,)
 
 
 @app.cell
-def _(DARK_THEME, config, df_matchups, mo, np, sandbox_form):
-    # 1. Absolute silent fallback state before submission occurs
-    mo.stop(
-        sandbox_form.value is None,
-        mo.md(""),
-    )
+def _(DARK_THEME, config, df_matchups, json, mo, sandbox_form, match_rules):
+    mo.stop(sandbox_form.value is None, mo.md(""))
 
-    from src.poisson import get_dixon_coles_score
-
-    # 2. Unpack the cleanly scoped form data
     sim_data = sandbox_form.value
     sim_team_a = sim_data["team_a"]
     sim_team_b = sim_data["team_b"]
@@ -1072,13 +1054,9 @@ def _(DARK_THEME, config, df_matchups, mo, np, sandbox_form):
 
     mo.stop(
         sim_team_a == sim_team_b,
-        mo.md(
-            "> ⚠️ **Simulation Error:** A team cannot play itself. Please select two distinct countries."
-        ),
+        mo.md("> ⚠️ **Simulation Error:** A team cannot play itself."),
     )
 
-    # 3. PURE O(1) LOOKUP FROM PRE-COMPUTED DATA ARTIFACT
-    # Select a stadium country where neither team has a home-court advantage to preserve neutrality
     host_country = "United States"
     if sim_team_a == "United States" or sim_team_b == "United States":
         host_country = "Mexico"
@@ -1089,81 +1067,72 @@ def _(DARK_THEME, config, df_matchups, mo, np, sandbox_form):
         & (df_matchups["is_neutral_venue"] == host_country)
     ]
 
-    if not match_row.empty:
-        lambda_a = float(match_row["ensemble_lambda_home"].values[0])
-        lambda_b = float(match_row["ensemble_lambda_away"].values[0])
-    else:
-        # Fallback security defaults if data boundaries are missing
-        lambda_a, lambda_b = 1.35, 1.35
+    if match_row.empty:
+        mo.stop(
+            True,
+            mo.md("> ⚠️ **Data Missing:** Matchup not found in pre-computed artifact."),
+        )
 
-    # 4. Determine Regulation 90min Score
-    pred_a_goals, pred_b_goals = get_dixon_coles_score(lambda_a, lambda_b)
+    # Extract Pre-Computed Static Values
+    row_data = match_row.iloc[0]
+    lambda_a = float(row_data["ensemble_lambda_home"])
+    lambda_b = float(row_data["ensemble_lambda_away"])
 
-    # 5. Additive Extra Time & Penalty Logic
-    ET_MULTIPLIER = 1 / 3
-    FATIGUE_FACTOR = 0.80
-
-    _has_et, _has_pens = False, False
-    if is_ko and pred_a_goals == pred_b_goals:
-        et_mult = ET_MULTIPLIER * FATIGUE_FACTOR
-        et_lambda_a = lambda_a * et_mult
-        et_lambda_b = lambda_b * et_mult
-
-        et_goals_a, et_goals_b = get_dixon_coles_score(et_lambda_a, et_lambda_b)
-
-        # Accumulate cleanly onto the 90-minute regulation baseline
-        pred_a_goals += et_goals_a
-        pred_b_goals += et_goals_b
-
-        if et_goals_a != et_goals_b:
-            _has_et = True
-        else:
-            _has_pens = True
+    pred_a_goals = int(round(lambda_a))
+    pred_b_goals = int(round(lambda_b))
 
     sim_winner = "Draw"
-    if pred_a_goals > pred_b_goals or (_has_pens and lambda_a >= lambda_b):
+    if pred_a_goals > pred_b_goals:
         sim_winner = sim_team_a
-    elif pred_b_goals > pred_a_goals or (_has_pens and lambda_b > lambda_a):
+    elif pred_b_goals > pred_a_goals:
         sim_winner = sim_team_b
 
-    _et_badge = (
-        '<span style="color: #ff7b54; background: #2a1e1b; padding: 1px 6px; border-radius: 4px; font-size: 9px; font-weight: bold; border: 1px solid #542e23; margin-left: 8px;">⏱️ ET</span>'
-        if _has_et
-        else ""
-    )
-    _pens_badge = (
-        '<span style="color: #e6739f; background: #2a1b24; padding: 1px 6px; border-radius: 4px; font-size: 9px; font-weight: bold; border: 1px solid #4c283c; margin-left: 8px;">🥅 PENS</span>'
-        if _has_pens
-        else ""
-    )
+    # UI Badges
+    _et_badge = ""
+    _pens_badge = ""
 
-    # 6. STOCHASTIC PROBABILITY ENGINE (Dynamic Universe Sizing)
+    if is_ko and sim_winner == "Draw":
+        # Pull configurations dynamically from our active run profile
+        et_multiplier = match_rules.get("et_multiplier", 1.0 / 3.0)
+        fatigue_factor = match_rules.get("fatigue_factor", 0.80)
+
+        # Project full continuous 120-minute timeline curves
+        raw_a_120 = lambda_a * (1.0 + (et_multiplier * fatigue_factor))
+        raw_b_120 = lambda_b * (1.0 + (et_multiplier * fatigue_factor))
+
+        pred_a_goals = int(round(raw_a_120))
+        pred_b_goals = int(round(raw_b_120))
+
+        # 2. Re-evaluate if the tie was broken decisively during the extra 30 minutes
+        if pred_a_goals > pred_b_goals:
+            sim_winner = sim_team_a
+            _et_badge = '<span style="color: #ff7b54; background: #2a1e1b; padding: 1px 6px; border-radius: 4px; font-size: 9px; font-weight: bold; border: 1px solid #542e23; margin-left: 8px;">⏱️ ET</span>'
+        elif pred_b_goals > pred_a_goals:
+            sim_winner = sim_team_b
+            _et_badge = '<span style="color: #ff7b54; background: #2a1e1b; padding: 1px 6px; border-radius: 4px; font-size: 9px; font-weight: bold; border: 1px solid #542e23; margin-left: 8px;">⏱️ ET</span>'
+        else:
+            # 3. If still deadlocked at 120 mins, hand off to penalties
+            sim_winner = sim_team_a if lambda_a >= lambda_b else sim_team_b
+            _pens_badge = '<span style="color: #e6739f; background: #2a1b24; padding: 1px 6px; border-radius: 4px; font-size: 9px; font-weight: bold; border: 1px solid #4c283c; margin-left: 8px;">🥅 PENS</span>'
+
+    # STOCHASTIC PROBABILITY ENGINE (Zero Math, purely reading the JSON row)
     stoch_html = ""
     if is_stoch:
-        # Evaluate if the main tournament run was executed stochastically
-        if config.get("run_monte_carlo", False):
-            # Safe boundary tracking using active configuration parameters
-            runs = int(config.get("monte_carlo_runs", 10000))
+        if is_ko:
+            wins_a = float(row_data["ko_win_home"])
+            wins_b = float(row_data["ko_win_away"])
+            draws = 0.0
         else:
-            # Defensive override: Fall back to a statistically stable, low-overhead baseline
-            runs = 10000
+            wins_a = float(row_data["grp_win_home"])
+            wins_b = float(row_data["grp_win_away"])
+            draws = float(row_data["grp_draw"])
 
-        sims_a = np.random.poisson(lambda_a, runs)
-        sims_b = np.random.poisson(lambda_b, runs)
-
-        wins_a = np.sum(sims_a > sims_b) / runs * 100
-        wins_b = np.sum(sims_b > sims_a) / runs * 100
-        draws = np.sum(sims_a == sims_b) / runs * 100
-
-        # Ingest and sort exact matching score variations
-        scores = [f"{a} - {b}" for a, b in zip(sims_a, sims_b)]
-        from collections import Counter
-
-        top_scores = Counter(scores).most_common(3)
-
+        top_scores = json.loads(row_data["top_scorelines_json"])
         score_cards = []
-        for rank_idx, (score_line, count) in enumerate(top_scores):
-            score_pct = (count / runs) * 100
+
+        for rank_idx, score_data in enumerate(top_scores):
+            score_line = score_data["score"]
+            score_pct = float(score_data["pct"])
             score_cards.append(f"""
                 <div style="flex: 1; background: #1a1a1a; padding: 10px; border-radius: 4px; border: 1px solid #2d2d2d; text-align: center;">
                     <div style="font-size: 10px; color: {DARK_THEME["muted"]}; margin-bottom: 2px; font-weight: bold;">RANK #{rank_idx + 1}</div>
@@ -1177,29 +1146,28 @@ def _(DARK_THEME, config, df_matchups, mo, np, sandbox_form):
 
         stoch_html = f"""
         <div style="border-top: 1px solid #2d2d2d; margin-top: 15px; padding-top: 12px;">
-            <div style="font-size: 11px; color: {DARK_THEME["accent"]}; margin-bottom: 10px; font-weight: bold; letter-spacing: 0.5px;">🎲 MONTE CARLO PROBABILITY DISTRIBUTION ({runs:,} RUNS)</div>
+            <div style="font-size: 11px; color: {DARK_THEME["accent"]}; margin-bottom: 10px; font-weight: bold; letter-spacing: 0.5px;">🎲 PRE-COMPUTED MONTE CARLO DISTRIBUTION</div>
             <div style="display: flex; justify-content: space-between; font-size: 13px; color: #fff; margin-bottom: 14px; padding: 0 4px;">
                 <span>{sim_team_a}: <b>{wins_a:.1f}%</b></span>
                 <span>Draw: <b>{draws:.1f}%</b></span>
                 <span>{sim_team_b}: <b>{wins_b:.1f}%</b></span>
             </div>
-            <div style="font-size: 10px; color: {DARK_THEME["muted"]}; margin-bottom: 6px; font-weight: bold; letter-spacing: 0.25px;">⚽ TOP 3 SCORELINES</div>
+            <div style="font-size: 10px; color: {DARK_THEME["muted"]}; margin-bottom: 6px; font-weight: bold; letter-spacing: 0.25px;">⚽ TOP 3 SCORELINES (90 Min)</div>
             <div style="display: flex; gap: 10px;">
                 {"".join(score_cards)}
             </div>
         </div>
         """
 
-    # 7. Render the Matchup Output Card (Full-Width Formations)
     card_html = f"""
     <div style="background-color: {DARK_THEME["paper"]}; border: 1px solid #00adb5; border-radius: 6px; padding: 16px; margin-top: 20px; font-family: monospace; max-width: 100%;">
         <div style="color: {DARK_THEME["accent"]}; font-size: 11px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; font-weight: bold;">
             <div style="display: flex; align-items: center;">
-                <span>⚡ LIVE SIMULATION</span>
+                <span>⚡ STATIC SIMULATION ARTIFACT</span>
                 {_et_badge}
                 {_pens_badge}
             </div>
-            <span>📍 Neutral Venue</span>
+            <span>📍 Pre-Computed Neutral Venue</span>
         </div>
         <div style="font-size: 18px; display: flex; justify-content: space-between; align-items: center; padding: 6px 0;">
             <span style="font-weight: {"bold" if sim_winner == sim_team_a else "normal"}; color: {"#fff" if sim_winner == sim_team_a else "#888"};">
@@ -1235,13 +1203,12 @@ def _(
     mo,
     sandbox_form,
 ):
-    # Halt execution perfectly until the form is submitted
+
     mo.stop(
         sandbox_form.value is None,
         mo.md(""),
     )
 
-    # 1. Capture current reactive state targets directly from the submitted form
     team_a = sandbox_form.value["team_a"]
     team_b = sandbox_form.value["team_b"]
 
@@ -1250,11 +1217,9 @@ def _(
             "> ⚠️ **Configuration Alert:** Select two distinct country entities to run a comparative matchup profile."
         )
     else:
-        # 2. Extract specific data rows from the compiled capabilities lookup table
         stats_a = df_capabilities[df_capabilities["Country"] == team_a].iloc[0]
         stats_b = df_capabilities[df_capabilities["Country"] == team_b].iloc[0]
 
-        # 3. Construct a side-by-side grouped horizontal comparison chart
         fig_sandbox = go.Figure()
 
         metrics_to_compare = [

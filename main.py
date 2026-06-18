@@ -1,10 +1,4 @@
-"""World Cup Prediction Pipeline Orchestration Script.
-
-This module sets up the execution directory, configures logging parameters,
-ingests historical and current fixture data, aligns team entities, fits baseline
-and machine learning models, optimizes ensemble blend weights,
-and runs deterministic and stochastic (Monte Carlo) tournament simulations.
-"""
+"""World Cup Prediction Pipeline Orchestration Script."""
 
 import datetime
 import json
@@ -16,14 +10,15 @@ import numpy as np
 import pandas as pd
 
 from src.blender import find_optimal_blend_weights
-from src.elo import EloEngine
 from src.features import compile_master_feature_matrix
 from src.ingest import verify_data_layer
-from src.poisson import (
-    predict_poisson_match,
+from src.match_engine import evaluate_match_consensus
+from src.model_elo import EloEngine
+from src.model_poisson import (
     train_poisson_oof_predictions,
     train_poisson_ratings,
 )
+from src.model_xgboost import train_production_xgboost_models
 from src.router import (
     allocate_third_places,
     extract_best_third_places,
@@ -36,17 +31,30 @@ from src.transform import (
     get_venue_country,
     prepare_historical_features,
 )
-from src.xgb import train_production_xgboost_models
 
-# --- MODEL CONFIGURATION TOGGLE ---
+# --- MODEL CONFIGURATION ---
 MODEL_TYPE = "blend"  # "blend", "poisson", "elo", "xgb"
 RUN_MONTE_CARLO = True
-MONTE_CARLO_RUNS = 100  # Recommend 10K+
+MONTE_CARLO_RUNS = 10000  # Recommend 10K+
 USE_PRIOR_NUDGE = True
 NUDGE_STRENGTH = 1.5  # Recommend ~1.5
 FORCE_RETRAIN = True
 
-# --- POWER RATINGS TABLE --- source: https://www.datacamp.com/datalab/w/3da1cc64-5670-441e-8e7b-b948a6a29403
+# --- TRAINING VARIABLES ---
+TRAINING_VARIABLES = {
+    "friendly_weight": 0.4,
+    "time_slice_start": "1998-01-01",
+    "start_of_tournament": "2026-06-11",
+}
+
+# --- TOURNAMENT RULES ---
+MATCH_RULES = {
+    "et_multiplier": 1.0 / 3.0,
+    "fatigue_factor": 0.80,
+    "card_boost_factor": 1.75,
+}
+
+# --- POWER RATINGS --- source: https://www.datacamp.com/datalab/w/3da1cc64-5670-441e-8e7b-b948a6a29403
 TEAM_POWER = {
     "Algeria": 74,
     "Argentina": 95,
@@ -117,25 +125,8 @@ logging.basicConfig(
 
 
 def main():
-    """Executes the end-to-end World Cup prediction pipeline.
+    """Executes the end-to-end World Cup prediction pipeline."""
 
-        This orchestration function manages the entire simulation workflow, which
-        includes data validation, entity resolution, and historical feature engineering.
-        It fits multiple underlying estimators (Poisson Ratings, Elo Engine, and
-        XGBoost Count Models), dynamically calculates optimal consensus blend weights
-        using a bounded SciPy solver, and adjusts predictions with a Bayesian prior nudge.
-
-        The execution handles the sequential logic of the tournament by simulating the
-        full Group Stage using pre-computed venue neutrality layers, routing third-place
-        qualifiers via an optimized static layout matrix, advancing teams through the
-        Knockout Waterfall phase, and optionally spawning parallel stochastic Monte
-        Carlo universes for probabilistic forecasting.
-
-    Raises:
-        AssertionError: If `USE_PRIOR_NUDGE` is active and any participating team in the
-            tournament fixtures cannot be mapped to the `TEAM_POWER` master entity dictionary.
-        ValueError: If `MODEL_TYPE` is configured to an invalid or unsupported string.
-    """
     logging.info(
         f"🚀 Launching World Cup Prediction Pipeline [Engine: {MODEL_TYPE}{nudge_suffix}]"
     )
@@ -154,7 +145,7 @@ def main():
     # --- INFRASTRUCTURE GATES ---
     verify_data_layer()
     logging.info("🔄 Running entity validation and preparing historical features...")
-    saved_path = prepare_historical_features(DATACAMP_TO_KAGGLE)
+    saved_path = prepare_historical_features(DATACAMP_TO_KAGGLE, TRAINING_VARIABLES)
 
     # --- EXPLICIT DATA INGESTION ---
     modern_df = pd.read_parquet(saved_path)
@@ -270,7 +261,7 @@ def main():
                 "ewm_wr_10s": 0.35,
             }
 
-    # Execute Group Stage Simulation
+    # --- GROUP STAGE SIMULATION ---
     logging.info("⚽ Commencing simulation of full Group Stage schedule...")
     group_results = []
 
@@ -280,80 +271,30 @@ def main():
         home = row["home_team"]
         away = row["away_team"]
         venue_country = row["venue_country"]
-        is_neutral = 0 if (home == venue_country or away == venue_country) else 1
 
-        # Extract base estimators parameters
-        lambda_home_poisson, lambda_away_poisson, p_corners, p_yellows, p_reds = (
-            predict_poisson_match(
-                home, away, venue_country, ratings, g_home, g_away, g_neutral
-            )
-        )
-        elo_meta = elo_engine.predict_elo_match(home, away, is_neutral=is_neutral)
-
-        # Define the feature builder inline for symmetrical evaluation
-        def _get_xgb_vec(h_t, a_t, is_neut):
-            return {
-                "home_elo_rating": elo_engine.get_rating(h_t),
-                "away_elo_rating": elo_engine.get_rating(a_t),
-                "elo_differential": elo_engine.get_rating(h_t)
-                - elo_engine.get_rating(a_t),
-                "is_neutral_venue": is_neut,
-                "home_team_ewm_gf_4s": latest_team_form[h_t]["ewm_gf_4s"],
-                "home_team_ewm_ga_4s": latest_team_form[h_t]["ewm_ga_4s"],
-                "home_team_ewm_wr_4s": latest_team_form[h_t]["ewm_wr_4s"],
-                "home_team_ewm_gf_10s": latest_team_form[h_t]["ewm_gf_10s"],
-                "home_team_ewm_ga_10s": latest_team_form[h_t]["ewm_ga_10s"],
-                "home_team_ewm_wr_10s": latest_team_form[h_t]["ewm_wr_10s"],
-                "away_team_ewm_gf_4s": latest_team_form[a_t]["ewm_gf_4s"],
-                "away_team_ewm_ga_4s": latest_team_form[a_t]["ewm_ga_4s"],
-                "away_team_ewm_wr_4s": latest_team_form[a_t]["ewm_wr_4s"],
-                "away_team_ewm_gf_10s": latest_team_form[a_t]["ewm_gf_10s"],
-                "away_team_ewm_ga_10s": latest_team_form[a_t]["ewm_ga_10s"],
-                "away_team_ewm_wr_10s": latest_team_form[a_t]["ewm_wr_10s"],
-            }
-
-        df_fwd = pd.DataFrame([_get_xgb_vec(home, away, is_neutral)])[feature_columns]
-        df_swp = pd.DataFrame([_get_xgb_vec(away, home, is_neutral)])[feature_columns]
-
-        h_fwd = xgb_home.predict(df_fwd)[0]
-        a_fwd = xgb_away.predict(df_fwd)[0]
-        h_swp = xgb_home.predict(df_swp)[0]
-        a_swp = xgb_away.predict(df_swp)[0]
-
-        # MIRRORED INFERENCE ROUTER
-        if home == venue_country:
-            xgb_h_pred, xgb_w_pred = h_fwd, a_fwd
-        elif away == venue_country:
-            xgb_h_pred, xgb_w_pred = a_swp, h_swp
-        else:
-            xgb_h_pred = (h_fwd + a_swp) / 2.0
-            xgb_w_pred = (a_fwd + h_swp) / 2.0
-
-        # THE UNIFIED CONSENSUS EQUATION
-        blend_home_raw = (
-            (blend_weights["poisson"] * lambda_home_poisson)
-            + (blend_weights["elo"] * float(elo_meta["lambda_home"]))
-            + (blend_weights["xgb"] * xgb_h_pred)
-        )
-        blend_away_raw = (
-            (blend_weights["poisson"] * lambda_away_poisson)
-            + (blend_weights["elo"] * float(elo_meta["lambda_away"]))
-            + (blend_weights["xgb"] * xgb_w_pred)
+        # Call Match Engine
+        raw_home, raw_away, p_corners, p_yellows, p_reds = evaluate_match_consensus(
+            home_team=home,
+            away_team=away,
+            venue_country=venue_country,
+            ratings=ratings,
+            g_home_avg=g_home,
+            g_away_avg=g_away,
+            g_neutral_avg=g_neutral,
+            blend_weights=blend_weights,
+            match_rules=MATCH_RULES,
+            elo_engine=elo_engine,
+            xgb_home=xgb_home,
+            xgb_away=xgb_away,
+            feature_columns=feature_columns,
+            latest_team_form=latest_team_form,
+            use_prior_nudge=USE_PRIOR_NUDGE,
+            nudge_strength=NUDGE_STRENGTH,
+            team_power=TEAM_POWER,
         )
 
-        # Apply Bayesian Prior Nudge Uniformly
-        if USE_PRIOR_NUDGE:
-            prior_nudge = (
-                (TEAM_POWER.get(home, 75) - TEAM_POWER.get(away, 75))
-                / 100
-                * NUDGE_STRENGTH
-            )
-            blend_home_raw += prior_nudge
-            blend_away_raw -= prior_nudge
-
-        final_home_goals = int(np.round(max(0, blend_home_raw)))
-        final_away_goals = int(np.round(max(0, blend_away_raw)))
-
+        final_home_goals = int(np.round(max(0, raw_home)))
+        final_away_goals = int(np.round(max(0, raw_away)))
         winner_side = (
             "home"
             if final_home_goals > final_away_goals
@@ -384,7 +325,7 @@ def main():
 
     latest_team_form["__meta_weights__"] = blend_weights
 
-    # Run Sequential Knockout Waterfall
+    # --- KNOCKOUT WATERFALL SIMULATION ---
     logging.info(
         "🌿 Advancing teams and resolving dynamic knockout bracket tree mappings..."
     )
@@ -396,11 +337,15 @@ def main():
         g_away_avg=g_away,
         g_neutral_avg=g_neutral,
         blend_weights=blend_weights,
+        match_rules=MATCH_RULES,
         elo_engine=elo_engine,
         xgb_home=xgb_home,
         xgb_away=xgb_away,
         feature_columns=feature_columns,
         latest_team_form=latest_team_form,
+        use_prior_nudge=USE_PRIOR_NUDGE,
+        nudge_strength=NUDGE_STRENGTH,
+        team_power=TEAM_POWER,
     )
 
     logging.info("🗄️ Consolidating schemas into master unified ledger...")
@@ -499,7 +444,7 @@ def main():
         os.path.join(run_dir, "pre_tournament_capabilities.csv"), index=False
     )
 
-    # Construct and Save the Metadata JSON
+# Construct and Save the Metadata JSON
     run_metadata = {
         "run_id": run_name,
         "timestamp": timestamp,
@@ -510,6 +455,9 @@ def main():
             "use_prior_nudge": USE_PRIOR_NUDGE,
             "nudge_strength": NUDGE_STRENGTH,
         },
+        "training_variables": TRAINING_VARIABLES,
+        "match_rules": MATCH_RULES,
+        "team_power": TEAM_POWER,
         "ensemble_weights": blend_weights,
         "cross_validation_metrics": cv_metrics,
     }
@@ -550,6 +498,7 @@ def main():
             feature_columns=feature_columns,
             latest_team_form=latest_team_form,
             blend_weights=blend_weights,
+            match_rules=MATCH_RULES,
             n_simulations=MONTE_CARLO_RUNS,
             use_prior_nudge=USE_PRIOR_NUDGE,
             nudge_strength=NUDGE_STRENGTH,
@@ -560,24 +509,15 @@ def main():
             os.path.join(run_dir, "monte_carlo_forecast.csv"), index=False
         )
 
-        # Extract the passed-back cache safely to export the pre-compiled matchup database
-        lambda_cache = mc_metadata.get("lambda_cache", {})
-        compiled_matchups = []
-        for (h, a, cache_neutral), (l_h, l_a, c_exp, y_exp) in lambda_cache.items():
-            compiled_matchups.append(
-                {
-                    "home_team": h,
-                    "away_team": a,
-                    "is_neutral_venue": cache_neutral,
-                    "ensemble_lambda_home": l_h,
-                    "ensemble_lambda_away": l_a,
-                }
-            )
-        pd.DataFrame(compiled_matchups).to_csv(
+        # Extract the pre-compiled fat artifact list directly and cast to a DataFrame
+        fat_matchups = mc_metadata.get("fat_matchups", [])
+
+        pd.DataFrame(fat_matchups).to_csv(
             os.path.join(run_dir, "pre_computed_matchups.csv"), index=False
         )
+
         logging.info(
-            "🔮 Stochastic simulation complete. Probability matrix cached to disk."
+            "🔮 Stochastic simulation complete. Pre-computed fat artifacts cached to disk."
         )
     else:
         logging.info(

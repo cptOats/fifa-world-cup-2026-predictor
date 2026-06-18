@@ -1,10 +1,4 @@
-"""Automated Data Ingestion and Infrastructure Gateway Layer.
-
-This module enforces infrastructure gates to verify local dataset availability.
-It validates required tournament structural blueprints from DataCamp and orchestrates
-the automated extraction, recovery, and staging of historical match logs via the
-Kaggle API.
-"""
+"""Automated Data Ingestion and Infrastructure Gateway Layer."""
 
 import logging
 import os
@@ -15,13 +9,7 @@ import kagglehub
 
 
 def _ingest_kaggle_data():
-    """Downloads historical international football results from Kaggle.
-
-    Contacts the Kaggle API using `kagglehub` to pull down the master historical
-    international matches dataset. It initializes local storage paths if they are absent
-    and selectively copies core target artifacts (`results.csv`, `shootouts.csv`,
-    `former_names.csv`) into the raw data staging directory.
-    """
+    """Downloads historical international football results from Kaggle."""
     cache_path = kagglehub.dataset_download(
         "martj42/international-football-results-from-1872-to-2017"
     )
@@ -37,18 +25,8 @@ def _ingest_kaggle_data():
 
 
 def verify_data_layer():
-    """Validates presence of tournament blueprints and manages automated Kaggle recovery.
+    """Validates presence of tournament blueprints and manages automated Kaggle recovery."""
 
-    Acts as the defensive infrastructure gate for the pipeline execution loop. It
-    checks for crucial layout templates. If the foundational files are missing, it
-    blocks runtime execution and streams manual recovery steps to the user. If historical
-    files are missing but templates exist, it triggers the automated Kaggle scraper.
-
-    Raises:
-        SystemExit: If foundational tournament blueprints (`group_fixtures.csv` or
-            `knockout_slots.csv`) are missing, halting the pipeline because layout
-            mapping cannot continue.
-    """
     datacamp_files = [
         os.path.join("data", "raw", "group_fixtures.csv"),
         os.path.join("data", "raw", "knockout_slots.csv"),
