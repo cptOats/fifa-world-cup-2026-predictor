@@ -1,5 +1,7 @@
 """Machine Learning: Gradient-Boosted Count Tree (XGBoost) Model."""
 
+import json
+import logging
 import os
 
 import numpy as np
@@ -9,14 +11,38 @@ from sklearn.model_selection import TimeSeriesSplit
 
 
 def train_production_xgboost_models(feature_matrix, feature_columns, alpha=0.00047):
-    """Trains production XGBoost goal-count models using chronological validation."""
+    """Trains production XGBoost models with automated disk caching for validation states."""
 
-    # 1. Isolate Features, Targets, and Temporal Anchor
+    ARTIFACTS_DIR = os.path.join("data", "artifacts")
+    XGB_OOF_H_PATH = os.path.join(ARTIFACTS_DIR, "xgb_oof_home.npy")
+    XGB_OOF_A_PATH = os.path.join(ARTIFACTS_DIR, "xgb_oof_away.npy")
+    XGB_METRICS_PATH = os.path.join(ARTIFACTS_DIR, "xgb_cv_metrics.json")
+
+    # 1. Cache Hit Check
+    if (
+        os.path.exists(XGB_OOF_H_PATH)
+        and os.path.exists(XGB_OOF_A_PATH)
+        and os.path.exists(XGB_METRICS_PATH)
+    ):
+        logging.info(
+            "💾 Cached XGBoost Out-of-Fold arrays detected. Skipping cross-validation loops..."
+        )
+        oof_home_preds = np.load(XGB_OOF_H_PATH)
+        oof_away_preds = np.load(XGB_OOF_A_PATH)
+        with open(XGB_METRICS_PATH, "r") as f:
+            cv_metrics = json.load(f)
+
+        # Re-load production models to ensure they are available downstream
+        model_home = xgb.XGBRegressor()
+        model_home.load_model(os.path.join(ARTIFACTS_DIR, "xgb_home_core.json"))
+        model_away = xgb.XGBRegressor()
+        model_away.load_model(os.path.join(ARTIFACTS_DIR, "xgb_away_core.json"))
+        return model_home, model_away, oof_home_preds, oof_away_preds, cv_metrics
+
+    # 2. Run Cross Validation
     X = feature_matrix[feature_columns]
     y_home = feature_matrix["home_score"]
     y_away = feature_matrix["away_score"]
-
-    # 2. Chronological Backtest Audit with Out-of-Fold Tracking
     tscv = TimeSeriesSplit(n_splits=3)
 
     oof_home_preds = np.zeros(len(feature_matrix))
@@ -24,6 +50,10 @@ def train_production_xgboost_models(feature_matrix, feature_columns, alpha=0.000
     cv_metrics = {}
 
     for fold, (train_idx, test_idx) in enumerate(tscv.split(X), 1):
+        logging.info(
+            f"🔄 Processing XGBoost Out-of-Fold Cross-Validation (Fold {fold}/3)..."
+        )
+
         X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
         y_h_train, y_h_test = y_home.iloc[train_idx], y_home.iloc[test_idx]
         y_a_train, y_a_test = y_away.iloc[train_idx], y_away.iloc[test_idx]
@@ -68,13 +98,12 @@ def train_production_xgboost_models(feature_matrix, feature_columns, alpha=0.000
             "away_deviance_r2": dev_r2_a,
         }
 
-    # 3. Production Model Fit (Anchored to the absolute latest pre-tournament data cliff)
+    # 3. Fit Production Models
+    logging.info("🌲 Fitting final production XGBoost models...")
     days_elapsed_prod = (
         feature_matrix["match_date"].max() - feature_matrix["match_date"]
     ).dt.days
     time_decay_prod = np.exp(-alpha * days_elapsed_prod)
-
-    # Apply compound weights to production models
     w_prod = time_decay_prod * feature_matrix["match_weight"]
 
     xgb_params = {
@@ -94,10 +123,13 @@ def train_production_xgboost_models(feature_matrix, feature_columns, alpha=0.000
     model_away = xgb.XGBRegressor(**xgb_params)
     model_away.fit(X, y_away, sample_weight=w_prod)
 
-    # 4. Save Core Model Artifacts
-    ARTIFACTS_DIR = os.path.join("data", "artifacts")
+    # 4. Save Artifacts & OOF Arrays
     os.makedirs(ARTIFACTS_DIR, exist_ok=True)
     model_home.save_model(os.path.join(ARTIFACTS_DIR, "xgb_home_core.json"))
     model_away.save_model(os.path.join(ARTIFACTS_DIR, "xgb_away_core.json"))
+    np.save(XGB_OOF_H_PATH, oof_home_preds)
+    np.save(XGB_OOF_A_PATH, oof_away_preds)
+    with open(XGB_METRICS_PATH, "w") as f:
+        json.dump(cv_metrics, f, indent=4)
 
     return model_home, model_away, oof_home_preds, oof_away_preds, cv_metrics

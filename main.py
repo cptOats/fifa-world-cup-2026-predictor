@@ -33,12 +33,12 @@ from src.transform import (
 )
 
 # --- MODEL CONFIGURATION ---
-MODEL_TYPE = "blend"  # "blend", "poisson", "elo", "xgb"
+MODEL_TYPE = "blend"  # "blend", "elo", "poisson", "xgb"
 RUN_MONTE_CARLO = True
-MONTE_CARLO_RUNS = 10000  # Recommend 10K+
+MONTE_CARLO_RUNS = 100  # Recommend 10K+
 USE_PRIOR_NUDGE = True
 NUDGE_STRENGTH = 1.5  # Recommend ~1.5
-FORCE_RETRAIN = True
+FORCE_RETRAIN = False
 
 # --- TRAINING VARIABLES ---
 TRAINING_VARIABLES = {
@@ -144,7 +144,7 @@ def main():
 
     # --- INFRASTRUCTURE GATES ---
     verify_data_layer()
-    logging.info("🔄 Running entity validation and preparing historical features...")
+    logging.info("⚙️  Running entity validation and preparing historical features...")
     saved_path = prepare_historical_features(DATACAMP_TO_KAGGLE, TRAINING_VARIABLES)
 
     # --- EXPLICIT DATA INGESTION ---
@@ -182,29 +182,33 @@ def main():
         )
         logging.info("🎯 Bayesian Prior Pass: All tournament entities validated.")
 
-    # --- ESTIMATOR TRAINING PLUGINS ---
-    logging.info(
-        "🧮 Resolving Maximum Likelihood Estimations for Poisson coefficients..."
-    )
-    ratings, g_home, g_away, g_neutral = train_poisson_ratings()
-
+    # --- Elo Rating ---
     logging.info(
         "📈 Synchronizing continuous World Football Elo ratings across time series..."
     )
     elo_engine = EloEngine(k_factor=40)
     elo_engine.fit(modern_df)
 
-    # --- MACHINE LEARNING ENGINE PIPELINE LAYER ---
-    logging.info("🌲 Training dynamic XGBoost count models...")
+    # --- Poisson ---
+    logging.info("🧮 Resolving Joint Maximum Likelihood Estimations for Poisson...")
+    ratings, g_home, g_away, g_neutral = train_poisson_ratings(
+        dixon_coles=(MODEL_TYPE == "poisson")
+    )
+
+    # --- XGBoost ---
+    logging.info("🌲 Training dynamic XGBoost count model...")
     feature_matrix, feature_columns = compile_master_feature_matrix(
         os.path.join("data", "processed", "clean_historical_matches.parquet"),
         elo_engine,
     )
 
+    # --- Out-of-Fold ---
+    oof_poisson_home, oof_poisson_away = train_poisson_oof_predictions(
+        feature_matrix, dixon_coles=(MODEL_TYPE == "poisson")
+    )
     xgb_home, xgb_away, oof_home_preds, oof_away_preds, cv_metrics = (
         train_production_xgboost_models(feature_matrix, feature_columns)
     )
-    oof_poisson_home, oof_poisson_away = train_poisson_oof_predictions(feature_matrix)
 
     # CALIBRATE OPTIMAL CONSENSUS WEIGHTS
     if MODEL_TYPE == "blend":
@@ -348,7 +352,7 @@ def main():
         team_power=TEAM_POWER,
     )
 
-    logging.info("🗄️ Consolidating schemas into master unified ledger...")
+    logging.info("🗄️  Consolidating schemas into master unified ledger...")
     predicted_fixtures["round"] = "Group " + predicted_fixtures["group"]
     predicted_fixtures["extra_time"] = False
     predicted_fixtures["penalties"] = False
@@ -444,7 +448,7 @@ def main():
         os.path.join(run_dir, "pre_tournament_capabilities.csv"), index=False
     )
 
-# Construct and Save the Metadata JSON
+    # Construct and Save the Metadata JSON
     run_metadata = {
         "run_id": run_name,
         "timestamp": timestamp,

@@ -1,5 +1,6 @@
 """Tournament Group Standings and Knockout Stage Routing Engine."""
 
+import logging
 import os
 
 import numpy as np
@@ -26,7 +27,11 @@ def resolve_group_tables(predicted_fixtures_list_or_df):
 
     # Check if we were passed a DataFrame (from deterministic) or List of Dicts (from Stochastic)
     is_df = isinstance(predicted_fixtures_list_or_df, pd.DataFrame)
-    records = predicted_fixtures_list_or_df.to_dict('records') if is_df else predicted_fixtures_list_or_df
+    records = (
+        predicted_fixtures_list_or_df.to_dict("records")
+        if is_df
+        else predicted_fixtures_list_or_df
+    )
 
     table_records = {}
 
@@ -40,8 +45,12 @@ def resolve_group_tables(predicted_fixtures_list_or_df):
         for team in [home, away]:
             if team not in table_records:
                 table_records[team] = {
-                    "group": group, "team": team, "points": 0,
-                    "goals_for": 0, "goals_against": 0, "goals_diff": 0
+                    "group": group,
+                    "team": team,
+                    "points": 0,
+                    "goals_for": 0,
+                    "goals_against": 0,
+                    "goals_diff": 0,
                 }
 
         table_records[home]["goals_for"] += home_score
@@ -63,12 +72,9 @@ def resolve_group_tables(predicted_fixtures_list_or_df):
 
     # Native Python Multi-key Sort (Equivalent to Pandas Ascending/Descending)
     # Group (Asc), Points (Desc), Goal Diff (Desc), Goals For (Desc)
-    compiled_list.sort(key=lambda x: (
-        x["group"],
-        -x["points"],
-        -x["goals_diff"],
-        -x["goals_for"]
-    ))
+    compiled_list.sort(
+        key=lambda x: (x["group"], -x["points"], -x["goals_diff"], -x["goals_for"])
+    )
 
     # Add position integers
     current_group = None
@@ -128,7 +134,9 @@ def allocate_third_places(advancing_thirds_df):
 
     # GREEDY FALLBACK: If a chaotic Monte Carlo universe breaks the official matrix
     if assignment is None:
-        logging.debug("Wildcard constraint broken by stochastic upset. Applying greedy fallback.")
+        logging.debug(
+            "Wildcard constraint broken by stochastic upset. Applying greedy fallback."
+        )
         assignment = {}
         available_slots = list(slot_ids)
 

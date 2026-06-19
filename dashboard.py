@@ -993,7 +993,7 @@ def _(DARK_THEME, apply_mission_control_layout, df_tournament, go, mo, np, pd):
 
 
 @app.cell
-def _(DARK_THEME, df_capabilities, mo):
+def _(DARK_THEME, df_capabilities, has_stochastic, mo):
     all_countries = sorted(df_capabilities["Country"].unique())
 
     team_a_ctrl = mo.ui.dropdown(
@@ -1005,7 +1005,12 @@ def _(DARK_THEME, df_capabilities, mo):
         label="🏷️ TEAM B",
     )
     is_ko_ctrl = mo.ui.checkbox(label="🏆 Knockout", value=False)
-    is_stoch_ctrl = mo.ui.checkbox(label="🎲 Stochastic", value=False)
+
+    is_stoch_ctrl = mo.ui.checkbox(
+        label="🎲 Stochastic",
+        value=False,
+        disabled=not has_stochastic
+    )
 
     headings = mo.md("""
     ---
@@ -1028,13 +1033,16 @@ def _(DARK_THEME, df_capabilities, mo):
     """
 
     sandbox_layout = mo.md(layout_text).batch(
-        team_a=team_a_ctrl, team_b=team_b_ctrl, is_ko=is_ko_ctrl, is_stoch=is_stoch_ctrl
+        team_a=team_a_ctrl,
+        team_b=team_b_ctrl,
+        is_ko=is_ko_ctrl,
+        is_stoch=is_stoch_ctrl
     )
 
     sandbox_form = sandbox_layout.form(
         bordered=False,
         submit_button_label="⚡ RUN SIMULATION",
-        submit_button_tooltip="Execute the active ensemble blend for this matchup",
+        submit_button_tooltip="Execute neutral match!",
     )
 
     ui_panel = mo.vstack([headings, sandbox_form])
@@ -1043,14 +1051,14 @@ def _(DARK_THEME, df_capabilities, mo):
 
 
 @app.cell
-def _(DARK_THEME, config, df_matchups, json, mo, sandbox_form, match_rules):
+def _(DARK_THEME, config, df_matchups, json, mo, sandbox_form, match_rules, has_stochastic):
     mo.stop(sandbox_form.value is None, mo.md(""))
 
     sim_data = sandbox_form.value
     sim_team_a = sim_data["team_a"]
     sim_team_b = sim_data["team_b"]
     is_ko = sim_data["is_ko"]
-    is_stoch = sim_data["is_stoch"]
+    is_stoch = sim_data.get("is_stoch", False) and has_stochastic
 
     mo.stop(
         sim_team_a == sim_team_b,
@@ -1115,7 +1123,7 @@ def _(DARK_THEME, config, df_matchups, json, mo, sandbox_form, match_rules):
             sim_winner = sim_team_a if lambda_a >= lambda_b else sim_team_b
             _pens_badge = '<span style="color: #e6739f; background: #2a1b24; padding: 1px 6px; border-radius: 4px; font-size: 9px; font-weight: bold; border: 1px solid #4c283c; margin-left: 8px;">🥅 PENS</span>'
 
-    # STOCHASTIC PROBABILITY ENGINE (Zero Math, purely reading the JSON row)
+    # STOCHASTIC PROBABILITY ENGINE
     stoch_html = ""
     if is_stoch:
         if is_ko:
@@ -1167,7 +1175,7 @@ def _(DARK_THEME, config, df_matchups, json, mo, sandbox_form, match_rules):
                 {_et_badge}
                 {_pens_badge}
             </div>
-            <span>📍 Pre-Computed Neutral Venue</span>
+            <span>📍 Neutral Turf</span>
         </div>
         <div style="font-size: 18px; display: flex; justify-content: space-between; align-items: center; padding: 6px 0;">
             <span style="font-weight: {"bold" if sim_winner == sim_team_a else "normal"}; color: {"#fff" if sim_winner == sim_team_a else "#888"};">
