@@ -91,6 +91,7 @@ def resolve_group_tables(predicted_fixtures_list_or_df):
 
 def extract_best_third_places(group_tables_df):
     """Isolates all 12 third-place finishers and extracts the top 8 wildcards."""
+
     third_places = group_tables_df[group_tables_df["position"] == 3].copy()
     ranked_thirds = third_places.sort_values(
         by=["points", "goals_diff", "goals_for"], ascending=[False, False, False]
@@ -101,6 +102,7 @@ def extract_best_third_places(group_tables_df):
 
 def allocate_third_places(advancing_thirds_df):
     """Maps qualifying third-place teams to unique knockout match slots."""
+
     teams = list(zip(advancing_thirds_df["group"], advancing_thirds_df["team"]))
     slot_ids = list(THIRD_PLACE_CONSTRAINTS.keys())
 
@@ -150,6 +152,7 @@ def allocate_third_places(advancing_thirds_df):
 
 def generate_round_of_32_draw(group_tables_df, third_place_mapping):
     """Reads the template layout and substitutes placeholders with actual country names."""
+
     raw_dir = os.path.join("data", "raw")
     knockout_template = pd.read_csv(os.path.join(raw_dir, "knockout_slots.csv"))
 
@@ -198,6 +201,92 @@ def generate_round_of_32_draw(group_tables_df, third_place_mapping):
     return r32_df[["match_id", "round", "venue", "home_team", "away_team"]].reset_index(
         drop=True
     )
+
+
+def simulate_deterministic_group_stage(
+    group_fixtures,
+    ratings,
+    g_home,
+    g_away,
+    g_neutral,
+    blend_weights,
+    elo_engine,
+    xgb_home,
+    xgb_away,
+    feature_columns,
+    latest_team_form,
+    use_prior_nudge,
+    nudge_strength,
+    team_power,
+):
+    """
+    Simulates the deterministic group stage fixtures using model consensus.
+    Resolves league tables, extracts wildcards, and assigns tournament brackets.
+    """
+
+    group_results = []
+
+    for _, row in group_fixtures.iterrows():
+        match_id = int(row["match_id"])
+        group_letter = row["group"]
+        home = row["home_team"]
+        away = row["away_team"]
+        venue_country = row["venue_country"]
+
+        # Call Match Engine
+        raw_home, raw_away, p_corners, p_yellows, p_reds = evaluate_match_consensus(
+            home_team=home,
+            away_team=away,
+            venue_country=venue_country,
+            ratings=ratings,
+            g_home_avg=g_home,
+            g_away_avg=g_away,
+            g_neutral_avg=g_neutral,
+            blend_weights=blend_weights,
+            elo_engine=elo_engine,
+            xgb_home=xgb_home,
+            xgb_away=xgb_away,
+            feature_columns=feature_columns,
+            latest_team_form=latest_team_form,
+            use_prior_nudge=use_prior_nudge,
+            nudge_strength=nudge_strength,
+            team_power=team_power,
+        )
+
+        final_home_goals = int(np.round(max(0, raw_home)))
+        final_away_goals = int(np.round(max(0, raw_away)))
+        winner_side = (
+            "home"
+            if final_home_goals > final_away_goals
+            else ("away" if final_away_goals > final_home_goals else "draw")
+        )
+
+        group_results.append(
+            {
+                "match_id": match_id,
+                "group": group_letter,
+                "home_team": home,
+                "away_team": away,
+                "predicted_home_goals": final_home_goals,
+                "predicted_away_goals": final_away_goals,
+                "corners": p_corners,
+                "yellow_cards": p_yellows,
+                "red_cards": p_reds,
+                "winning_team": winner_side,
+            }
+        )
+
+    predicted_fixtures = pd.DataFrame(group_results)
+
+    # Route Bracket Structures
+    group_tables = resolve_group_tables(predicted_fixtures)
+    top_thirds = extract_best_third_places(group_tables)
+    third_place_assignments = allocate_third_places(top_thirds)
+
+    # Mutate the latest team form tracker to embed ensemble weights metadata
+    latest_team_form["__meta_weights__"] = blend_weights
+
+    return predicted_fixtures, group_tables, third_place_assignments
 
 
 def simulate_knockout_waterfall(

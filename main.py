@@ -10,9 +10,8 @@ import numpy as np
 import pandas as pd
 
 from src.blender import find_optimal_blend_weights
-from src.features import compile_master_feature_matrix
+from src.features import compile_master_feature_matrix, extract_latest_team_form
 from src.ingest import verify_data_layer
-from src.match_engine import evaluate_match_consensus
 from src.model_elo import EloEngine
 from src.model_poisson import (
     train_poisson_oof_predictions,
@@ -20,12 +19,10 @@ from src.model_poisson import (
 )
 from src.model_xgboost import train_production_xgboost_models
 from src.router import (
-    allocate_third_places,
-    extract_best_third_places,
-    resolve_group_tables,
+    simulate_deterministic_group_stage,
     simulate_knockout_waterfall,
 )
-from src.stochastic import run_monte_carlo_master
+from src.stochastic import precompute_sandbox_matchups, run_monte_carlo_master
 from src.transform import (
     DATACAMP_TO_KAGGLE,
     get_venue_country,
@@ -36,7 +33,7 @@ from src.transform import (
 MODEL_TYPE = "blend"  # "blend", "poisson", "elo", "xgb"
 RUN_MONTE_CARLO = True  # Enable for full predictive power
 MONTE_CARLO_RUNS = 1000  # Recommend 10K+
-USE_PRIOR_NUDGE = True  # Use with caution!
+USE_PRIOR_NUDGE = False  # Use with caution!
 NUDGE_STRENGTH = 1.5  # Recommend ~1.5
 FORCE_RETRAIN = False  # Deletes model artifacts and OOF arrays
 
@@ -52,6 +49,7 @@ MATCH_RULES = {
     "et_multiplier": 1.0 / 3.0,
     "fatigue_factor": 0.80,
     "card_boost_factor": 1.75,
+    "draw_copula": 0.08,
 }
 
 # --- POWER RATINGS --- source: https://www.datacamp.com/datalab/w/3da1cc64-5670-441e-8e7b-b948a6a29403
@@ -131,12 +129,13 @@ def main():
         f"🚀 Launching World Cup Prediction Pipeline [Engine: {MODEL_TYPE}{nudge_suffix}]"
     )
 
+    ARTIFACTS_DIR = os.path.join("data", "artifacts")
+
     # --- CACHE MANAGEMENT LAYER ---
     if FORCE_RETRAIN:
         logging.info(
             "🧹 FORCE_RETRAIN active. Evicting stale model caches and processed artifacts..."
         )
-        ARTIFACTS_DIR = os.path.join("data", "artifacts")
         if os.path.exists(ARTIFACTS_DIR):
             shutil.rmtree(ARTIFACTS_DIR)
         if os.path.exists(os.path.join("data", "processed")):
@@ -238,53 +237,17 @@ def main():
     )
 
     # State tracking setup
-    latest_team_form = {}
-    for team in participating_teams:
-        team_rows = feature_matrix[
-            (feature_matrix["home_team"] == team)
-            | (feature_matrix["away_team"] == team)
-        ]
-        if not team_rows.empty:
-            latest_row = team_rows.iloc[-1]
-            prefix = "home_team_" if latest_row["home_team"] == team else "away_team_"
-            latest_team_form[team] = {
-                "ewm_gf_4s": latest_row[f"{prefix}ewm_gf_4s"],
-                "ewm_ga_4s": latest_row[f"{prefix}ewm_ga_4s"],
-                "ewm_wr_4s": latest_row[f"{prefix}ewm_wr_4s"],
-                "ewm_gf_10s": latest_row[f"{prefix}ewm_gf_10s"],
-                "ewm_ga_10s": latest_row[f"{prefix}ewm_ga_10s"],
-                "ewm_wr_10s": latest_row[f"{prefix}ewm_wr_10s"],
-            }
-        else:
-            latest_team_form[team] = {
-                "ewm_gf_4s": 1.2,
-                "ewm_ga_4s": 1.2,
-                "ewm_wr_4s": 0.35,
-                "ewm_gf_10s": 1.2,
-                "ewm_ga_10s": 1.2,
-                "ewm_wr_10s": 0.35,
-            }
+    logging.info("📊 Extracting final pre-tournament team form states...")
+    latest_team_form = extract_latest_team_form(feature_matrix, participating_teams)
 
     # --- GROUP STAGE SIMULATION ---
-    logging.info("⚽ Commencing simulation of full Group Stage schedule...")
-    group_results = []
-
-    for _, row in group_fixtures.iterrows():
-        match_id = int(row["match_id"])
-        group_letter = row["group"]
-        home = row["home_team"]
-        away = row["away_team"]
-        venue_country = row["venue_country"]
-
-        # Call Match Engine
-        raw_home, raw_away, p_corners, p_yellows, p_reds = evaluate_match_consensus(
-            home_team=home,
-            away_team=away,
-            venue_country=venue_country,
+    predicted_fixtures, group_tables, third_place_assignments = (
+        simulate_deterministic_group_stage(
+            group_fixtures=group_fixtures,
             ratings=ratings,
-            g_home_avg=g_home,
-            g_away_avg=g_away,
-            g_neutral_avg=g_neutral,
+            g_home=g_home,
+            g_away=g_away,
+            g_neutral=g_neutral,
             blend_weights=blend_weights,
             elo_engine=elo_engine,
             xgb_home=xgb_home,
@@ -295,37 +258,7 @@ def main():
             nudge_strength=NUDGE_STRENGTH,
             team_power=TEAM_POWER,
         )
-
-        final_home_goals = int(np.round(max(0, raw_home)))
-        final_away_goals = int(np.round(max(0, raw_away)))
-        winner_side = (
-            "home"
-            if final_home_goals > final_away_goals
-            else ("away" if final_away_goals > final_home_goals else "draw")
-        )
-
-        group_results.append(
-            {
-                "match_id": match_id,
-                "group": group_letter,
-                "home_team": home,
-                "away_team": away,
-                "predicted_home_goals": final_home_goals,
-                "predicted_away_goals": final_away_goals,
-                "corners": p_corners,
-                "yellow_cards": p_yellows,
-                "red_cards": p_reds,
-                "winning_team": winner_side,
-            }
-        )
-
-    predicted_fixtures = pd.DataFrame(group_results)
-
-    # Route Bracket Structures
-    group_tables = resolve_group_tables(predicted_fixtures)
-    top_thirds = extract_best_third_places(group_tables)
-    third_place_assignments = allocate_third_places(top_thirds)
-    latest_team_form["__meta_weights__"] = blend_weights
+    )
 
     # --- KNOCKOUT WATERFALL SIMULATION ---
     logging.info(
@@ -486,8 +419,8 @@ def main():
             get_venue_country
         )
 
-        # Capture the metadata dictionary instead of discarding it with an underscore
-        prob_dashboard, mc_metadata = run_monte_carlo_master(
+        # 1. Compute Stochastic Simulations
+        prob_dashboard, df_xtables = run_monte_carlo_master(
             group_fixtures=group_fixtures,
             raw_knockout_template=raw_knockout_template,
             ratings=ratings,
@@ -507,19 +440,48 @@ def main():
             team_power=TEAM_POWER,
         )
 
+        # 2. Centralized Saving: Master Forecast Table
         prob_dashboard.to_csv(
             os.path.join(run_dir, "monte_carlo_forecast.csv"), index=False
         )
 
-        # Extract the pre-compiled fat artifact list directly and cast to a DataFrame
-        fat_matchups = mc_metadata.get("fat_matchups", [])
+        # 3. Centralized Saving: Stochastic Expected Group Tables (xTables)
+        df_xtables.to_csv(
+            os.path.join(run_dir, "stochastic_group_tables.csv"), index=False
+        )
+        df_xtables.to_csv(
+            os.path.join(ARTIFACTS_DIR, "stochastic_group_tables.csv"), index=False
+        )
 
-        pd.DataFrame(fat_matchups).to_csv(
+        # 4. Compute Sandbox Pairwise Matrix
+        logging.info("⚔️  Spinning up sandbox pairwise matrix computations...")
+        df_sandbox = precompute_sandbox_matchups(
+            all_teams=participating_teams,
+            venue_country=group_fixtures["venue_country"].iloc[0],
+            ratings=ratings,
+            g_home=g_home,
+            g_away=g_away,
+            g_neutral=g_neutral,
+            blend_weights=blend_weights,
+            match_rules=MATCH_RULES,
+            elo_engine=elo_engine,
+            xgb_home=xgb_home,
+            xgb_away=xgb_away,
+            feature_columns=feature_columns,
+            latest_team_form=latest_team_form,
+            fat_runs=MONTE_CARLO_RUNS,
+        )
+
+        # 5. Centralized Saving: Sandbox Pairs
+        df_sandbox.to_csv(
             os.path.join(run_dir, "pre_computed_matchups.csv"), index=False
+        )
+        df_sandbox.to_csv(
+            os.path.join(ARTIFACTS_DIR, "pre_computed_matchups.csv"), index=False
         )
 
         logging.info(
-            "🔮 Stochastic simulation complete. Pre-computed fat artifacts cached to disk."
+            "🔮 Stochastic simulation complete. Forecasting artifacts committed to disk."
         )
     else:
         logging.info(

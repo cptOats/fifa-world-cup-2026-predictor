@@ -2,6 +2,7 @@
 
 import numpy as np
 import pandas as pd
+from scipy.stats import norm, poisson
 
 from src.model_poisson import predict_poisson_match
 
@@ -15,44 +16,82 @@ def simulate_stochastic_match(
     match_rules: dict[str, float],
     is_knockout: bool = False,
     n_runs: int = 1,
-) -> tuple[np.ndarray, np.ndarray]:
+    copula_rho: float = 0.08,
+) -> tuple[np.ndarray, np.ndarray, dict[str, np.ndarray]]:
     """
     Universal vectorized match simulator for Monte Carlo distributions.
-    Handles Regulation, Extra Time fatigue scaling, and Elo-weighted penalty shootouts.
+    Features Bivariate Copula Draw Inflation and Phase-of-Victory Masking.
     """
     et_multiplier = match_rules["et_multiplier"]
     fatigue_factor = match_rules["fatigue_factor"]
 
-    sims_h = rng.poisson(lambda_h, n_runs)
-    sims_a = rng.poisson(lambda_a, n_runs)
+    # --- THE COPULA: BIVARIATE DRAW INFLATION ---
+    if copula_rho > 0.0:
+        # 1. Generate correlated standard normals
+        cov_matrix = [[1.0, copula_rho], [copula_rho, 1.0]]
+        z = rng.multivariate_normal([0.0, 0.0], cov_matrix, size=n_runs)
+
+        # 2. Convert standard normals to uniform probabilities
+        u = norm.cdf(z)
+
+        # 3. Map uniforms to Poisson marginals via Point Percentile Function (Inverse CDF)
+        sims_h = poisson.ppf(u[:, 0], lambda_h).astype(int)
+        sims_a = poisson.ppf(u[:, 1], lambda_a).astype(int)
+    else:
+        # Fallback to independent framework
+        sims_h = rng.poisson(lambda_h, n_runs)
+        sims_a = rng.poisson(lambda_a, n_runs)
+
+    # Initialize empty tracking vectors for all possible outcomes
+    phase_meta = {
+        "win_90_h": np.zeros(n_runs, dtype=bool),
+        "win_90_a": np.zeros(n_runs, dtype=bool),
+        "win_120_h": np.zeros(n_runs, dtype=bool),
+        "win_120_a": np.zeros(n_runs, dtype=bool),
+        "win_pen_h": np.zeros(n_runs, dtype=bool),
+        "win_pen_a": np.zeros(n_runs, dtype=bool),
+    }
 
     if not is_knockout:
-        return sims_h, sims_a
+        return sims_h, sims_a, phase_meta
+
+    # --- PHASE A: REGULATION (90 MINUTES) ---
+    phase_meta["win_90_h"] = sims_h > sims_a
+    phase_meta["win_90_a"] = sims_a > sims_h
 
     draw_mask = sims_h == sims_a
     n_draws = np.sum(draw_mask)
 
     if n_draws > 0:
-        # 1. Add Extra Time with compound fatigue scaling
-        sims_h[draw_mask] += rng.poisson(
-            lambda_h * et_multiplier * fatigue_factor, n_draws
-        )
-        sims_a[draw_mask] += rng.poisson(
-            lambda_a * et_multiplier * fatigue_factor, n_draws
-        )
+        # 1. Add Extra Time goals with compound fatigue scaling
+        et_h = rng.poisson(lambda_h * et_multiplier * fatigue_factor, n_draws)
+        et_a = rng.poisson(lambda_a * et_multiplier * fatigue_factor, n_draws)
+
+        sims_h[draw_mask] += et_h
+        sims_a[draw_mask] += et_a
+
+        # --- PHASE B: EXTRA TIME (120 MINUTES) ---
+        phase_meta["win_120_h"] = draw_mask & (sims_h > sims_a)
+        phase_meta["win_120_a"] = draw_mask & (sims_a > sims_h)
 
         # 2. Resolve Penalties for remaining draws
         shootout_mask = draw_mask & (sims_h == sims_a)
         n_shootouts = np.sum(shootout_mask)
 
         if n_shootouts > 0:
-            # Symmetrical probabilistic tie-breaker based on relative Elo strength
+            # Probabilistic tie-breaker based on relative Elo strength
             prob_h_win = elo_h / (elo_h + elo_a)
-            sims_h[shootout_mask] += np.where(
-                rng.random(n_shootouts) < prob_h_win, 1, 0
-            )
+            pen_h_win = rng.random(n_shootouts) < prob_h_win
+            pen_a_win = ~pen_h_win
 
-    return sims_h, sims_a
+            sims_h[shootout_mask] += np.where(pen_h_win, 1, 0)
+            sims_a[shootout_mask] += np.where(pen_a_win, 1, 0)
+
+            # --- PHASE C: PENALTY SHOOTOUT ---
+            phase_meta["win_pen_h"] = shootout_mask & (sims_h > sims_a)
+            phase_meta["win_pen_a"] = shootout_mask & (sims_a > sims_h)
+
+    return sims_h, sims_a, phase_meta
 
 
 def _resolve_consensus_math(
@@ -252,7 +291,6 @@ def batch_evaluate_consensus(
 
     # Iterate through the pre-calculated XGBoost arrays to resolve the final math
     for idx, (h, a, v_country) in enumerate(matchup_keys):
-        # Isolate the correct XGBoost prediction logic for this specific row
         if h == v_country:
             xgb_h_val, xgb_a_val = xgb_h_fwd[idx], xgb_a_fwd[idx]
         elif a == v_country:

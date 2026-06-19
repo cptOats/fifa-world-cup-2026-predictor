@@ -112,7 +112,7 @@ def compile_master_feature_matrix(
     away_elos = []
 
     # Interacts cleanly with src/elo.py by passing clean string team identifiers
-    for idx, row in df.iterrows():
+    for _, row in df.iterrows():
         h_team = row["home_team"]
         a_team = row["away_team"]
 
@@ -161,3 +161,39 @@ def compile_master_feature_matrix(
     )
 
     return final_matrix, feature_columns
+
+
+def extract_latest_team_form(feature_matrix, participating_teams):
+    """Extracts the final pre-tournament EWM form states for all teams to feed the ML models."""
+
+    latest_team_form = {}
+
+    for team in participating_teams:
+        team_rows = feature_matrix[
+            (feature_matrix["home_team"] == team)
+            | (feature_matrix["away_team"] == team)
+        ]
+
+        if not team_rows.empty:
+            latest_row = team_rows.iloc[-1]
+            prefix = "home_team_" if latest_row["home_team"] == team else "away_team_"
+            latest_team_form[team] = {
+                "ewm_gf_4s": latest_row[f"{prefix}ewm_gf_4s"],
+                "ewm_ga_4s": latest_row[f"{prefix}ewm_ga_4s"],
+                "ewm_wr_4s": latest_row[f"{prefix}ewm_wr_4s"],
+                "ewm_gf_10s": latest_row[f"{prefix}ewm_gf_10s"],
+                "ewm_ga_10s": latest_row[f"{prefix}ewm_ga_10s"],
+                "ewm_wr_10s": latest_row[f"{prefix}ewm_wr_10s"],
+            }
+        else:
+            # Fallback for teams with zero historical data
+            latest_team_form[team] = {
+                "ewm_gf_4s": 1.2,
+                "ewm_ga_4s": 1.2,
+                "ewm_wr_4s": 0.35,
+                "ewm_gf_10s": 1.2,
+                "ewm_ga_10s": 1.2,
+                "ewm_wr_10s": 0.35,
+            }
+
+    return latest_team_form
