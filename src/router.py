@@ -3,10 +3,9 @@
 import logging
 import os
 
-import numpy as np
 import pandas as pd
 
-from src.match_engine import evaluate_match_consensus
+from src.match_engine import evaluate_match_consensus, simulate_deterministic_match
 from src.transform import get_venue_country
 
 # The official tournament group dependencies for the 8 third-place wildcard slots
@@ -210,6 +209,7 @@ def simulate_deterministic_group_stage(
     g_away,
     g_neutral,
     blend_weights,
+    match_rules,
     elo_engine,
     xgb_home,
     xgb_away,
@@ -219,10 +219,7 @@ def simulate_deterministic_group_stage(
     nudge_strength,
     team_power,
 ):
-    """
-    Simulates the deterministic group stage fixtures using model consensus.
-    Resolves league tables, extracts wildcards, and assigns tournament brackets.
-    """
+    """Simulates the deterministic group stage fixtures using model consensus."""
 
     group_results = []
 
@@ -253,12 +250,17 @@ def simulate_deterministic_group_stage(
             team_power=team_power,
         )
 
-        final_home_goals = int(np.round(max(0, raw_home)))
-        final_away_goals = int(np.round(max(0, raw_away)))
-        winner_side = (
-            "home"
-            if final_home_goals > final_away_goals
-            else ("away" if final_away_goals > final_home_goals else "draw")
+        # Resolve final integer logic
+        final_home, final_away, winner_side, t_corn, t_yell, t_red, _, _ = (
+            simulate_deterministic_match(
+                raw_home,
+                raw_away,
+                p_corners,
+                p_yellows,
+                p_reds,
+                match_rules,
+                is_knockout=False,
+            )
         )
 
         group_results.append(
@@ -267,68 +269,61 @@ def simulate_deterministic_group_stage(
                 "group": group_letter,
                 "home_team": home,
                 "away_team": away,
-                "predicted_home_goals": final_home_goals,
-                "predicted_away_goals": final_away_goals,
-                "corners": p_corners,
-                "yellow_cards": p_yellows,
-                "red_cards": p_reds,
+                "predicted_home_goals": final_home,
+                "predicted_away_goals": final_away,
+                "corners": t_corn,
+                "yellow_cards": t_yell,
+                "red_cards": t_red,
                 "winning_team": winner_side,
             }
         )
 
     predicted_fixtures = pd.DataFrame(group_results)
-
-    # Route Bracket Structures
     group_tables = resolve_group_tables(predicted_fixtures)
     top_thirds = extract_best_third_places(group_tables)
     third_place_assignments = allocate_third_places(top_thirds)
-
-    # Mutate the latest team form tracker to embed ensemble weights metadata
-    latest_team_form["__meta_weights__"] = blend_weights
 
     return predicted_fixtures, group_tables, third_place_assignments
 
 
 def simulate_knockout_waterfall(
-    group_tables_df,
-    third_place_mapping,
-    ratings,
-    g_home_avg,
-    g_away_avg,
-    g_neutral_avg,
-    blend_weights,
-    match_rules,
+    group_tables_df: pd.DataFrame,
+    third_place_mapping: dict[int, str],
+    ratings: dict[str, dict[str, float]],
+    g_home_avg: float,
+    g_away_avg: float,
+    g_neutral_avg: float,
+    blend_weights: dict[str, float],
+    match_rules: dict[str, float],
     elo_engine=None,
     xgb_home=None,
     xgb_away=None,
-    feature_columns=None,
-    latest_team_form=None,
-    use_prior_nudge=False,
-    nudge_strength=1.5,
-    team_power=None,
-):
+    feature_columns: list[str] | None = None,
+    latest_team_form: dict[str, dict[str, float]] | None = None,
+    use_prior_nudge: bool = False,
+    nudge_strength: float = 1.5,
+    team_power: dict[str, int] | None = None,
+) -> pd.DataFrame:
     """Simulates the knockout bracket tree sequentially from Round of 32 down to the Final."""
 
-    assert feature_columns is not None, (
-        "❌ Type Enforcement: feature_columns list cannot be None inside the routing layer."
-    )
-    assert latest_team_form is not None, (
-        "❌ Type Enforcement: latest_team_form map cannot be None inside the routing layer."
-    )
+    # Swap out 'assert' for explicit conditional guards to force type-narrowing
+    if feature_columns is None:
+        raise ValueError(
+            "❌ Type Guard: feature_columns list cannot be None inside the routing layer."
+        )
 
-    et_multiplier = match_rules["et_multiplier"]
-    fatigue_factor = match_rules["fatigue_factor"]
+    if latest_team_form is None:
+        raise ValueError(
+            "❌ Type Guard: latest_team_form map cannot be None inside the routing layer."
+        )
 
     raw_dir = os.path.join("data", "raw")
     knockout_template = pd.read_csv(os.path.join(raw_dir, "knockout_slots.csv"))
-
     knockout_template["venue_country"] = knockout_template["venue"].apply(
         get_venue_country
     )
 
-    match_winners = {}
-    match_losers = {}
-
+    match_winners, match_losers = {}, {}
     winners = (
         group_tables_df[group_tables_df["position"] == 1]
         .set_index("group")["team"]
@@ -339,7 +334,6 @@ def simulate_knockout_waterfall(
         .set_index("group")["team"]
         .to_dict()
     )
-
     knockout_results = []
 
     for _, row in knockout_template.iterrows():
@@ -350,6 +344,7 @@ def simulate_knockout_waterfall(
         slot_away = row["slot_away"]
         venue_country = row["venue_country"]
 
+        # Resolve team slots
         if "Winner Group" in slot_home:
             home_team = winners[slot_home.replace("Winner Group ", "").strip()]
         elif "Runner-up Group" in slot_home:
@@ -380,98 +375,41 @@ def simulate_knockout_waterfall(
         else:
             away_team = slot_away
 
-        # Call the unified match engine to calculate baseline 90-min capability curves
-        raw_home, raw_away, tot_corners_90, tot_yellows_90, tot_reds_90 = (
-            evaluate_match_consensus(
-                home_team=home_team,
-                away_team=away_team,
-                venue_country=venue_country,
-                ratings=ratings,
-                g_home_avg=g_home_avg,
-                g_away_avg=g_away_avg,
-                g_neutral_avg=g_neutral_avg,
-                blend_weights=blend_weights,
-                elo_engine=elo_engine,
-                xgb_home=xgb_home,
-                xgb_away=xgb_away,
-                feature_columns=feature_columns,
-                latest_team_form=latest_team_form,
-                use_prior_nudge=use_prior_nudge,
-                nudge_strength=nudge_strength,
-                team_power=team_power,
+        # 1. Get raw continuous intensities
+        raw_home, raw_away, p_corners, p_yellows, p_reds = evaluate_match_consensus(
+            home_team=home_team,
+            away_team=away_team,
+            venue_country=venue_country,
+            ratings=ratings,
+            g_home_avg=g_home_avg,
+            g_away_avg=g_away_avg,
+            g_neutral_avg=g_neutral_avg,
+            blend_weights=blend_weights,
+            elo_engine=elo_engine,
+            xgb_home=xgb_home,
+            xgb_away=xgb_away,
+            feature_columns=feature_columns,
+            latest_team_form=latest_team_form,
+            use_prior_nudge=use_prior_nudge,
+            nudge_strength=nudge_strength,
+            team_power=team_power,
+        )
+
+        # Resolve timeline logic
+        f_home, f_away, winner_side, t_corn, t_yell, t_red, is_et, is_pen = (
+            simulate_deterministic_match(
+                raw_home,
+                raw_away,
+                p_corners,
+                p_yellows,
+                p_reds,
+                match_rules,
+                is_knockout=True,
             )
         )
 
-        pred_home_90 = int(np.round(raw_home))
-        pred_away_90 = int(np.round(raw_away))
-
-        # --- TIMELINE RESOLUTION GATE (Normal vs Extra Time) ---
-        is_extra_time = False
-        is_penalty = False
-
-        if pred_home_90 > pred_away_90:
-            final_home_goals, final_away_goals = pred_home_90, pred_away_90
-            advance_winner, advance_loser = home_team, away_team
-            winner_side = "home"
-            tot_corners = int(np.clip(np.round(tot_corners_90), 4, 16))
-            tot_yellows = int(np.clip(np.round(tot_yellows_90), 1, 9))
-            tot_reds = int(np.clip(np.round(tot_reds_90), 0, 3))
-
-        elif pred_away_90 > pred_home_90:
-            final_home_goals, final_away_goals = pred_home_90, pred_away_90
-            advance_winner, advance_loser = away_team, home_team
-            winner_side = "away"
-            tot_corners = int(np.clip(np.round(tot_corners_90), 4, 16))
-            tot_yellows = int(np.clip(np.round(tot_yellows_90), 1, 9))
-            tot_reds = int(np.clip(np.round(tot_reds_90), 0, 3))
-
-        else:
-            # Regulation Integer Draw -> Triggers Additive Extra Time
-            is_extra_time = True
-
-            raw_home_120 = raw_home * (1 + (et_multiplier * fatigue_factor))
-            raw_away_120 = raw_away * (1 + (et_multiplier * fatigue_factor))
-
-            final_home_goals = int(np.round(raw_home_120))
-            final_away_goals = int(np.round(raw_away_120))
-
-            tot_corners = int(
-                np.clip(
-                    np.round(tot_corners_90 * (1 + (et_multiplier * fatigue_factor))),
-                    5,
-                    18,
-                )
-            )
-            tot_yellows = int(
-                np.clip(
-                    np.round(tot_yellows_90 * (1 + (et_multiplier * fatigue_factor))),
-                    1,
-                    12,
-                )
-            )
-            tot_reds = int(
-                np.clip(
-                    np.round(tot_reds_90 * (1 + (et_multiplier * fatigue_factor))),
-                    0,
-                    4,
-                )
-            )
-
-            if final_home_goals > final_away_goals:
-                advance_winner, advance_loser = home_team, away_team
-                winner_side = "home"
-            elif final_away_goals > final_home_goals:
-                advance_winner, advance_loser = away_team, home_team
-                winner_side = "away"
-            else:
-                # 120 mins Integer Draw -> Penalty Shootout
-                is_penalty = True
-                if raw_home >= raw_away:
-                    advance_winner, advance_loser = home_team, away_team
-                    winner_side = "home"
-                else:
-                    advance_winner, advance_loser = away_team, home_team
-                    winner_side = "away"
+        advance_winner = home_team if winner_side == "home" else away_team
+        advance_loser = away_team if winner_side == "home" else home_team
 
         match_winners[match_id] = advance_winner
         match_losers[match_id] = advance_loser
@@ -483,14 +421,14 @@ def simulate_knockout_waterfall(
                 "venue": venue,
                 "predicted_home_team": home_team,
                 "predicted_away_team": away_team,
-                "predicted_home_goals": final_home_goals,
-                "predicted_away_goals": final_away_goals,
-                "corners": tot_corners,
-                "yellow_cards": tot_yellows,
-                "red_cards": tot_reds,
+                "predicted_home_goals": f_home,
+                "predicted_away_goals": f_away,
+                "corners": t_corn,
+                "yellow_cards": t_yell,
+                "red_cards": t_red,
                 "match_winner": winner_side,
-                "extra_time": is_extra_time,
-                "penalties": is_penalty,
+                "extra_time": is_et,
+                "penalties": is_pen,
                 "winner_name_meta": advance_winner,
             }
         )

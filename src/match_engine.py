@@ -60,7 +60,10 @@ def simulate_stochastic_match(
     phase_meta["win_90_a"] = sims_a > sims_h
 
     draw_mask = sims_h == sims_a
-    n_draws = np.sum(draw_mask)
+    n_draws = int(np.sum(draw_mask))
+
+    shootout_mask = np.zeros(n_runs, dtype=bool)
+    n_shootouts = 0
 
     if n_draws > 0:
         # 1. Add Extra Time goals with compound fatigue scaling
@@ -74,24 +77,118 @@ def simulate_stochastic_match(
         phase_meta["win_120_h"] = draw_mask & (sims_h > sims_a)
         phase_meta["win_120_a"] = draw_mask & (sims_a > sims_h)
 
-        # 2. Resolve Penalties for remaining draws
         shootout_mask = draw_mask & (sims_h == sims_a)
-        n_shootouts = np.sum(shootout_mask)
+        n_shootouts = int(np.sum(shootout_mask))
 
-        if n_shootouts > 0:
-            # Probabilistic tie-breaker based on relative Elo strength
-            prob_h_win = elo_h / (elo_h + elo_a)
-            pen_h_win = rng.random(n_shootouts) < prob_h_win
-            pen_a_win = ~pen_h_win
+    if n_shootouts > 0:
+        prob_h_win = lambda_h / (lambda_h + lambda_a)
 
-            sims_h[shootout_mask] += np.where(pen_h_win, 1, 0)
-            sims_a[shootout_mask] += np.where(pen_a_win, 1, 0)
+        pen_h_win = rng.random(n_shootouts) < prob_h_win
+        pen_a_win = np.logical_not(pen_h_win)
 
-            # --- PHASE C: PENALTY SHOOTOUT ---
-            phase_meta["win_pen_h"] = shootout_mask & (sims_h > sims_a)
-            phase_meta["win_pen_a"] = shootout_mask & (sims_a > sims_h)
+        sims_h[shootout_mask] += np.where(pen_h_win, 1, 0)
+        sims_a[shootout_mask] += np.where(pen_a_win, 1, 0)
+
+        # --- PHASE C: PENALTY SHOOTOUT ---
+        phase_meta["win_pen_h"] = shootout_mask & (sims_h > sims_a)
+        phase_meta["win_pen_a"] = shootout_mask & (sims_a > sims_h)
 
     return sims_h, sims_a, phase_meta
+
+
+def simulate_deterministic_match(
+    raw_home: float,
+    raw_away: float,
+    tot_corners_90: float,
+    tot_yellows_90: float,
+    tot_reds_90: float,
+    match_rules: dict[str, float],
+    is_knockout: bool = False,
+) -> tuple[int, int, str, int, int, int, bool, bool]:
+    """
+    Resolves a deterministic match timeline (90m -> 120m -> Penalties).
+    Returns integer goals, discipline metrics, and progression flags.
+    """
+    pred_home_90 = int(np.round(raw_home))
+    pred_away_90 = int(np.round(raw_away))
+
+    is_extra_time = False
+    is_penalty = False
+
+    # --- PHASE A: REGULATION (OR GROUP STAGE) ---
+    if not is_knockout or pred_home_90 != pred_away_90:
+        final_home_goals = pred_home_90
+        final_away_goals = pred_away_90
+        tot_corners = int(np.clip(np.round(tot_corners_90), 4, 16))
+        tot_yellows = int(np.clip(np.round(tot_yellows_90), 1, 9))
+        tot_reds = int(np.clip(np.round(tot_reds_90), 0, 3))
+
+        if final_home_goals > final_away_goals:
+            winner_side = "home"
+        elif final_away_goals > final_home_goals:
+            winner_side = "away"
+        else:
+            winner_side = "draw"
+
+        return (
+            final_home_goals,
+            final_away_goals,
+            winner_side,
+            tot_corners,
+            tot_yellows,
+            tot_reds,
+            is_extra_time,
+            is_penalty,
+        )
+
+    # --- PHASE B: EXTRA TIME (KNOCKOUT DRAWS ONLY) ---
+    is_extra_time = True
+    et_multiplier = match_rules.get("et_multiplier", 0.333)
+    fatigue_factor = match_rules.get("fatigue_factor", 0.8)
+
+    raw_home_120 = raw_home * (1 + (et_multiplier * fatigue_factor))
+    raw_away_120 = raw_away * (1 + (et_multiplier * fatigue_factor))
+
+    final_home_goals = int(np.round(raw_home_120))
+    final_away_goals = int(np.round(raw_away_120))
+
+    tot_corners = int(
+        np.clip(
+            np.round(tot_corners_90 * (1 + (et_multiplier * fatigue_factor))), 5, 18
+        )
+    )
+    tot_yellows = int(
+        np.clip(
+            np.round(tot_yellows_90 * (1 + (et_multiplier * fatigue_factor))), 1, 12
+        )
+    )
+    tot_reds = int(
+        np.clip(np.round(tot_reds_90 * (1 + (et_multiplier * fatigue_factor))), 0, 4)
+    )
+
+    if final_home_goals > final_away_goals:
+        winner_side = "home"
+    elif final_away_goals > final_home_goals:
+        winner_side = "away"
+    else:
+        # --- PHASE C: PENALTIES ---
+        is_penalty = True
+        # Utilize the comprehensive floating-point ensemble blend as the ultimate tie-breaker
+        if raw_home >= raw_away:
+            winner_side = "home"
+        else:
+            winner_side = "away"
+
+    return (
+        final_home_goals,
+        final_away_goals,
+        winner_side,
+        tot_corners,
+        tot_yellows,
+        tot_reds,
+        is_extra_time,
+        is_penalty,
+    )
 
 
 def _resolve_consensus_math(

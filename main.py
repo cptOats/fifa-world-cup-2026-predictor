@@ -249,6 +249,7 @@ def main():
             g_away=g_away,
             g_neutral=g_neutral,
             blend_weights=blend_weights,
+            match_rules=MATCH_RULES,
             elo_engine=elo_engine,
             xgb_home=xgb_home,
             xgb_away=xgb_away,
@@ -283,12 +284,10 @@ def main():
         team_power=TEAM_POWER,
     )
 
-    logging.info("🗄️  Consolidating schemas into master unified ledger...")
     predicted_fixtures["round"] = "Group " + predicted_fixtures["group"]
     predicted_fixtures["extra_time"] = False
     predicted_fixtures["penalties"] = False
     predicted_fixtures["venue"] = group_fixtures.get("venue", "Neutral")
-
     predicted_fixtures["winner_name_meta"] = predicted_fixtures.apply(
         lambda r: (
             r["home_team"]
@@ -322,18 +321,11 @@ def main():
         ignore_index=True,
     )
 
-    # Save Core Artifacts
-    logging.info(f"💾 Committing unified dataset matrices to: {run_dir}")
-
-    # 1. Save the Master Match Ledger
+    # Save Deterministic Run Data
     master_tournament.to_csv(
         os.path.join(run_dir, "predicted_tournament.csv"), index=False
     )
-
-    # 2. Save the Deterministic League Tables
     group_tables.to_csv(os.path.join(run_dir, "final_group_tables.csv"), index=False)
-
-    # 3. Compile and Save official Wildcard Standings
     third_places_df = group_tables[group_tables["position"] == 3].copy()
     ranked_thirds_df = third_places_df.sort_values(
         by=["points", "goals_diff", "goals_for"], ascending=[False, False, False]
@@ -342,7 +334,7 @@ def main():
         os.path.join(run_dir, "third_places_standings.csv"), index=False
     )
 
-    # 4. Compile and Save the Master Team Capabilities Lookup Matrix
+    # Compile and Save the Master Team Capabilities Lookup Matrix
     capability_records = []
     for team in participating_teams:
         p_rat = ratings.get(team, {"attack": 1.0, "defense": 1.0})
@@ -402,7 +394,7 @@ def main():
 
     final_match = knockout_matrix[knockout_matrix["round"] == "Final"].iloc[0]
     logging.info(
-        f"🏆 Demodal path champion detected: {final_match['winner_name_meta'].upper()}!"
+        f"🏆 Deterministic path champion detected: {final_match['winner_name_meta'].upper()}"
     )
 
     # --- PROBABILISTIC SIMULATION LAYER ---
@@ -440,6 +432,18 @@ def main():
             team_power=TEAM_POWER,
         )
 
+        # Announce Stochastic Champion
+        stochastic_champion_row = prob_dashboard.loc[
+            prob_dashboard["Champion %"].idxmax()
+        ]
+        stochastic_champion = stochastic_champion_row["Country"].upper()
+        stochastic_prob = stochastic_champion_row["Champion %"]
+        logging.info(
+            (
+                f"🔮 Stochastic path champion detected: {stochastic_champion} {stochastic_prob:.1f}%"
+            )
+        )
+
         # 2. Centralized Saving: Master Forecast Table
         prob_dashboard.to_csv(
             os.path.join(run_dir, "monte_carlo_forecast.csv"), index=False
@@ -454,7 +458,7 @@ def main():
         )
 
         # 4. Compute Sandbox Pairwise Matrix
-        logging.info("⚔️  Spinning up sandbox pairwise matrix computations...")
+        logging.info("⚔️  Spinning up Sandbox pairwise matrix computations...")
         df_sandbox = precompute_sandbox_matchups(
             all_teams=participating_teams,
             venue_country=group_fixtures["venue_country"].iloc[0],
@@ -480,9 +484,6 @@ def main():
             os.path.join(ARTIFACTS_DIR, "pre_computed_matchups.csv"), index=False
         )
 
-        logging.info(
-            "🔮 Stochastic simulation complete. Forecasting artifacts committed to disk."
-        )
     else:
         logging.info(
             "🎲 Monte Carlo Engine: [DISABLED] skipping stochastic simulation."
