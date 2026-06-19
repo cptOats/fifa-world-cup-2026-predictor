@@ -99,7 +99,6 @@ def train_production_xgboost_models(feature_matrix, feature_columns, alpha=0.000
         }
 
     # 3. Fit Production Models
-    logging.info("🌲 Fitting final production XGBoost models...")
     days_elapsed_prod = (
         feature_matrix["match_date"].max() - feature_matrix["match_date"]
     ).dt.days

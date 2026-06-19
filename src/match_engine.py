@@ -126,7 +126,6 @@ def evaluate_match_consensus(
     g_away_avg: float,
     g_neutral_avg: float,
     blend_weights: dict[str, float],
-    match_rules: dict[str, float],
     elo_engine,
     xgb_home,
     xgb_away,
@@ -136,7 +135,7 @@ def evaluate_match_consensus(
     nudge_strength: float = 1.5,
     team_power: dict[str, int] | None = None,
 ) -> tuple[float, float, float, float, float]:
-    """Computes unified, leak-proof continuous goal intensities for a single match."""
+    """Computes goal intensities for a single match."""
 
     is_neutral = 0 if (home_team == venue_country or away_team == venue_country) else 1
 
@@ -202,7 +201,6 @@ def batch_evaluate_consensus(
     g_away: float,
     g_neutral: float,
     blend_weights: dict[str, float],
-    match_rules: dict[str, float],
     elo_engine,
     xgb_home,
     xgb_away,

@@ -408,11 +408,12 @@ def predict_poisson_match(
         lambda_away = away_rating["attack"] * home_rating["defense"] * g_neutral
         is_neutral = 1
 
-    raw_corners = (5.5 * home_rating["attack"] * away_rating["defense"]) + (
-        5.5 * away_rating["attack"] * home_rating["defense"]
+    # Estimate Basic Proxy Metrics
+    raw_corners = (5.0 * home_rating["attack"] * away_rating["defense"]) + (
+        5.0 * away_rating["attack"] * home_rating["defense"]
     )
-    raw_yellows = (3.0 * home_rating["defense"] * away_rating["attack"]) + (
-        3.0 * away_rating["defense"] * home_rating["attack"]
+    raw_yellows = (2.0 * home_rating["defense"] * away_rating["attack"]) + (
+        2.0 * away_rating["defense"] * home_rating["attack"]
     )
     raw_reds = 0.12 if is_neutral == 0 else 0.10
 

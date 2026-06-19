@@ -33,12 +33,12 @@ from src.transform import (
 )
 
 # --- MODEL CONFIGURATION ---
-MODEL_TYPE = "blend"  # "blend", "elo", "poisson", "xgb"
-RUN_MONTE_CARLO = True
-MONTE_CARLO_RUNS = 100  # Recommend 10K+
-USE_PRIOR_NUDGE = True
+MODEL_TYPE = "blend"  # "blend", "poisson", "elo", "xgb"
+RUN_MONTE_CARLO = True  # Enable for full predictive power
+MONTE_CARLO_RUNS = 1000  # Recommend 10K+
+USE_PRIOR_NUDGE = True  # Use with caution!
 NUDGE_STRENGTH = 1.5  # Recommend ~1.5
-FORCE_RETRAIN = False
+FORCE_RETRAIN = False  # Deletes model artifacts and OOF arrays
 
 # --- TRAINING VARIABLES ---
 TRAINING_VARIABLES = {
@@ -184,28 +184,28 @@ def main():
 
     # --- Elo Rating ---
     logging.info(
-        "📈 Synchronizing continuous World Football Elo ratings across time series..."
+        "📈 Synchronizing continuous World Football Elo ratings through time..."
     )
     elo_engine = EloEngine(k_factor=40)
     elo_engine.fit(modern_df)
+
+    # --- Feature Engineering ---
+    feature_matrix, feature_columns = compile_master_feature_matrix(
+        os.path.join("data", "processed", "clean_historical_matches.parquet"),
+        elo_engine,
+    )
 
     # --- Poisson ---
     logging.info("🧮 Resolving Joint Maximum Likelihood Estimations for Poisson...")
     ratings, g_home, g_away, g_neutral = train_poisson_ratings(
         dixon_coles=(MODEL_TYPE == "poisson")
     )
-
-    # --- XGBoost ---
-    logging.info("🌲 Training dynamic XGBoost count model...")
-    feature_matrix, feature_columns = compile_master_feature_matrix(
-        os.path.join("data", "processed", "clean_historical_matches.parquet"),
-        elo_engine,
-    )
-
-    # --- Out-of-Fold ---
     oof_poisson_home, oof_poisson_away = train_poisson_oof_predictions(
         feature_matrix, dixon_coles=(MODEL_TYPE == "poisson")
     )
+
+    # --- XGBoost ---
+    logging.info("🌲 Training dynamic XGBoost count model...")
     xgb_home, xgb_away, oof_home_preds, oof_away_preds, cv_metrics = (
         train_production_xgboost_models(feature_matrix, feature_columns)
     )
@@ -286,7 +286,6 @@ def main():
             g_away_avg=g_away,
             g_neutral_avg=g_neutral,
             blend_weights=blend_weights,
-            match_rules=MATCH_RULES,
             elo_engine=elo_engine,
             xgb_home=xgb_home,
             xgb_away=xgb_away,
@@ -326,7 +325,6 @@ def main():
     group_tables = resolve_group_tables(predicted_fixtures)
     top_thirds = extract_best_third_places(group_tables)
     third_place_assignments = allocate_third_places(top_thirds)
-
     latest_team_form["__meta_weights__"] = blend_weights
 
     # --- KNOCKOUT WATERFALL SIMULATION ---

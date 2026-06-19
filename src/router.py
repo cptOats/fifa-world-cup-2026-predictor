@@ -291,8 +291,6 @@ def simulate_knockout_waterfall(
         else:
             away_team = slot_away
 
-        # Inside simulate_knockout_waterfall loop
-
         # Call the unified match engine to calculate baseline 90-min capability curves
         raw_home, raw_away, tot_corners_90, tot_yellows_90, tot_reds_90 = (
             evaluate_match_consensus(
@@ -304,7 +302,6 @@ def simulate_knockout_waterfall(
                 g_away_avg=g_away_avg,
                 g_neutral_avg=g_neutral_avg,
                 blend_weights=blend_weights,
-                match_rules=match_rules,
                 elo_engine=elo_engine,
                 xgb_home=xgb_home,
                 xgb_away=xgb_away,

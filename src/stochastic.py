@@ -74,7 +74,6 @@ def run_monte_carlo_master(
         g_neutral=g_neutral,
         blend_weights=blend_weights,
         elo_engine=elo_engine,
-        match_rules=match_rules,
         xgb_home=xgb_home,
         xgb_away=xgb_away,
         feature_columns=feature_columns,
