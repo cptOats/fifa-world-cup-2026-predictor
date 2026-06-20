@@ -29,9 +29,6 @@ def run_monte_carlo_master(
     blend_weights,
     match_rules,
     n_simulations=10000,
-    use_prior_nudge=False,
-    nudge_strength=1.5,
-    team_power=None,
 ):
     """Executes randomized tournament simulations using an optimized global matchup cache."""
 
@@ -92,9 +89,6 @@ def run_monte_carlo_master(
         xgb_away=xgb_away,
         feature_columns=feature_columns,
         latest_team_form=latest_team_form,
-        use_prior_nudge=use_prior_nudge,
-        nudge_strength=nudge_strength,
-        team_power=team_power,
     )
 
     group_fixtures_list = group_fixtures.to_dict(orient="records")

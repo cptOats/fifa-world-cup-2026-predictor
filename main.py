@@ -41,8 +41,6 @@ from src.transform import (
 MODEL_TYPE = "blend"  # "blend", "poisson", "elo", "xgb"
 RUN_MONTE_CARLO = True  # Enable for full predictive power
 MONTE_CARLO_RUNS = 10000  # Recommend 10K+
-USE_PRIOR_NUDGE = False  # Use with caution!
-NUDGE_STRENGTH = 1.5  # Recommend ~1.5
 FORCE_RETRAIN = False  # Deletes model artifacts and OOF arrays
 
 # --- TRAINING VARIABLES ---
@@ -60,62 +58,9 @@ MATCH_RULES = {
     "draw_copula": 0.08,
 }
 
-# --- POWER RATINGS --- source: https://www.datacamp.com/datalab/w/3da1cc64-5670-441e-8e7b-b948a6a29403
-TEAM_POWER = {
-    "Algeria": 74,
-    "Argentina": 95,
-    "Australia": 74,
-    "Austria": 79,
-    "Belgium": 86,
-    "Bosnia and Herzegovina": 72,
-    "Brazil": 94,
-    "Cape Verde": 64,
-    "Canada": 75,
-    "Colombia": 84,
-    "DR Congo": 69,
-    "Croatia": 83,
-    "Curaçao": 61,
-    "Czech Republic": 73,
-    "Ivory Coast": 77,
-    "Ecuador": 79,
-    "Egypt": 76,
-    "England": 93,
-    "France": 97,
-    "Germany": 90,
-    "Ghana": 73,
-    "Haiti": 62,
-    "Iran": 74,
-    "Iraq": 69,
-    "Japan": 81,
-    "Jordan": 65,
-    "Mexico": 79,
-    "Morocco": 82,
-    "Netherlands": 88,
-    "New Zealand": 64,
-    "Norway": 81,
-    "Panama": 67,
-    "Paraguay": 76,
-    "Portugal": 91,
-    "Qatar": 68,
-    "Saudi Arabia": 70,
-    "Scotland": 73,
-    "Senegal": 80,
-    "South Africa": 70,
-    "South Korea": 77,
-    "Spain": 97,
-    "Sweden": 78,
-    "Switzerland": 82,
-    "Tunisia": 71,
-    "Turkey": 78,
-    "United States": 80,
-    "Uruguay": 84,
-    "Uzbekistan": 68,
-}
-
 # --- PIPELINE INITIALIZATION & LOGGING ---
 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M")
-nudge_suffix = f"_nudge{NUDGE_STRENGTH}" if USE_PRIOR_NUDGE else ""
-run_name = f"run_{MODEL_TYPE}{nudge_suffix}_{timestamp}"
+run_name = f"run_{MODEL_TYPE}_{timestamp}"
 run_dir = os.path.join("data", "runs", run_name)
 os.makedirs(run_dir, exist_ok=True)
 
@@ -179,20 +124,8 @@ def main():
     )
     participating_teams: list[str] = [str(team) for team in raw_teams]
 
-    # --- ENTITY ALIGNMENT GATE FOR POWER RATINGS PRIORS ---
-    if USE_PRIOR_NUDGE and TEAM_POWER:
-        missing_priors = [
-            team for team in participating_teams if team not in TEAM_POWER
-        ]
-        assert not missing_priors, (
-            f"❌ TEAM_POWER String Mismatch! Unmapped tournament teams: {missing_priors}"
-        )
-        logging.info("🎯 Bayesian Prior Pass: All tournament entities validated.")
-
     # --- Launch Prediction Pipeline ---
-    logging.info(
-        f"🚀 Launching World Cup Prediction Pipeline [Engine: {MODEL_TYPE}{nudge_suffix}]"
-    )
+    logging.info(f"🚀 Launching World Cup Prediction Pipeline [Engine: {MODEL_TYPE}]")
 
     # --- Elo Rating ---
     logging.info(
@@ -270,9 +203,6 @@ def main():
             xgb_away=xgb_away,
             feature_columns=feature_columns,
             latest_team_form=latest_team_form,
-            use_prior_nudge=USE_PRIOR_NUDGE,
-            nudge_strength=NUDGE_STRENGTH,
-            team_power=TEAM_POWER,
         )
     )
 
@@ -294,9 +224,6 @@ def main():
         xgb_away=xgb_away,
         feature_columns=feature_columns,
         latest_team_form=latest_team_form,
-        use_prior_nudge=USE_PRIOR_NUDGE,
-        nudge_strength=NUDGE_STRENGTH,
-        team_power=TEAM_POWER,
     )
 
     # Concatenate Deterministic Run Data
@@ -371,16 +298,6 @@ def main():
             "Defense_Volatility_Long": long_vol_def,
         }
 
-        # Append Bayesian Priors Nudge
-        if USE_PRIOR_NUDGE:
-            record["Nudge_Power_Rating"] = TEAM_POWER.get(team, 75)
-            record["Nudge_Raw_Delta"] = (
-                TEAM_POWER.get(team, 75) / 100
-            ) * NUDGE_STRENGTH
-        else:
-            record["Nudge_Power_Rating"] = None
-            record["Nudge_Raw_Delta"] = None
-
         capability_records.append(record)
 
     capabilities_df = pd.DataFrame(capability_records).sort_values(
@@ -398,12 +315,9 @@ def main():
             "model_type": MODEL_TYPE,
             "run_monte_carlo": RUN_MONTE_CARLO,
             "monte_carlo_runs": MONTE_CARLO_RUNS,
-            "use_prior_nudge": USE_PRIOR_NUDGE,
-            "nudge_strength": NUDGE_STRENGTH,
         },
         "training_variables": TRAINING_VARIABLES,
         "match_rules": MATCH_RULES,
-        "team_power": TEAM_POWER,
         "ensemble_weights": blend_weights,
         "cross_validation_metrics": cv_metrics,
     }
@@ -446,9 +360,6 @@ def main():
             blend_weights=blend_weights,
             match_rules=MATCH_RULES,
             n_simulations=MONTE_CARLO_RUNS,
-            use_prior_nudge=USE_PRIOR_NUDGE,
-            nudge_strength=NUDGE_STRENGTH,
-            team_power=TEAM_POWER,
         )
 
         # Announce Stochastic Champion
@@ -494,7 +405,7 @@ def main():
 
         # Build the Expected Probabilistic Tournament Bracket
         logging.info(
-            "🌳 Constructing Expected Stochastic Tournament Bracket via xTables..."
+            "🌳 Constructing expected stochastic tournament bracket via xTables..."
         )
         df_stoch_bracket = build_expected_stochastic_bracket(
             df_xtables=df_xtables,

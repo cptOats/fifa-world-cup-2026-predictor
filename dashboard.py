@@ -333,16 +333,14 @@ def _(json, os, pd, run_dropdown):
 
 @app.cell
 def _(config, has_stochastic, mo, run_dropdown, run_id, weights):
-    # 1. Resolve clean status strings
-    nudge_status = "🟢 ACTIVE" if config["use_prior_nudge"] else "🔴 DISABLED"
-    nudge_val = (
-        f"📏 {config['nudge_strength']}" if config["use_prior_nudge"] else "❌ N/A"
-    )
-    mc_status = (
-        f"🎲 {config['monte_carlo_runs']}"
-        if config["run_monte_carlo"]
-        else "🔴 DISABLED"
-    )
+    # 1. Resolve Monte Carlo Engine Live Status Flags
+    mc_active = config.get("run_monte_carlo", False)
+    mc_badge_color = "#34A853" if mc_active else "#EA4335"
+
+    if mc_active:
+        mc_text = f"🟢 ACTIVE<br><span style='font-size: 12px; color: #888;'>{config.get('monte_carlo_runs', 0):,} Universes</span>"
+    else:
+        mc_text = "🔴 DISABLED<br><span style='font-size: 12px; color: #888;'></span>"
 
     # 2. Create the Global Render Toggle
     view_opts = (
@@ -367,30 +365,61 @@ def _(config, has_stochastic, mo, run_dropdown, run_id, weights):
         """
     )
 
-    # 5. Separate the markdown table into its own component
-    _table_panel = mo.md(
-        f"""
-        | Parameter | Value | Ensemble Model | Weight |
-        | :--- | :--- | :--- | :--- |
-        | **Bayesian Prior Nudge** | {nudge_status} | 🧮 **Poisson MLE Baseline** | `{weights["poisson"]:.3f}` |
-        | **Nudge Amplitude** | `{nudge_val}` | 📈 **Dynamic ELO Rating** | `{weights["elo"]:.3f}` |
-        | **Monte Carlo Engine** | {mc_status} | 🌲 **XGBoost Count Regressor** | `{weights["xgb"]:.3f}` |
-        """
-    )
-
-    # 6. Build the stylized profile tracking sidebar card
+    # 5 Left Column: Active Run Identifier Card
     profile_card = mo.md(
         f"""
-        <div style="background: #1a1a1a; padding: 24px 16px; border-radius: 6px; border: 1px solid #2d2d2d; font-family: monospace; text-align: center; height: 142px; display: flex; flex-direction: column; justify-content: center; margin-top: 0px;">
-            <span style="color: #00adb5; font-size: 24px; font-weight: bold; word-break: break-all; line-height: 1.4;">📊 {run_id}</span>
+        <div style="background: #1a1a1a; padding: 20px 16px; border-radius: 6px; border: 1px solid #2d2d2d; font-family: monospace; text-align: center; height: 142px; display: flex; flex-direction: column; justify-content: center; margin-top: 0px; box-sizing: border-box;">
+            <span style="color: #00adb5; font-size: 18px; font-weight: bold; word-break: break-all; line-height: 1.3;">📊 {run_id}</span>
         </div>
         """
     )
 
-    # 7. Bind the table and card side-by-side
-    lower_grid = mo.hstack([_table_panel, profile_card], widths=[1, 1], gap=2)
+    # 6. Middle Column: High-Density HTML Table (Centered middle-middle via inline Flexbox)
+    _table_panel = mo.md(
+        f"""
+        <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 142px; width: 100%; box-sizing: border-box; background: #1a1a1a; border-radius: 6px; border: 1px solid #2d2d2d; padding: 12px;">
+            <table style="width: auto !important; border-collapse: collapse; font-family: monospace; font-size: 13px; margin: 0 auto; background: transparent;">
+                <thead>
+                    <tr style="border-bottom: 2px solid #333;">
+                        <th style="padding: 4px 10px; text-align: left; background: transparent; color: #fff; font-weight: bold; border-bottom: 2px solid #333 !important;">Ensemble Model</th>
+                        <th style="padding: 4px 10px; text-align: right; background: transparent; color: #fff; font-weight: bold; border-bottom: 2px solid #333 !important;">Weight</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr style="border-bottom: 1px solid #262626;">
+                        <td style="padding: 6px 10px; text-align: left; border-bottom: 1px solid #262626 !important;">🧮 Poisson Joint MLE</td>
+                        <td style="padding: 6px 10px; text-align: right; color: #00adb5; font-weight: bold; border-bottom: 1px solid #262626 !important;">{weights["poisson"]:.3f}</td>
+                    </tr>
+                    <tr style="border-bottom: 1px solid #262626;">
+                        <td style="padding: 6px 10px; text-align: left; border-bottom: 1px solid #262626 !important;">📈 Dynamic ELO Rating</td>
+                        <td style="padding: 6px 10px; text-align: right; color: #00adb5; font-weight: bold; border-bottom: 1px solid #262626 !important;">{weights["elo"]:.3f}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 6px 10px; text-align: left; border-bottom: none !important;">🌲 XGBoost Count Regressor</td>
+                        <td style="padding: 6px 10px; text-align: right; color: #00adb5; font-weight: bold; border-bottom: none !important;">{weights["xgb"]:.3f}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        """
+    )
 
-    # 8. Stack the blocks vertically into a singular unified dashboard segment
+    # 7. Right Column: Monte Carlo Status Indicator Card
+    mc_card = mo.md(
+        f"""
+        <div style="background: #1a1a1a; padding: 20px 18px; border-radius: 6px; border: 1px solid #2d2d2d; font-family: monospace; text-align: center; height: 142px; display: flex; flex-direction: column; justify-content: center; margin-top: 0px; box-sizing: border-box;">
+            <div style="color: #6c757d; font-size: 14px; font-weight: bold; margin-bottom: 4px; letter-spacing: 0.5px;">🎲 MONTE CARLO ENGINE</div>
+            <span style="color: {mc_badge_color}; font-size: 18px; font-weight: bold; line-height: 1.4;">{mc_text}</span>
+        </div>
+        """
+    )
+
+    # 8. Bind all three columns side-by-side into a proportional layout grid
+    lower_grid = mo.hstack(
+        [profile_card, _table_panel, mc_card], widths=[1, 1, 1], gap=1.5
+    )
+
+    # 9. Stack the entire panel structure vertically
     header_panel = mo.vstack([title_panel, controls_panel, lower_grid])
 
     header_panel

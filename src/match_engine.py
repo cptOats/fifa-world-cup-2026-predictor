@@ -201,9 +201,6 @@ def _resolve_consensus_math(
     elo_engine,
     xgb_h_pred: float,
     xgb_w_pred: float,
-    use_prior_nudge: bool,
-    nudge_strength: float,
-    team_power: dict[str, int] | None,
 ) -> tuple[float, float, float, float, float]:
     """Pure mathematical resolver for obtaining model outputs without DataFrame overhead."""
 
@@ -238,16 +235,6 @@ def _resolve_consensus_math(
         + (blend_weights["xgb"] * xgb_w_pred)
     )
 
-    # 5. Apply Bayesian Prior Nudge to the Continuous Intensities
-    if use_prior_nudge and team_power:
-        prior_nudge = (
-            (team_power.get(home_team, 75) - team_power.get(away_team, 75))
-            / 100
-            * nudge_strength
-        )
-        raw_home = max(0.1, raw_home + prior_nudge)
-        raw_away = max(0.1, raw_away - prior_nudge)
-
     return raw_home, raw_away, p_corners, p_yellows, p_reds
 
 
@@ -265,9 +252,6 @@ def evaluate_match_consensus(
     xgb_away,
     feature_columns: list[str],
     latest_team_form: dict[str, dict[str, float]],
-    use_prior_nudge: bool = False,
-    nudge_strength: float = 1.5,
-    team_power: dict[str, int] | None = None,
 ) -> tuple[float, float, float, float, float]:
     """Computes goal intensities for a single match."""
 
@@ -328,9 +312,6 @@ def evaluate_match_consensus(
         elo_engine,
         xgb_h_pred,
         xgb_w_pred,
-        use_prior_nudge,
-        nudge_strength,
-        team_power,
     )
 
 
@@ -346,9 +327,6 @@ def batch_evaluate_consensus(
     xgb_away,
     feature_columns: list[str],
     latest_team_form: dict[str, dict[str, float]],
-    use_prior_nudge: bool = False,
-    nudge_strength: float = 1.5,
-    team_power: dict[str, int] | None = None,
 ) -> dict[tuple[str, str, str], tuple[float, float, float, float]]:
     """Vectorized batch inference for thousands of theoretical matchups."""
 
@@ -419,9 +397,6 @@ def batch_evaluate_consensus(
             elo_engine,
             xgb_h_val,
             xgb_a_val,
-            use_prior_nudge,
-            nudge_strength,
-            team_power,
         )
 
         lambda_cache[(h, a, v_country)] = (l_h, l_a, c_exp, y_exp)

@@ -215,9 +215,6 @@ def simulate_deterministic_group_stage(
     xgb_away,
     feature_columns,
     latest_team_form,
-    use_prior_nudge,
-    nudge_strength,
-    team_power,
 ):
     """Simulates the deterministic group stage fixtures using model consensus."""
 
@@ -246,9 +243,6 @@ def simulate_deterministic_group_stage(
             xgb_away=xgb_away,
             feature_columns=feature_columns,
             latest_team_form=latest_team_form,
-            use_prior_nudge=use_prior_nudge,
-            nudge_strength=nudge_strength,
-            team_power=team_power,
         )
 
         # Resolve final integer logic
@@ -316,9 +310,6 @@ def simulate_knockout_waterfall(
     xgb_away=None,
     feature_columns: list[str] | None = None,
     latest_team_form: dict[str, dict[str, float]] | None = None,
-    use_prior_nudge: bool = False,
-    nudge_strength: float = 1.5,
-    team_power: dict[str, int] | None = None,
 ) -> pd.DataFrame:
     """Simulates the knockout bracket tree sequentially from Round of 32 down to the Final."""
 
@@ -406,9 +397,6 @@ def simulate_knockout_waterfall(
             xgb_away=xgb_away,
             feature_columns=feature_columns,
             latest_team_form=latest_team_form,
-            use_prior_nudge=use_prior_nudge,
-            nudge_strength=nudge_strength,
-            team_power=team_power,
         )
 
         # Resolve timeline logic
