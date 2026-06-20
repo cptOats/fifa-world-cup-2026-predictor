@@ -407,8 +407,6 @@ def precompute_sandbox_matchups(
                 "ko_win_home": round(ko_win_h, 1),
                 "ko_win_away": round(ko_win_a, 1),
                 "top_scorelines_json": top_str,
-                "expected_corners": round(c_exp, 1),
-                "expected_yellow_cards": round(y_exp, 1),
             }
         )
 
@@ -533,9 +531,6 @@ def build_expected_stochastic_bracket(
                 else float(sb_data["ko_win_away"])
             )
 
-            exp_corners = sb_data["expected_corners"]
-            exp_yellows = sb_data["expected_yellow_cards"]
-
             # Retrieve base xG for UI aesthetics
             l_h = (
                 sb_data["ensemble_lambda_away"]
@@ -549,7 +544,6 @@ def build_expected_stochastic_bracket(
             )
         else:
             prob_h, prob_a = 50.0, 50.0
-            exp_corners, exp_yellows = 9.5, 3.5
             l_h, l_a = 1.0, 1.0
 
         # Determine Absolute Probabilistic Winner
@@ -581,9 +575,6 @@ def build_expected_stochastic_bracket(
                 "away_team": away,
                 "predicted_home_goals": pred_h_goals,
                 "predicted_away_goals": pred_a_goals,
-                "corners": exp_corners,
-                "yellow_cards": exp_yellows,
-                "red_cards": 0,
                 "extra_time": False,
                 "penalties": False,
                 "winner_name_meta": winner,

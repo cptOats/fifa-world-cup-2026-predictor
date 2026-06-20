@@ -322,8 +322,8 @@ def _(json, os, pd, run_dropdown):
         df_tables,
         df_thirds,
         df_tournament,
-        df_xtables,
         df_tournament_stoch,
+        df_xtables,
         has_stochastic,
         match_rules,
         run_id,
@@ -423,7 +423,7 @@ def _(DARK_THEME, df_capabilities, has_stochastic, mo):
         </div>
         <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #2d2d2d; padding-top: 15px;">
             <div style="font-weight: bold; color: {DARK_THEME["accent"]}; font-size: 16px; font-family: monospace; letter-spacing: 0.5px;">
-                ⚔️ INTERACTIVE MATCHUP SANDBOX
+                ⚔️ INTERACTIVE MATCHUP SANDBOX 🛡️
             </div>
             <div style="display: flex; gap: 30px;">
                 {{is_ko}}
@@ -811,7 +811,7 @@ def _(
         )
 
         fig_sandbox.update_layout(
-            title="<b>CAPABILITIES</b>",
+            title="<b>🔥 CAPABILITIES</b>",
             polar=dict(
                 radialaxis=dict(
                     visible=True,
@@ -1145,6 +1145,9 @@ def _(
                     """
                 else:
                     _match_resolution_html = "<div>Matchup Artifact Missing</div>"
+
+                # Clear out the proxy footer for Stochastic lookups
+                _proxy_footer_html = ""
             else:
                 grp_h_goals = int(grp_match["predicted_home_goals"])
                 grp_a_goals = int(grp_match["predicted_away_goals"])
@@ -1191,6 +1194,15 @@ def _(
                 </div>
                 """
 
+                # Store the deterministic proxy values
+                _proxy_footer_html = f"""
+                <div style="border-top: 1px solid #2d2d2d; padding-top: 8px; font-size: 11px; display: flex; justify-content: space-between;">
+                    <span>📐 Corners: {int(grp_match["corners"])}</span>
+                    <span>🟨 Yellows: {int(grp_match["yellow_cards"])}</span>
+                    <span>🟥 Reds: {int(grp_match["red_cards"])}</span>
+                </div>
+                """
+
             grp_card = f"""
             <div style="background-color: {DARK_THEME["paper"]}; border: 1px solid #333; border-radius: 6px; padding: 16px; margin: 10px 0px; font-family: monospace;">
                 <div style="color: {DARK_THEME["muted"]}; font-size: 11px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
@@ -1202,11 +1214,7 @@ def _(
 
                 {_match_resolution_html}
 
-                <div style="border-top: 1px solid #2d2d2d; padding-top: 8px; font-size: 11px; display: flex; justify-content: space-between;">
-                    <span>📐 Corners: {int(grp_match["corners"])}</span>
-                    <span>🟨 Yellows: {int(grp_match["yellow_cards"])}</span>
-                    <span>🟥 Reds: {int(grp_match["red_cards"])}</span>
-                </div>
+                {_proxy_footer_html}
             </div>
             """
             day_cards_html.append(grp_card)
@@ -1277,9 +1285,6 @@ def _(
         for _, match in round_matches.iterrows():
             _home_team = match["home_team"]
             _away_team = match["away_team"]
-            m_corners = f"{pd.to_numeric(match['corners'], errors='coerce'):.0f}"
-            m_yellows = f"{pd.to_numeric(match['yellow_cards'], errors='coerce'):.0f}"
-            m_reds = f"{pd.to_numeric(match['red_cards'], errors='coerce'):.0f}"
             venue_tag = f"📍 {match['venue']}" if pd.notna(match.get("venue")) else ""
 
             if _is_stoch_mode and df_matchups is not None:
@@ -1363,10 +1368,19 @@ def _(
                 _et_badge = ""
                 _pens_badge = ""
 
+                # Clear out the proxy footer for Stochastic lookups
+                _proxy_footer_html = ""
+
             else:
                 _ko_winner = match["winner_name_meta"]
                 h_goals = f"{pd.to_numeric(match['predicted_home_goals'], errors='coerce'):.0f}"
                 a_goals = f"{pd.to_numeric(match['predicted_away_goals'], errors='coerce'):.0f}"
+
+                m_corners = f"{pd.to_numeric(match['corners'], errors='coerce'):.0f}"
+                m_yellows = (
+                    f"{pd.to_numeric(match['yellow_cards'], errors='coerce'):.0f}"
+                )
+                m_reds = f"{pd.to_numeric(match['red_cards'], errors='coerce'):.0f}"
 
                 went_to_et = match.get("extra_time", False)
                 _has_et = (
@@ -1409,6 +1423,15 @@ def _(
                 </div>
                 """
 
+                # Store the deterministic proxy values
+                _proxy_footer_html = f"""
+                <div style="border-top: 1px solid #2d2d2d; padding-top: 8px; font-size: 11px; display: flex; justify-content: space-between;">
+                    <span>📐 Corners: {m_corners}</span>
+                    <span>🟨 Yellows: {m_yellows}</span>
+                    <span>🟥 Reds: {m_reds}</span>
+                </div>
+                """
+
             card = f"""
             <div style="background-color: {DARK_THEME["paper"]}; border: 1px solid #333; border-radius: 6px; padding: 16px; margin: 10px 0px; font-family: monospace;">
                 <div style="color: {DARK_THEME["muted"]}; font-size: 11px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
@@ -1422,11 +1445,7 @@ def _(
 
                 {_match_resolution_html}
 
-                <div style="border-top: 1px solid #2d2d2d; padding-top: 8px; font-size: 11px; display: flex; justify-content: space-between;">
-                    <span>📐 Corners: {m_corners}</span>
-                    <span>🟨 Yellows: {m_yellows}</span>
-                    <span>🟥 Reds: {m_reds}</span>
-                </div>
+                {_proxy_footer_html}
             </div>
             """
             match_cards_html.append(card)
@@ -1551,16 +1570,16 @@ def _(DARK_THEME, apply_mission_control_layout, df_tournament, go, mo, pd):
         <hr style="border-color: #2d2d2d; margin: 20px 0;">
         <div style="display: flex; gap: 15px; margin: 20px 0; text-align: center; font-family: monospace;">
             <div style="flex: 1; background: {DARK_THEME["paper"]}; padding: 12px; border-radius: 6px; border: 1px solid #333;">
-                <div style="color: {DARK_THEME["muted"]}; font-size: 11px;">TOTAL MATCHES</div>
+                <div style="color: {DARK_THEME["muted"]}; font-size: 11px;">MATCHES</div>
                 <div style="font-size: 22px; font-weight: bold; color: #fff;">{t_matches}</div>
             </div>
             <div style="flex: 1; background: {DARK_THEME["paper"]}; padding: 12px; border-radius: 6px; border: 1px solid #333;">
-                <div style="color: {DARK_THEME["muted"]}; font-size: 11px;">TOTAL GOALS</div>
+                <div style="color: {DARK_THEME["muted"]}; font-size: 11px;">GOALS</div>
                 <div style="font-size: 22px; font-weight: bold; color: #00adb5;">{t_goals}</div>
                 <div style="font-size: 10px; color: {DARK_THEME["muted"]};">{(t_goals / t_matches):.2f} / game</div>
             </div>
             <div style="flex: 1; background: {DARK_THEME["paper"]}; padding: 12px; border-radius: 6px; border: 1px solid #333;">
-                <div style="color: {DARK_THEME["muted"]}; font-size: 11px;">TOTAL CORNERS</div>
+                <div style="color: {DARK_THEME["muted"]}; font-size: 11px;">CORNERS</div>
                 <div style="font-size: 22px; font-weight: bold; color: #34A853;">{t_corners}</div>
                 <div style="font-size: 10px; color: {DARK_THEME["muted"]};">{(t_corners / t_matches):.2f} / game</div>
             </div>
@@ -1615,7 +1634,7 @@ def _(df_thirds, df_xtables, mo, view_mode_toggle):
         df_display["Status"] = [
             "🟢 LIKELY" if i < 8 else "🔴 UNLIKELY" for i in range(len(df_display))
         ]
-        heading = mo.md("### 🃏 EXPECTED WILDCARD ADVANCEMENT")
+        heading = mo.md("### 🃏 3rd PLACE WILDCARDS")
         wildcard_table = mo.ui.table(df_display.head(15), pagination=False)
         third_places_panel = mo.vstack([heading, wildcard_table])
 
@@ -1645,7 +1664,7 @@ def _(df_thirds, df_xtables, mo, view_mode_toggle):
             lambda x: f"+{int(x)}" if int(x) > 0 else str(int(x))
         )
 
-        heading = mo.md("### 🃏 3rd PLACE WILDCARDS (DETERMINISTIC)")
+        heading = mo.md("### 🃏 3rd PLACE WILDCARDS")
         wildcard_table = mo.ui.table(df_display, pagination=False)
         third_places_panel = mo.vstack([heading, wildcard_table])
 
