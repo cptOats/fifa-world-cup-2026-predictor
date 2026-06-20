@@ -245,10 +245,14 @@ def _(json, os, pd, run_dropdown):
 
     # 3. Ingest selected run datasets into active dashboard scope
     df_tournament = pd.read_csv(
-        os.path.join(active_run_dir, "predicted_tournament.csv")
+        os.path.join(active_run_dir, "deterministic_tournament.csv")
     )
-    df_tables = pd.read_csv(os.path.join(active_run_dir, "final_group_tables.csv"))
-    df_thirds = pd.read_csv(os.path.join(active_run_dir, "third_places_standings.csv"))
+    df_tables = pd.read_csv(
+        os.path.join(active_run_dir, "deterministic_group_tables.csv")
+    )
+    df_thirds = pd.read_csv(
+        os.path.join(active_run_dir, "deterministic_third_places.csv")
+    )
     df_capabilities = pd.read_csv(
         os.path.join(active_run_dir, "pre_tournament_capabilities.csv")
     )
@@ -273,7 +277,7 @@ def _(json, os, pd, run_dropdown):
         df_tournament.loc[top_fiery_indices, "red_cards"] = 1
 
     # Defensive infrastructure fallback if auditing older run branches
-    matchups_path = os.path.join(active_run_dir, "pre_computed_matchups.csv")
+    matchups_path = os.path.join(active_run_dir, "stochastic_sandbox_matchups.csv")
     if os.path.exists(matchups_path):
         df_matchups = pd.read_csv(matchups_path)
     else:
@@ -281,19 +285,25 @@ def _(json, os, pd, run_dropdown):
             columns=[
                 "home_team",
                 "away_team",
-                "is_neutral_venue",
+                "venue_country",
                 "ensemble_lambda_home",
                 "ensemble_lambda_away",
             ]
         )
 
-    # Safely unpack optional stochastic Monte Carlo matrix arrays
-    forecast_path = os.path.join(active_run_dir, "monte_carlo_forecast.csv")
-    has_stochastic = os.path.exists(forecast_path)
-    df_forecast = pd.read_csv(forecast_path) if has_stochastic else None
+    # Safely unpack optional stochastic Data
+    forecast_path = os.path.join(active_run_dir, "stochastic_forecast.csv")
+    df_forecast = pd.read_csv(forecast_path) if os.path.exists(forecast_path) else None
 
     xtables_path = os.path.join(active_run_dir, "stochastic_group_tables.csv")
     df_xtables = pd.read_csv(xtables_path) if os.path.exists(xtables_path) else None
+
+    stoch_tourn_path = os.path.join(active_run_dir, "stochastic_tournament.csv")
+    df_tournament_stoch = (
+        pd.read_csv(stoch_tourn_path) if os.path.exists(stoch_tourn_path) else None
+    )
+
+    has_stochastic = os.path.exists(forecast_path)
 
     # 4. Parse running parameters from JSON configuration sheet
     with open(os.path.join(active_run_dir, "metadata.json"), "r") as f:
@@ -313,6 +323,7 @@ def _(json, os, pd, run_dropdown):
         df_thirds,
         df_tournament,
         df_xtables,
+        df_tournament_stoch,
         has_stochastic,
         match_rules,
         run_id,
@@ -460,10 +471,11 @@ def _(
         mo.md("> ⚠️ **Simulation Error:** A team cannot play itself."),
     )
 
-    # 1. Coordinate Pair Ingestion (Permanently decoupled from venue strings)
+    # 1. Coordinate Pair Ingestion
     match_row = df_matchups[
         (df_matchups["home_team"] == sim_team_a)
         & (df_matchups["away_team"] == sim_team_b)
+        & (df_matchups["venue_country"] == "Neutral")
     ]
     _is_swapped = False
 
@@ -471,6 +483,7 @@ def _(
         match_row = df_matchups[
             (df_matchups["home_team"] == sim_team_b)
             & (df_matchups["away_team"] == sim_team_a)
+            & (df_matchups["venue_country"] == "Neutral")
         ]
         if not match_row.empty:
             _is_swapped = True
@@ -484,7 +497,7 @@ def _(
         )
 
     row_data = match_row.iloc[0]
-    discovered_venue = row_data.get("is_neutral_venue", "Neutral Turf")
+    discovered_venue = row_data.get("venue_country", "Neutral Turf")
 
     # 2. Extract baseline continuous xG values
     if not _is_swapped:
@@ -1089,9 +1102,20 @@ def _(
             )
 
             if _is_stoch_mode and df_matchups is not None:
+                _actual_venue = grp_match.get("venue_country", "Neutral")
+                if grp_home_team != _actual_venue and grp_away_team != _actual_venue:
+                    _lookup_venue = "Neutral"
+                else:
+                    _lookup_venue = (
+                        _actual_venue
+                        if _actual_venue in ["United States", "Mexico", "Canada"]
+                        else "Neutral"
+                    )
+
                 _matchup_row = df_matchups[
                     (df_matchups["home_team"] == grp_home_team)
                     & (df_matchups["away_team"] == grp_away_team)
+                    & (df_matchups["venue_country"] == _lookup_venue)
                 ]
 
                 if not _matchup_row.empty:
@@ -1206,10 +1230,23 @@ def _(
 
 
 @app.cell
-def _(DARK_THEME, df_matchups, df_tournament, mo, pd, view_mode_toggle):
+def _(
+    DARK_THEME,
+    df_matchups,
+    df_tournament,
+    df_tournament_stoch,
+    mo,
+    pd,
+    view_mode_toggle,
+):
     _is_stoch_mode = "Stochastic" in view_mode_toggle.value
 
-    all_discovered_rounds = df_tournament["round"].dropna().unique()
+    if _is_stoch_mode and df_tournament_stoch is not None:
+        active_bracket_df = df_tournament_stoch
+    else:
+        active_bracket_df = df_tournament
+
+    all_discovered_rounds = active_bracket_df["round"].dropna().unique()
     available_rounds = [
         r for r in all_discovered_rounds if not str(r).startswith("Group")
     ]
@@ -1234,7 +1271,7 @@ def _(DARK_THEME, df_matchups, df_tournament, mo, pd, view_mode_toggle):
     tabs_content = {}
 
     for r in available_rounds:
-        round_matches = df_tournament[df_tournament["round"] == r].copy()
+        round_matches = active_bracket_df[active_bracket_df["round"] == r].copy()
         match_cards_html = []
 
         for _, match in round_matches.iterrows():
@@ -1246,9 +1283,22 @@ def _(DARK_THEME, df_matchups, df_tournament, mo, pd, view_mode_toggle):
             venue_tag = f"📍 {match['venue']}" if pd.notna(match.get("venue")) else ""
 
             if _is_stoch_mode and df_matchups is not None:
+                # Fetch actual venue, fallback to Neutral if not a host nation
+                _actual_venue = match.get("venue_country", "Neutral")
+
+                if _home_team != _actual_venue and _away_team != _actual_venue:
+                    _lookup_venue = "Neutral"
+                else:
+                    _lookup_venue = (
+                        _actual_venue
+                        if _actual_venue in ["United States", "Mexico", "Canada"]
+                        else "Neutral"
+                    )
+
                 _matchup_row = df_matchups[
                     (df_matchups["home_team"] == _home_team)
                     & (df_matchups["away_team"] == _away_team)
+                    & (df_matchups["venue_country"] == _lookup_venue)
                 ]
 
                 if not _matchup_row.empty:

@@ -300,19 +300,36 @@ def precompute_sandbox_matchups(
     feature_columns,
     latest_team_form,
     fat_runs=10000,
+    host_nations=None,
 ):
     """
-    Isolated Sandbox Cache Generation on Neutral Turf.
-    Evaluates pairwise permutations using joint copula distributions.
+    Isolated Sandbox Cache Generation.
+    Evaluates pairwise permutations on Neutral Turf AND specific Host venues.
     """
+    if host_nations is None:
+        host_nations = ["United States", "Mexico", "Canada"]
+
     rng = np.random.default_rng(1989)
     rho_val = match_rules.get("draw_copula", 0.08)
 
     from itertools import permutations
 
-    sandbox_venue = "Neutral"
-    matchup_pairs = list(permutations(all_teams, 2))
-    matchup_keys = [(h, a, sandbox_venue) for h, a in matchup_pairs]
+    matchup_keys = []
+
+    # 1. Base Neutral Permutations (Everyone vs Everyone)
+    for h, a in permutations(all_teams, 2):
+        matchup_keys.append((h, a, "Neutral"))
+
+    # 2. Host Advantage Permutations (Hosts play everyone at home)
+    for host in host_nations:
+        if host in all_teams:
+            for opp in all_teams:
+                if opp != host:
+                    matchup_keys.append((host, opp, host))
+                    matchup_keys.append((opp, host, host))
+
+    # Clean duplicates just in case
+    matchup_keys = list(dict.fromkeys(matchup_keys))
 
     lambda_cache = batch_evaluate_consensus(
         matchup_keys=matchup_keys,
@@ -329,7 +346,7 @@ def precompute_sandbox_matchups(
     )
 
     compiled_matchups = []
-    for (h, a, cache_neutral), (l_h, l_a, c_exp, y_exp) in lambda_cache.items():
+    for (h, a, venue_country), (l_h, l_a, c_exp, y_exp) in lambda_cache.items():
         grp_h, grp_a, _ = simulate_stochastic_match(
             l_h,
             l_a,
@@ -375,7 +392,7 @@ def precompute_sandbox_matchups(
             {
                 "home_team": h,
                 "away_team": a,
-                "is_neutral_venue": cache_neutral,
+                "venue_country": venue_country,
                 "ensemble_lambda_home": round(l_h, 3),
                 "ensemble_lambda_away": round(l_a, 3),
                 "grp_win_home": round(grp_win_h, 1),
@@ -396,3 +413,181 @@ def precompute_sandbox_matchups(
         )
 
     return pd.DataFrame(compiled_matchups)
+
+
+def build_expected_stochastic_bracket(
+    df_xtables, df_sandbox, raw_knockout_template, group_fixtures
+):
+    """
+    Builds the 'Most Likely' probabilistic knockout bracket using xPts
+    from the Monte Carlo simulation and >50% threshold stochastic sandbox outcomes.
+    """
+
+    # 1. Map teams to groups using the static fixtures
+    team_to_group = {}
+    for _, row in group_fixtures.iterrows():
+        team_to_group[row["home_team"]] = row["group"]
+        team_to_group[row["away_team"]] = row["group"]
+
+    df_xt = df_xtables.copy()
+    df_xt["group"] = df_xt["team"].map(team_to_group)
+
+    # 2. Sort by expected points and expected GD to determine group ranks
+    df_xt = df_xt.sort_values(
+        by=["group", "expected_points", "expected_gd"], ascending=[True, False, False]
+    )
+    df_xt["position"] = df_xt.groupby("group").cumcount() + 1
+
+    winners = df_xt[df_xt["position"] == 1].set_index("group")["team"].to_dict()
+    runners = df_xt[df_xt["position"] == 2].set_index("group")["team"].to_dict()
+
+    # 3. Resolve the Top 4 Third-Place Teams using xPts
+    thirds = df_xt[df_xt["position"] == 3].copy()
+
+    # Temporarily rename columns to trick the deterministic router into accepting xPts
+    top_thirds = (
+        thirds.rename(
+            columns={"expected_points": "points", "expected_gd": "goals_diff"}
+        )
+        .sort_values(by=["points", "goals_diff"], ascending=[False, False])
+        .head(8)
+    )
+
+    third_place_assignments = allocate_third_places(top_thirds)
+
+    # 4. Traverse the bracket using stochastic win probabilities
+    match_winners = {}
+    match_losers = {}
+    bracket_rows = []
+
+    knockout_list = raw_knockout_template.to_dict(orient="records")
+
+    for row in knockout_list:
+        m_id = row["match_id"]
+        r_name = row["round"]
+        v_country = row.get("venue_country", "Neutral")
+        slot_home = row["slot_home"]
+        slot_away = row["slot_away"]
+
+        # Match Routing Resolution
+        home = (
+            winners[slot_home.replace("Winner Group ", "").strip()]
+            if "Winner Group" in slot_home
+            else runners[slot_home.replace("Runner-up Group ", "").strip()]
+            if "Runner-up Group" in slot_home
+            else third_place_assignments[m_id]
+            if "Best 3rd" in slot_home
+            else match_winners[int(slot_home.replace("Winner Match ", "").strip())]
+            if "Winner Match" in slot_home
+            else match_losers[int(slot_home.replace("Loser Match ", "").strip())]
+            if "Loser Match" in slot_home
+            else slot_home
+        )
+
+        away = (
+            winners[slot_away.replace("Winner Group ", "").strip()]
+            if "Winner Group" in slot_away
+            else runners[slot_away.replace("Runner-up Group ", "").strip()]
+            if "Runner-up Group" in slot_away
+            else third_place_assignments[m_id]
+            if "Best 3rd" in slot_away
+            else match_winners[int(slot_away.replace("Winner Match ", "").strip())]
+            if "Winner Match" in slot_away
+            else match_losers[int(slot_away.replace("Loser Match ", "").strip())]
+            if "Loser Match" in slot_away
+            else slot_away
+        )
+
+        # If neither team is the host nation, it's structurally neutral turf
+        if home != v_country and away != v_country:
+            lookup_venue = "Neutral"
+        else:
+            lookup_venue = v_country
+
+        # Query Sandbox for Absolute Stochastic Edge
+        sb_row = df_sandbox[
+            (df_sandbox["home_team"] == home)
+            & (df_sandbox["away_team"] == away)
+            & (df_sandbox["venue_country"] == lookup_venue)
+        ]
+        is_swapped = False
+
+        if sb_row.empty:
+            sb_row = df_sandbox[
+                (df_sandbox["home_team"] == away)
+                & (df_sandbox["away_team"] == home)
+                & (df_sandbox["venue_country"] == lookup_venue)
+            ]
+            is_swapped = True
+
+        if not sb_row.empty:
+            sb_data = sb_row.iloc[0]
+            prob_h = (
+                float(sb_data["ko_win_away"])
+                if is_swapped
+                else float(sb_data["ko_win_home"])
+            )
+            prob_a = (
+                float(sb_data["ko_win_home"])
+                if is_swapped
+                else float(sb_data["ko_win_away"])
+            )
+
+            exp_corners = sb_data["expected_corners"]
+            exp_yellows = sb_data["expected_yellow_cards"]
+
+            # Retrieve base xG for UI aesthetics
+            l_h = (
+                sb_data["ensemble_lambda_away"]
+                if is_swapped
+                else sb_data["ensemble_lambda_home"]
+            )
+            l_a = (
+                sb_data["ensemble_lambda_home"]
+                if is_swapped
+                else sb_data["ensemble_lambda_away"]
+            )
+        else:
+            prob_h, prob_a = 50.0, 50.0
+            exp_corners, exp_yellows = 9.5, 3.5
+            l_h, l_a = 1.0, 1.0
+
+        # Determine Absolute Probabilistic Winner
+        winner = home if prob_h >= prob_a else away
+        loser = away if winner == home else home
+
+        match_winners[m_id] = winner
+        match_losers[m_id] = loser
+
+        # Format cosmetic UI goal integers to respect the stochastic winner
+        pred_h_goals, pred_a_goals = int(round(l_h)), int(round(l_a))
+        if pred_h_goals == pred_a_goals:
+            if winner == home:
+                pred_h_goals += 1
+            else:
+                pred_a_goals += 1
+        elif pred_h_goals > pred_a_goals and winner == away:
+            pred_a_goals = pred_h_goals + 1
+        elif pred_a_goals > pred_h_goals and winner == home:
+            pred_h_goals = pred_a_goals + 1
+
+        bracket_rows.append(
+            {
+                "match_id": m_id,
+                "round": r_name,
+                "venue": row["venue"],
+                "venue_country": v_country,
+                "home_team": home,
+                "away_team": away,
+                "predicted_home_goals": pred_h_goals,
+                "predicted_away_goals": pred_a_goals,
+                "corners": exp_corners,
+                "yellow_cards": exp_yellows,
+                "red_cards": 0,
+                "extra_time": False,
+                "penalties": False,
+                "winner_name_meta": winner,
+            }
+        )
+
+    return pd.DataFrame(bracket_rows)

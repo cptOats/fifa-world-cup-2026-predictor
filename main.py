@@ -22,7 +22,11 @@ from src.router import (
     simulate_deterministic_group_stage,
     simulate_knockout_waterfall,
 )
-from src.stochastic import precompute_sandbox_matchups, run_monte_carlo_master
+from src.stochastic import (
+    build_expected_stochastic_bracket,
+    precompute_sandbox_matchups,
+    run_monte_carlo_master,
+)
 from src.transform import (
     DATACAMP_TO_KAGGLE,
     get_venue_country,
@@ -286,27 +290,17 @@ def main():
         team_power=TEAM_POWER,
     )
 
-    predicted_fixtures["round"] = "Group " + predicted_fixtures["group"]
-    predicted_fixtures["extra_time"] = False
-    predicted_fixtures["penalties"] = False
-    predicted_fixtures["venue"] = group_fixtures.get("venue", "Neutral")
-    predicted_fixtures["winner_name_meta"] = predicted_fixtures.apply(
-        lambda r: (
-            r["home_team"]
-            if r["winning_team"] == "home"
-            else (r["away_team"] if r["winning_team"] == "away" else "Draw")
-        ),
-        axis=1,
-    )
-
-    knockout_matrix = knockout_matrix.rename(
-        columns={"predicted_home_team": "home_team", "predicted_away_team": "away_team"}
+    # Concatenate Deterministic Run Data
+    master_tournament = pd.concat(
+        [predicted_fixtures, knockout_matrix],
+        ignore_index=True,
     )
 
     master_cols = [
         "match_id",
         "round",
         "venue",
+        "venue_country",
         "home_team",
         "away_team",
         "predicted_home_goals",
@@ -318,22 +312,21 @@ def main():
         "penalties",
         "winner_name_meta",
     ]
-    master_tournament = pd.concat(
-        [predicted_fixtures[master_cols], knockout_matrix[master_cols]],
-        ignore_index=True,
-    )
+    master_tournament = master_tournament[master_cols]  # Filter columns
 
     # Save Deterministic Run Data
     master_tournament.to_csv(
-        os.path.join(run_dir, "predicted_tournament.csv"), index=False
+        os.path.join(run_dir, "deterministic_tournament.csv"), index=False
     )
-    group_tables.to_csv(os.path.join(run_dir, "final_group_tables.csv"), index=False)
+    group_tables.to_csv(
+        os.path.join(run_dir, "deterministic_group_tables.csv"), index=False
+    )
     third_places_df = group_tables[group_tables["position"] == 3].copy()
     ranked_thirds_df = third_places_df.sort_values(
         by=["points", "goals_diff", "goals_for"], ascending=[False, False, False]
     ).reset_index(drop=True)
     ranked_thirds_df.to_csv(
-        os.path.join(run_dir, "third_places_standings.csv"), index=False
+        os.path.join(run_dir, "deterministic_third_places.csv"), index=False
     )
 
     # Compile and Save the Master Team Capabilities Lookup Matrix
@@ -446,20 +439,15 @@ def main():
             )
         )
 
-        # 2. Centralized Saving: Master Forecast Table
+        # Save Stochastic Forecast, Group Tables, Tournament
         prob_dashboard.to_csv(
-            os.path.join(run_dir, "monte_carlo_forecast.csv"), index=False
+            os.path.join(run_dir, "stochastic_forecast.csv"), index=False
         )
-
-        # 3. Centralized Saving: Stochastic Expected Group Tables (xTables)
         df_xtables.to_csv(
             os.path.join(run_dir, "stochastic_group_tables.csv"), index=False
         )
-        df_xtables.to_csv(
-            os.path.join(ARTIFACTS_DIR, "stochastic_group_tables.csv"), index=False
-        )
 
-        # 4. Compute Sandbox Pairwise Matrix
+        # Compute and Save Sandbox Pairwise Matrix
         logging.info("⚔️  Spinning up Sandbox pairwise matrix computations...")
         df_sandbox = precompute_sandbox_matchups(
             all_teams=participating_teams,
@@ -476,13 +464,22 @@ def main():
             latest_team_form=latest_team_form,
             fat_runs=MONTE_CARLO_RUNS,
         )
-
-        # 5. Centralized Saving: Sandbox Pairs
         df_sandbox.to_csv(
-            os.path.join(run_dir, "pre_computed_matchups.csv"), index=False
+            os.path.join(run_dir, "stochastic_sandbox_matchups.csv"), index=False
         )
-        df_sandbox.to_csv(
-            os.path.join(ARTIFACTS_DIR, "pre_computed_matchups.csv"), index=False
+
+        # Build the Expected Probabilistic Tournament Bracket
+        logging.info(
+            "🌳 Constructing Expected Stochastic Tournament Bracket via xTables..."
+        )
+        df_stoch_bracket = build_expected_stochastic_bracket(
+            df_xtables=df_xtables,
+            df_sandbox=df_sandbox,
+            raw_knockout_template=raw_knockout_template,
+            group_fixtures=group_fixtures,
+        )
+        df_stoch_bracket.to_csv(
+            os.path.join(run_dir, "stochastic_tournament.csv"), index=False
         )
 
     else:

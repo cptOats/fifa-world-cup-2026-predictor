@@ -229,6 +229,7 @@ def simulate_deterministic_group_stage(
         home = row["home_team"]
         away = row["away_team"]
         venue_country = row["venue_country"]
+        venue = row.get("venue", "Neutral")
 
         # Call Match Engine
         raw_home, raw_away, p_corners, p_yellows, p_reds = evaluate_match_consensus(
@@ -275,6 +276,8 @@ def simulate_deterministic_group_stage(
                 "yellow_cards": t_yell,
                 "red_cards": t_red,
                 "winning_team": winner_side,
+                "venue": venue,
+                "venue_country": venue_country,
             }
         )
 
@@ -282,6 +285,19 @@ def simulate_deterministic_group_stage(
     group_tables = resolve_group_tables(predicted_fixtures)
     top_thirds = extract_best_third_places(group_tables)
     third_place_assignments = allocate_third_places(top_thirds)
+
+    # Data Frame Adjustments
+    predicted_fixtures["round"] = "Group " + predicted_fixtures["group"]
+    predicted_fixtures["extra_time"] = False
+    predicted_fixtures["penalties"] = False
+    predicted_fixtures["winner_name_meta"] = predicted_fixtures.apply(
+        lambda r: (
+            r["home_team"]
+            if r["winning_team"] == "home"
+            else (r["away_team"] if r["winning_team"] == "away" else "Draw")
+        ),
+        axis=1,
+    )
 
     return predicted_fixtures, group_tables, third_place_assignments
 
@@ -418,18 +434,18 @@ def simulate_knockout_waterfall(
             {
                 "match_id": match_id,
                 "round": r_name,
-                "venue": venue,
-                "predicted_home_team": home_team,
-                "predicted_away_team": away_team,
+                "home_team": home_team,
+                "away_team": away_team,
                 "predicted_home_goals": f_home,
                 "predicted_away_goals": f_away,
                 "corners": t_corn,
                 "yellow_cards": t_yell,
                 "red_cards": t_red,
-                "match_winner": winner_side,
                 "extra_time": is_et,
                 "penalties": is_pen,
                 "winner_name_meta": advance_winner,
+                "venue": venue,
+                "venue_country": venue_country,
             }
         )
 

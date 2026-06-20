@@ -413,7 +413,7 @@ def predict_poisson_match(
     raw_corners = 5.0 + 0.35 * (home_rating["attack"] + away_rating["attack"])
 
     # 🟨 Yellows: Driven by attack towards 3.4 yellows / 90 min
-    raw_yellows = 1.0 + 0.21 * (home_rating["attack"] + away_rating["attack"])
+    raw_yellows = 0.8 + 0.22 * (home_rating["attack"] + away_rating["attack"])
 
     # 🟥 Reds: Low probability event
     raw_reds = 0.12 if is_neutral == 0 else 0.10
