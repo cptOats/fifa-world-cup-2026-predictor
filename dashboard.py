@@ -488,230 +488,237 @@ def _(
         if not match_row.empty:
             _is_swapped = True
 
+    # 🛑 DEFENSIBLY CHECK FOR MISSING SANDBOX DATA WITHOUT CRASHING THE NODE
     if match_row.empty:
-        mo.stop(
-            True,
-            mo.md(
-                f"> ⚠️ **Data Missing:** Matchup combination `{sim_team_a}` vs `{sim_team_b}` not found in artifacts."
-            ),
-        )
-
-    row_data = match_row.iloc[0]
-    discovered_venue = row_data.get("venue_country", "Neutral Turf")
-
-    # 2. Extract baseline continuous xG values
-    if not _is_swapped:
-        lambda_a = float(row_data["ensemble_lambda_home"])
-        lambda_b = float(row_data["ensemble_lambda_away"])
+        card_html = f"""
+        <div style="background-color: {DARK_THEME["paper"]}; border: 1px solid #333; border-radius: 6px; padding: 24px; margin-top: 20px; font-family: monospace; text-align: center; max-width: 100%;">
+            <div style="font-size: 13px; color: {DARK_THEME["muted"]}; font-weight: bold; margin-bottom: 8px; letter-spacing: 0.5px;">🏟️ MATCH SIMULATION CARD UNAVAILABLE</div>
+            <div style="font-size: 11px; color: #888; line-height: 1.6;">
+                The simulation sandbox cache was not generated for this run sequence.<br>
+                To activate live scorelines and win probabilities, ensure
+                <code style="background: #262626; padding: 2px 6px; border-radius: 4px; color: #00adb5; font-family: monospace;">RUN_MONTE_CARLO = True</code> is enabled in <code style="color: #fff;">main.py</code>.
+            </div>
+        </div>
+        """
     else:
-        lambda_a = float(row_data["ensemble_lambda_away"])
-        lambda_b = float(row_data["ensemble_lambda_home"])
+        row_data = match_row.iloc[0]
+        discovered_venue = row_data.get("venue_country", "Neutral Turf")
 
-    # 3. Compile Core Match Card Render Resolution Layer
-    _match_resolution_html = ""
-    _et_badge = ""
-    _pens_badge = ""
-    stoch_footer_html = ""
+        # 2. Extract baseline continuous xG values
+        if not _is_swapped:
+            lambda_a = float(row_data["ensemble_lambda_home"])
+            lambda_b = float(row_data["ensemble_lambda_away"])
+        else:
+            lambda_a = float(row_data["ensemble_lambda_away"])
+            lambda_b = float(row_data["ensemble_lambda_home"])
 
-    if is_stoch:
-        # --- STOCHASTIC PROBABILITY BAR GENERATION ---
-        if is_ko:
-            _h90 = float(
-                row_data["ko_win_90_away_pct" if _is_swapped else "ko_win_90_home_pct"]
-            )
-            _h120 = float(
-                row_data[
-                    "ko_win_120_away_pct" if _is_swapped else "ko_win_120_home_pct"
-                ]
-            )
-            _hpen = float(
-                row_data[
-                    "ko_win_pen_away_pct" if _is_swapped else "ko_win_pen_home_pct"
-                ]
-            )
+        # 3. Compile Core Match Card Render Resolution Layer
+        _match_resolution_html = ""
+        _et_badge = ""
+        _pens_badge = ""
+        stoch_footer_html = ""
 
-            _a90 = float(
-                row_data["ko_win_90_home_pct" if _is_swapped else "ko_win_90_away_pct"]
-            )
-            _a120 = float(
-                row_data[
-                    "ko_win_120_home_pct" if _is_swapped else "ko_win_120_away_pct"
-                ]
-            )
-            _apen = float(
-                row_data[
-                    "ko_win_pen_home_pct" if _is_swapped else "ko_win_pen_away_pct"
-                ]
-            )
+        if is_stoch:
+            # --- STOCHASTIC PROBABILITY BAR GENERATION ---
+            if is_ko:
+                _h90 = float(
+                    row_data[
+                        "ko_win_90_away_pct" if _is_swapped else "ko_win_90_home_pct"
+                    ]
+                )
+                _h120 = float(
+                    row_data[
+                        "ko_win_120_away_pct" if _is_swapped else "ko_win_120_home_pct"
+                    ]
+                )
+                _hpen = float(
+                    row_data[
+                        "ko_win_pen_away_pct" if _is_swapped else "ko_win_pen_home_pct"
+                    ]
+                )
 
-            _h_tot = _h90 + _h120 + _hpen
-            _a_tot = _a90 + _a120 + _apen
-            _w90, _w120, _wpen = _h90 + _a90, _h120 + _a120, _hpen + _apen
+                _a90 = float(
+                    row_data[
+                        "ko_win_90_home_pct" if _is_swapped else "ko_win_90_away_pct"
+                    ]
+                )
+                _a120 = float(
+                    row_data[
+                        "ko_win_120_home_pct" if _is_swapped else "ko_win_120_away_pct"
+                    ]
+                )
+                _apen = float(
+                    row_data[
+                        "ko_win_pen_home_pct" if _is_swapped else "ko_win_pen_away_pct"
+                    ]
+                )
 
-            _match_resolution_html = f"""
-            <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 16px; padding-bottom: 12px; border-bottom: 1px solid #2d2d2d;">
-                <span style="color: {DARK_THEME["accent"]};">{sim_team_a} ({_h_tot:.1f}%)</span>
-                <span style="color: #666; font-size: 12px;">vs</span>
-                <span style="color: #e6739f;">({_a_tot:.1f}%) {sim_team_b}</span>
-            </div>
+                _h_tot = _h90 + _h120 + _hpen
+                _a_tot = _a90 + _a120 + _apen
+                _w90, _w120, _wpen = _h90 + _a90, _h120 + _a120, _hpen + _apen
 
-            <div style="margin-top: 12px; margin-bottom: 8px;">
-                <div style="display: flex; justify-content: space-between; font-size: 10px; margin-bottom: 2px;">
-                    <span style="color: {DARK_THEME["accent"]}>{_h90:.1f}%</span>
-                    <span style="color: #888; font-weight: bold; letter-spacing: 0.5px;">90 MIN ({_w90:.1f}%)</span>
-                    <span style="color: #e6739f;">{_a90:.1f}%</span>
+                _match_resolution_html = f"""
+                <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 16px; padding-bottom: 12px; border-bottom: 1px solid #2d2d2d;">
+                    <span style="color: {DARK_THEME["accent"]};">{sim_team_a} ({_h_tot:.1f}%)</span>
+                    <span style="color: #666; font-size: 12px;">vs</span>
+                    <span style="color: #e6739f;">({_a_tot:.1f}%) {sim_team_b}</span>
                 </div>
-                <div style="display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: #262626;">
-                    <div style="width: {(_h90 / _w90 * 100) if _w90 > 0 else 0}%; background: {DARK_THEME["accent"]};"></div>
-                    <div style="width: {(_a90 / _w90 * 100) if _w90 > 0 else 0}%; background: #e6739f;"></div>
-                </div>
-            </div>
 
-            <div style="margin-bottom: 8px;">
-                <div style="display: flex; justify-content: space-between; font-size: 10px; margin-bottom: 2px;">
-                    <span style="color: {DARK_THEME["accent"]}>{_h120:.1f}%</span>
-                    <span style="color: #888; font-weight: bold; letter-spacing: 0.5px;">⏱️ EXTRA TIME ({_w120:.1f}%)</span>
-                    <span style="color: #e6739f;">{_a120:.1f}%</span>
+                <div style="margin-top: 12px; margin-bottom: 8px;">
+                    <div style="display: flex; justify-content: space-between; font-size: 10px; margin-bottom: 2px;">
+                        <span style="color: {DARK_THEME["accent"]}>{_h90:.1f}%</span>
+                        <span style="color: #888; font-weight: bold; letter-spacing: 0.5px;">90 MIN ({_w90:.1f}%)</span>
+                        <span style="color: #e6739f;">{_a90:.1f}%</span>
+                    </div>
+                    <div style="display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: #262626;">
+                        <div style="width: {(_h90 / _w90 * 100) if _w90 > 0 else 0}%; background: {DARK_THEME["accent"]};"></div>
+                        <div style="width: {(_a90 / _w90 * 100) if _w90 > 0 else 0}%; background: #e6739f;"></div>
+                    </div>
                 </div>
-                <div style="display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: #262626;">
-                    <div style="width: {(_h120 / _w120 * 100) if _w120 > 0 else 0}%; background: {DARK_THEME["accent"]};"></div>
-                    <div style="width: {(_a120 / _w120 * 100) if _w120 > 0 else 0}%; background: #e6739f;"></div>
-                </div>
-            </div>
 
-            <div style="margin-bottom: 4px;">
-                <div style="display: flex; justify-content: space-between; font-size: 10px; margin-bottom: 2px;">
-                    <span style="color: {DARK_THEME["accent"]}>{_hpen:.1f}%</span>
-                    <span style="color: #888; font-weight: bold; letter-spacing: 0.5px;">🥅 PENALTIES ({_wpen:.1f}%)</span>
-                    <span style="color: #e6739f;">{_apen:.1f}%</span>
+                <div style="margin-bottom: 8px;">
+                    <div style="display: flex; justify-content: space-between; font-size: 10px; margin-bottom: 2px;">
+                        <span style="color: {DARK_THEME["accent"]}>{_h120:.1f}%</span>
+                        <span style="color: #888; font-weight: bold; letter-spacing: 0.5px;">⏱️ EXTRA TIME ({_w120:.1f}%)</span>
+                        <span style="color: #e6739f;">{_a120:.1f}%</span>
+                    </div>
+                    <div style="display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: #262626;">
+                        <div style="width: {(_h120 / _w120 * 100) if _w120 > 0 else 0}%; background: {DARK_THEME["accent"]};"></div>
+                        <div style="width: {(_a120 / _w120 * 100) if _w120 > 0 else 0}%; background: #e6739f;"></div>
+                    </div>
                 </div>
-                <div style="display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: #262626;">
-                    <div style="width: {(_hpen / _wpen * 100) if _wpen > 0 else 0}%; background: {DARK_THEME["accent"]};"></div>
-                    <div style="width: {(_apen / _wpen * 100) if _wpen > 0 else 0}%; background: #e6739f;"></div>
+
+                <div style="margin-bottom: 4px;">
+                    <div style="display: flex; justify-content: space-between; font-size: 10px; margin-bottom: 2px;">
+                        <span style="color: {DARK_THEME["accent"]}>{_hpen:.1f}%</span>
+                        <span style="color: #888; font-weight: bold; letter-spacing: 0.5px;">🥅 PENALTIES ({_wpen:.1f}%)</span>
+                        <span style="color: #e6739f;">{_apen:.1f}%</span>
+                    </div>
+                    <div style="display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: #262626;">
+                        <div style="width: {(_hpen / _wpen * 100) if _wpen > 0 else 0}%; background: {DARK_THEME["accent"]};"></div>
+                        <div style="width: {(_apen / _wpen * 100) if _wpen > 0 else 0}%; background: #e6739f;"></div>
+                    </div>
+                </div>
+                """
+            else:
+                _raw_g_h = float(row_data["grp_win_home"])
+                _raw_g_a = float(row_data["grp_win_away"])
+                wins_a = _raw_g_a if _is_swapped else _raw_g_h
+                wins_b = _raw_g_h if _is_swapped else _raw_g_a
+                draws = float(row_data["grp_draw"])
+
+                _match_resolution_html = f"""
+                <div style="display: flex; flex-direction: column; gap: 8px; padding: 4px 0;">
+                    <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 16px;">
+                        <span style="color: {DARK_THEME["accent"]};">{sim_team_a}</span>
+                        <span style="color: #666; font-size: 11px;">vs</span>
+                        <span style="color: #e6739f;">{sim_team_b}</span>
+                    </div>
+                    <div style="display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: #262626;">
+                        <div style="width: {wins_a}%; background: {DARK_THEME["accent"]};"></div>
+                        <div style="width: {draws}%; background: {DARK_THEME["muted"]};"></div>
+                        <div style="width: {wins_b}%; background: #e6739f;"></div>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-size: 11px; color: #ccc;">
+                        <span>Home Win: <b>{wins_a:.1f}%</b></span>
+                        <span style="color: #888;">DRAW {draws:.1f}%</span>
+                        <span>Away Win: <b>{wins_b:.1f}%</b></span>
+                    </div>
+                </div>
+                """
+
+            top_scores = json.loads(row_data["top_scorelines_json"])
+            score_cards = []
+            for rank_idx, score_data in enumerate(top_scores):
+                score_line = score_data["score"]
+                score_pct = float(score_data["pct"])
+                if _is_swapped and "-" in score_line:
+                    score_line = "-".join(
+                        [s.strip() for s in reversed(score_line.split("-"))]
+                    )
+
+                score_cards.append(f"""
+                    <div style="flex: 1; background: #1a1a1a; padding: 10px; border-radius: 4px; border: 1px solid #2d2d2d; text-align: center;">
+                        <div style="font-size: 10px; color: {DARK_THEME["muted"]}; margin-bottom: 2px; font-weight: bold;">RANK #{rank_idx + 1}</div>
+                        <div style="font-size: 15px; font-weight: bold; color: #fff; margin-bottom: 4px; font-family: monospace;">{score_line}</div>
+                        <div style="font-size: 11px; font-weight: bold;">{score_pct:.1f}%</div>
+                    </div>
+                """)
+
+            stoch_footer_html = f"""
+            <div style="border-top: 1px solid #2d2d2d; margin-top: 15px; padding-top: 12px;">
+                <div style="font-size: 10px; color: {DARK_THEME["muted"]}; margin-bottom: 6px; font-weight: bold; letter-spacing: 0.25px;">⚽ TOP 3 EXPECTED SCORELINES (90 Min)</div>
+                <div style="display: flex; gap: 10px;">
+                    {"".join(score_cards)}
                 </div>
             </div>
             """
         else:
-            _raw_g_h = float(row_data["grp_win_home"])
-            _raw_g_a = float(row_data["grp_win_away"])
-            wins_a = _raw_g_a if _is_swapped else _raw_g_h
-            wins_b = _raw_g_h if _is_swapped else _raw_g_a
-            draws = float(row_data["grp_draw"])
+            # --- DETERMINISTIC OUTCOME RENDER ---
+            pred_a_goals = int(round(lambda_a))
+            pred_b_goals = int(round(lambda_b))
+            sim_winner = "Draw"
+            if pred_a_goals > pred_b_goals:
+                sim_winner = sim_team_a
+            elif pred_b_goals > pred_a_goals:
+                sim_winner = sim_team_b
+
+            if is_ko and sim_winner == "Draw":
+                et_multiplier = match_rules.get("et_multiplier", 1.0 / 3.0)
+                fatigue_factor = match_rules.get("fatigue_factor", 0.80)
+                raw_a_120 = lambda_a * (1.0 + (et_multiplier * fatigue_factor))
+                raw_b_120 = lambda_b * (1.0 + (et_multiplier * fatigue_factor))
+                pred_a_goals = int(round(raw_a_120))
+                pred_b_goals = int(round(raw_b_120))
+
+                if pred_a_goals > pred_b_goals:
+                    sim_winner = sim_team_a
+                    _et_badge = '<span style="color: #ff7b54; background: #2a1e1b; padding: 1px 6px; border-radius: 4px; font-size: 9px; font-weight: bold; border: 1px solid #542e23; margin-left: 8px;">⏱️ ET</span>'
+                elif pred_b_goals > pred_a_goals:
+                    sim_winner = sim_team_b
+                    _et_badge = '<span style="color: #ff7b54; background: #2a1e1b; padding: 1px 6px; border-radius: 4px; font-size: 9px; font-weight: bold; border: 1px solid #542e23; margin-left: 8px;">⏱️ ET</span>'
+                else:
+                    sim_winner = sim_team_a if lambda_a >= lambda_b else sim_team_b
+                    _pens_badge = '<span style="color: #e6739f; background: #2a1b24; padding: 1px 6px; border-radius: 4px; font-size: 9px; font-weight: bold; border: 1px solid #4c283c; margin-left: 8px;">🥅 PENS</span>'
 
             _match_resolution_html = f"""
-            <div style="display: flex; flex-direction: column; gap: 8px; padding: 4px 0;">
-                <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 16px;">
-                    <span style="color: {DARK_THEME["accent"]};">{sim_team_a}</span>
-                    <span style="color: #666; font-size: 11px;">vs</span>
-                    <span style="color: #e6739f;">{sim_team_b}</span>
-                </div>
-                <div style="display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: #262626;">
-                    <div style="width: {wins_a}%; background: {DARK_THEME["accent"]};"></div>
-                    <div style="width: {draws}%; background: {DARK_THEME["muted"]};"></div>
-                    <div style="width: {wins_b}%; background: #e6739f;"></div>
-                </div>
-                <div style="display: flex; justify-content: space-between; font-size: 11px; color: #ccc;">
-                    <span>Home Win: <b>{wins_a:.1f}%</b></span>
-                    <span style="color: #888;">DRAW {draws:.1f}%</span>
-                    <span>Away Win: <b>{wins_b:.1f}%</b></span>
-                </div>
+            <div style="font-size: 18px; display: flex; justify-content: space-between; align-items: center; padding: 6px 0;">
+                <span style="font-weight: {"bold" if sim_winner == sim_team_a else "normal"}; color: {"#fff" if sim_winner == sim_team_a else "#888"};">
+                    {"👑 " if sim_winner == sim_team_a else ""}{sim_team_a}
+                </span>
+                <span style="font-weight: bold; background: #262626; padding: 4px 12px; border-radius: 4px;">{pred_a_goals}</span>
+            </div>
+            <div style="font-size: 18px; display: flex; justify-content: space-between; align-items: center; padding: 6px 0; margin-bottom: 8px;">
+                <span style="font-weight: {"bold" if sim_winner == sim_team_b else "normal"}; color: {"#fff" if sim_winner == sim_team_b else "#888"};">
+                    {"👑 " if sim_winner == sim_team_b else ""}{sim_team_b}
+                </span>
+                <span style="font-weight: bold; background: #262626; padding: 4px 12px; border-radius: 4px;">{pred_b_goals}</span>
             </div>
             """
 
-        top_scores = json.loads(row_data["top_scorelines_json"])
-        score_cards = []
-        for rank_idx, score_data in enumerate(top_scores):
-            score_line = score_data["score"]
-            score_pct = float(score_data["pct"])
-            if _is_swapped and "-" in score_line:
-                score_line = "-".join(
-                    [s.strip() for s in reversed(score_line.split("-"))]
-                )
-
-            score_cards.append(f"""
-                <div style="flex: 1; background: #1a1a1a; padding: 10px; border-radius: 4px; border: 1px solid #2d2d2d; text-align: center;">
-                    <div style="font-size: 10px; color: {DARK_THEME["muted"]}; margin-bottom: 2px; font-weight: bold;">RANK #{rank_idx + 1}</div>
-                    <div style="font-size: 15px; font-weight: bold; color: #fff; margin-bottom: 4px; font-family: monospace;">{score_line}</div>
-                    <div style="font-size: 11px; font-weight: bold;">{score_pct:.1f}%</div>
+        card_html = f"""
+        <div style="background-color: {DARK_THEME["paper"]}; border: 1px solid #00adb5; border-radius: 6px; padding: 16px; margin-top: 20px; font-family: monospace; max-width: 100%;">
+            <div style="font-size: 11px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; font-weight: bold;">
+                <div style="display: flex; align-items: center;">
+                    <span>⚡ LIVE MATCHUP</span>
+                    {_et_badge}
+                    {_pens_badge}
                 </div>
-            """)
-
-        stoch_footer_html = f"""
-        <div style="border-top: 1px solid #2d2d2d; margin-top: 15px; padding-top: 12px;">
-            <div style="font-size: 10px; color: {DARK_THEME["muted"]}; margin-bottom: 6px; font-weight: bold; letter-spacing: 0.25px;">⚽ TOP 3 EXPECTED SCORELINES (90 Min)</div>
-            <div style="display: flex; gap: 10px;">
-                {"".join(score_cards)}
+                <span>📍 {discovered_venue} Turf</span>
             </div>
+
+            {_match_resolution_html}
+
+            <div style="border-top: 1px solid #2d2d2d; margin-top: 10px; padding-top: 10px; font-size: 12px; color: {DARK_THEME["muted"]}; display: flex; justify-content: space-between;">
+                <span title="Base Expected Goals parameters">💡 Model xG: {lambda_a:.2f} - {lambda_b:.2f}</span>
+                <span>⚖️ Absolute Edge: {abs(lambda_a - lambda_b):.2f}</span>
+            </div>
+
+            {stoch_footer_html}
         </div>
         """
-    else:
-        # --- DETERMINISTIC OUTCOME RENDER ---
-        pred_a_goals = int(round(lambda_a))
-        pred_b_goals = int(round(lambda_b))
-        sim_winner = "Draw"
-        if pred_a_goals > pred_b_goals:
-            sim_winner = sim_team_a
-        elif pred_b_goals > pred_a_goals:
-            sim_winner = sim_team_b
-
-        if is_ko and sim_winner == "Draw":
-            et_multiplier = match_rules.get("et_multiplier", 1.0 / 3.0)
-            fatigue_factor = match_rules.get("fatigue_factor", 0.80)
-            raw_a_120 = lambda_a * (1.0 + (et_multiplier * fatigue_factor))
-            raw_b_120 = lambda_b * (1.0 + (et_multiplier * fatigue_factor))
-            pred_a_goals = int(round(raw_a_120))
-            pred_b_goals = int(round(raw_b_120))
-
-            if pred_a_goals > pred_b_goals:
-                sim_winner = sim_team_a
-                _et_badge = '<span style="color: #ff7b54; background: #2a1e1b; padding: 1px 6px; border-radius: 4px; font-size: 9px; font-weight: bold; border: 1px solid #542e23; margin-left: 8px;">⏱️ ET</span>'
-            elif pred_b_goals > pred_a_goals:
-                sim_winner = sim_team_b
-                _et_badge = '<span style="color: #ff7b54; background: #2a1e1b; padding: 1px 6px; border-radius: 4px; font-size: 9px; font-weight: bold; border: 1px solid #542e23; margin-left: 8px;">⏱️ ET</span>'
-            else:
-                sim_winner = sim_team_a if lambda_a >= lambda_b else sim_team_b
-                _pens_badge = '<span style="color: #e6739f; background: #2a1b24; padding: 1px 6px; border-radius: 4px; font-size: 9px; font-weight: bold; border: 1px solid #4c283c; margin-left: 8px;">🥅 PENS</span>'
-
-        _match_resolution_html = f"""
-        <div style="font-size: 18px; display: flex; justify-content: space-between; align-items: center; padding: 6px 0;">
-            <span style="font-weight: {"bold" if sim_winner == sim_team_a else "normal"}; color: {"#fff" if sim_winner == sim_team_a else "#888"};">
-                {"👑 " if sim_winner == sim_team_a else ""}{sim_team_a}
-            </span>
-            <span style="font-weight: bold; background: #262626; padding: 4px 12px; border-radius: 4px;">{pred_a_goals}</span>
-        </div>
-        <div style="font-size: 18px; display: flex; justify-content: space-between; align-items: center; padding: 6px 0; margin-bottom: 8px;">
-            <span style="font-weight: {"bold" if sim_winner == sim_team_b else "normal"}; color: {"#fff" if sim_winner == sim_team_b else "#888"};">
-                {"👑 " if sim_winner == sim_team_b else ""}{sim_team_b}
-            </span>
-            <span style="font-weight: bold; background: #262626; padding: 4px 12px; border-radius: 4px;">{pred_b_goals}</span>
-        </div>
-        """
-
-    # 4. Assemble Final Interactive Layout Template Frame
-    card_html = f"""
-    <div style="background-color: {DARK_THEME["paper"]}; border: 1px solid #00adb5; border-radius: 6px; padding: 16px; margin-top: 20px; font-family: monospace; max-width: 100%;">
-        <div style="font-size: 11px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; font-weight: bold;">
-            <div style="display: flex; align-items: center;">
-                <span>⚡ LIVE MATCHUP</span>
-                {_et_badge}
-                {_pens_badge}
-            </div>
-            <span>📍 {discovered_venue} Turf</span>
-        </div>
-
-        {_match_resolution_html}
-
-        <div style="border-top: 1px solid #2d2d2d; margin-top: 10px; padding-top: 10px; font-size: 12px; color: {DARK_THEME["muted"]}; display: flex; justify-content: space-between;">
-            <span title="Base Expected Goals parameters">💡 Model xG: {lambda_a:.2f} - {lambda_b:.2f}</span>
-            <span>⚖️ Absolute Edge: {abs(lambda_a - lambda_b):.2f}</span>
-        </div>
-
-        {stoch_footer_html}
-    </div>
-    """
 
     simulation_output = mo.Html(card_html)
-
     simulation_output
     return
 
@@ -743,46 +750,104 @@ def _(
 
         fig_sandbox = go.Figure()
 
-        # Dropped Poisson Dominance and updated Defense to match its inverted meaning
-        metrics_to_compare = [
-            ("Elo_Rating", "Elo"),
-            ("Poisson_Attack", "Attack"),
-            ("Poisson_Defense", "Defense"),
-            ("Short_Term_Form_GF", "Short Form"),
-            ("Long_Term_Form_GF", "Long Form"),
+        # 1. PRE-COMPUTE GLOBAL COHORT BOUNDARIES FOR DYNAMIC SCALING
+        # Elo Base
+        elo_min, elo_max = (
+            df_capabilities["Elo_Rating"].min(),
+            df_capabilities["Elo_Rating"].max(),
+        )
+
+        # Poisson Attack & Defense
+        atk_min, atk_max = (
+            df_capabilities["Poisson_Attack"].min(),
+            df_capabilities["Poisson_Attack"].max(),
+        )
+        def_min, def_max = (
+            df_capabilities["Poisson_Defense"].min(),
+            df_capabilities["Poisson_Defense"].max(),
+        )
+
+        # Elo Momentum (Signed)
+        mom_min, mom_max = (
+            df_capabilities["Elo_Momentum"].min(),
+            df_capabilities["Elo_Momentum"].max(),
+        )
+
+        # Volatilities (Short-term CVs)
+        v_atk_min, v_atk_max = (
+            df_capabilities["Attack_Volatility_Short"].min(),
+            df_capabilities["Attack_Volatility_Short"].max(),
+        )
+        v_def_min, v_def_max = (
+            df_capabilities["Defense_Volatility_Short"].min(),
+            df_capabilities["Defense_Volatility_Short"].max(),
+        )
+
+        # 2. HELPER FUNCTION TO MAP EACH TEAM TO THE UNIFIED 0-100 PROFILE
+        def calculate_pentagon_vectors(stats):
+            # A. Base Elo (Higher is better)
+            r_elo = ((stats["Elo_Rating"] - elo_min) / (elo_max - elo_min)) * 100
+
+            # B. Poisson Attack (Higher is better)
+            r_atk = ((stats["Poisson_Attack"] - atk_min) / (atk_max - atk_min)) * 100
+
+            # C. Poisson Defense (Lower is better -> Invert)
+            r_def = ((def_max - stats["Poisson_Defense"]) / (def_max - def_min)) * 100
+
+            # D. Elo Momentum (Signed Min-Max -> 0 anchors near 50)
+            r_mom = ((stats["Elo_Momentum"] - mom_min) / (mom_max - mom_min)) * 100
+
+            # E. Combined Squad Consistency Index (Invert both CVs, then average)
+            c_atk = (
+                (v_atk_max - stats["Attack_Volatility_Short"])
+                / (v_atk_max - v_atk_min)
+                * 100
+            )
+            c_def = (
+                (v_def_max - stats["Defense_Volatility_Short"])
+                / (v_def_max - v_def_min)
+                * 100
+            )
+            r_stbl = (c_atk + c_def) / 2.0
+
+            return [r_atk, r_def, r_elo, r_mom, r_stbl]
+
+        # Generate scaled radius vectors
+        norm_a = calculate_pentagon_vectors(stats_a)
+        norm_b = calculate_pentagon_vectors(stats_b)
+
+        # 3. DEFINE PENTAGON LABELS & EXTRACT RAW VALUES FOR HOVER OVERLAYS
+        labels = [
+            "Attack Power",
+            "Defense Solidity",
+            "Elo Rating",
+            "Form Momentum",
+            "Squad Stability",
         ]
 
-        labels = [m[1] for m in metrics_to_compare]
-        vals_a = [float(stats_a[m[0]]) for m in metrics_to_compare]
-        vals_b = [float(stats_b[m[0]]) for m in metrics_to_compare]
+        # Create human-readable raw string representations for tooltips
+        raw_text_a = [
+            f"{stats_a['Poisson_Attack']:.2f} xG",
+            f"{stats_a['Poisson_Defense']:.2f} xG (Conceded)",
+            f"{int(stats_a['Elo_Rating'])} pts",
+            f"{'+' if stats_a['Elo_Momentum'] > 0 else ''}{stats_a['Elo_Momentum']:.1f} Δ",
+            f"Atk CV: {stats_a['Attack_Volatility_Short']:.2f} | Def CV: {stats_a['Defense_Volatility_Short']:.2f}",
+        ]
 
-        norm_a = []
-        norm_b = []
+        raw_text_b = [
+            f"{stats_b['Poisson_Attack']:.2f} xG",
+            f"{stats_b['Poisson_Defense']:.2f} xG (Conceded)",
+            f"{int(stats_b['Elo_Rating'])} pts",
+            f"{'+' if stats_b['Elo_Momentum'] > 0 else ''}{stats_b['Elo_Momentum']:.1f} Δ",
+            f"Atk CV: {stats_b['Attack_Volatility_Short']:.2f} | Def CV: {stats_b['Defense_Volatility_Short']:.2f}",
+        ]
 
-        # 📊 DYNAMIC GLOBAL COHORT SCALING ENGINE
-        for col, label in metrics_to_compare:
-            global_min = float(df_capabilities[col].min())
-            global_max = float(df_capabilities[col].max())
-            global_range = global_max - global_min if global_max != global_min else 1.0
-
-            val_a = float(stats_a[col])
-            val_b = float(stats_b[col])
-
-            if col == "Poisson_Defense":
-                # 🔄 INVERSION TRICK: Lower parameters = elite defensive solidity
-                norm_a.append(((global_max - val_a) / global_range) * 100)
-                norm_b.append(((global_max - val_b) / global_range) * 100)
-            else:
-                # Standard scaling: Higher is better
-                norm_a.append(((val_a - global_min) / global_range) * 100)
-                norm_b.append(((val_b - global_min) / global_range) * 100)
-
-        # ⚡ CLOSE THE GEOMETRIC LOOPS FOR PERFECT RADAR AREA RENDERING
+        # 4. CLOSE THE GEOMETRIC LOOPS FOR PERFECT PENTAGON AREA RENDERING
         labels_closed = labels + [labels[0]]
         norm_a_closed = norm_a + [norm_a[0]]
         norm_b_closed = norm_b + [norm_b[0]]
-        vals_a_closed = vals_a + [vals_a[0]]
-        vals_b_closed = vals_b + [vals_b[0]]
+        raw_a_closed = raw_text_a + [raw_text_a[0]]
+        raw_b_closed = raw_text_b + [raw_text_b[0]]
 
         # Trace Profile: Team A
         fig_sandbox.add_trace(
@@ -792,7 +857,7 @@ def _(
                 fill="toself",
                 name=team_a,
                 marker=dict(color=DARK_THEME["accent"]),
-                text=[f"{v:.2f}" if v < 100 else f"{int(v)}" for v in vals_a_closed],
+                text=raw_a_closed,
                 hovertemplate=f"<b>{team_a}</b><br>%{{theta}}: <b>%{{text}}</b><extra></extra>",
             )
         )
@@ -805,13 +870,13 @@ def _(
                 fill="toself",
                 name=team_b,
                 marker=dict(color="#e6739f"),
-                text=[f"{v:.2f}" if v < 100 else f"{int(v)}" for v in vals_b_closed],
+                text=raw_b_closed,
                 hovertemplate=f"<b>{team_b}</b><br>%{{theta}}: <b>%{{text}}</b><extra></extra>",
             )
         )
 
         fig_sandbox.update_layout(
-            title="<b>🔥 CAPABILITIES</b>",
+            title="<b>🔥 TEAM CAPABILITIES</b>",
             polar=dict(
                 radialaxis=dict(
                     visible=True,

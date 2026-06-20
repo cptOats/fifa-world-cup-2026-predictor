@@ -10,7 +10,11 @@ import numpy as np
 import pandas as pd
 
 from src.blender import find_optimal_blend_weights
-from src.features import compile_master_feature_matrix, extract_latest_team_form
+from src.features import (
+    compile_master_feature_matrix,
+    extract_latest_team_form,
+    test_point_in_time_leakage,
+)
 from src.ingest import verify_data_layer
 from src.model_elo import EloEngine
 from src.model_poisson import (
@@ -36,7 +40,7 @@ from src.transform import (
 # --- MODEL CONFIGURATION ---
 MODEL_TYPE = "blend"  # "blend", "poisson", "elo", "xgb"
 RUN_MONTE_CARLO = True  # Enable for full predictive power
-MONTE_CARLO_RUNS = 1000  # Recommend 10K+
+MONTE_CARLO_RUNS = 10000  # Recommend 10K+
 USE_PRIOR_NUDGE = False  # Use with caution!
 NUDGE_STRENGTH = 1.5  # Recommend ~1.5
 FORCE_RETRAIN = False  # Deletes model artifacts and OOF arrays
@@ -129,9 +133,9 @@ logging.basicConfig(
 def main():
     """Executes the end-to-end World Cup prediction pipeline."""
 
-    logging.info(
-        f"🚀 Launching World Cup Prediction Pipeline [Engine: {MODEL_TYPE}{nudge_suffix}]"
-    )
+    # --- Pre-flight Checks: asserts strict PiT architecture ---
+    logging.info("✈️  Running pre-flight checks...")
+    test_point_in_time_leakage()
 
     ARTIFACTS_DIR = os.path.join("data", "artifacts")
 
@@ -184,6 +188,11 @@ def main():
             f"❌ TEAM_POWER String Mismatch! Unmapped tournament teams: {missing_priors}"
         )
         logging.info("🎯 Bayesian Prior Pass: All tournament entities validated.")
+
+    # --- Launch Prediction Pipeline ---
+    logging.info(
+        f"🚀 Launching World Cup Prediction Pipeline [Engine: {MODEL_TYPE}{nudge_suffix}]"
+    )
 
     # --- Elo Rating ---
     logging.info(
@@ -335,16 +344,31 @@ def main():
         p_rat = ratings.get(team, {"attack": 1.0, "defense": 1.0})
         form = latest_team_form.get(team, {})
 
+        # 1. Extract Baseline Metrics
+        elo = elo_engine.get_rating(team)
+        short_atk = form.get("ewm_adj_gf_5", 1.2)
+        short_def = form.get("ewm_adj_ga_5", 1.2)
+        long_atk = form.get("ewm_adj_gf_15", 1.2)
+        long_def = form.get("ewm_adj_ga_15", 1.2)
+        short_vol_atk = form.get("cv_adj_gf_5", 0.0)
+        short_vol_def = form.get("cv_adj_ga_5", 0.0)
+        long_vol_atk = form.get("cv_adj_gf_15", 0.0)
+        long_vol_def = form.get("cv_adj_ga_15", 0.0)
+
         record = {
             "Country": team,
-            "Elo_Rating": elo_engine.get_rating(team),
+            "Elo_Rating": elo,
+            "Elo_Momentum": form.get("elo_momentum_5", 0.0),
             "Poisson_Attack": p_rat["attack"],
             "Poisson_Defense": p_rat["defense"],
-            "Poisson_Dominance": p_rat["attack"] / max(0.01, p_rat["defense"]),
-            "Short_Term_Form_GF": form.get("ewm_gf_4s", 1.2),
-            "Short_Term_Form_WR": form.get("ewm_wr_4s", 0.35),
-            "Long_Term_Form_GF": form.get("ewm_gf_10s", 1.2),
-            "Long_Term_Form_WR": form.get("ewm_wr_10s", 0.35),
+            "Short_Term_Attack": short_atk,
+            "Short_Term_Defense": short_def,
+            "Long_Term_Attack": long_atk,
+            "Long_Term_Defense": long_def,
+            "Attack_Volatility_Short": short_vol_atk,
+            "Defense_Volatility_Short": short_vol_def,
+            "Attack_Volatility_Long": long_vol_atk,
+            "Defense_Volatility_Long": long_vol_def,
         }
 
         # Append Bayesian Priors Nudge
