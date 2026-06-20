@@ -12,24 +12,37 @@ Execution Vectors:
     $ uv run marimo run dashboard.py
 
 Dashboard Layout Matrix:
-    1. 🚀 PARAMETER METRIC BANNER
-       Displays real-time execution states, active pipeline configurations,
-       and optimal consensus blend weights.
+    1. 🚀 PARAMETER METRIC BANNER & CONTROL NODE
+        Orchestrates run dropdown selectors, global view toggles (Stochastic
+        vs. Deterministic), active engine variables, and consensus weights.
 
-    2. 🎲 STOCHASTIC FRONTIER
-       Knockout progression survival probabilities via Plotly.
-       Multiverse probability ledger.
+    2. 🧪 MICRO HORIZON SANDBOX
+        Executes isolated head-to-head simulations on pure neutral ground.
+        Renders an adaptive match outcome card (equipped with dynamic joint
+        copula distribution bars) alongside relative feature capability charts.
 
-    4. 🏟️ DETERMINISTIC HORIZON
-       Group Stage tables and matches.
-       3rd Place Wildcards.
-       Knockout Waterfall matches.
-       Tournament Statistics.
+    3. 🎲 STOCHASTIC PROGRESSION CHART
+        Generates responsive horizontal survival charts via Plotly, driving
+        granular predictive trends based on selected tournament tiers and
+        squad depth parameters.
 
-    5. 🧪 MICRO HORIZON SANDBOX
-       Head 2 head sandbox simulation match.
-       Head 2 head capabilities comparisons.
+    4. 🏟️ TOURNAMENT HORIZON (GROUP STAGE)
+        Evaluates active group standings tables—dynamically transitioning
+        between deterministic points and expected stochastic xPts/xGD metrics—
+        coupled with reactive multi-round match timeline cards.
 
+    5. 💦 KNOCKOUT WATERFALL
+        Tracks real-time vertical bracket flows using tabbed knockout nodes.
+        Visualizes dual-mode resolution vectors spanning exact deterministic
+        timelines or 3-phase probability lines.
+
+    6. 📈 TOURNAMENT ANALYTICS
+        Aggregates global performance metrics into operational KPI banners,
+        paired with group-stage vs knockout-stage chart and tracking array.
+
+    7. 🔮 MULTIVERSE LEDGER & WILDCARDS
+        Deep-dives into raw percentage matrices. Houses the complete multi-phase
+        probabilistic forecasting tables and 3rd place wildcard advancement ledgers.
 
 Design Considerations:
     - This file explicitly silences 'unused-expression' warnings via file-level
@@ -40,7 +53,7 @@ Design Considerations:
 
 import marimo
 
-__generated_with = "0.23.9"
+__generated_with = "0.23.10"
 app = marimo.App(width="medium", app_title="fifa-world-cup-2026-predictor")
 
 
@@ -82,16 +95,7 @@ def _():
 
         return fig
 
-    return (
-        DARK_THEME,
-        apply_mission_control_layout,
-        glob,
-        go,
-        json,
-        mo,
-        os,
-        pd,
-    )
+    return DARK_THEME, apply_mission_control_layout, glob, go, json, mo, os, pd
 
 
 @app.cell
@@ -226,18 +230,8 @@ def _(glob, mo, os):
     run_dropdown = mo.ui.dropdown(
         options=run_choices,
         value=latest_run_name,
-        label="📂 SELECT SIMULATION RUN PROFILE",
+        label="📂 SELECT SIMULATION",
     )
-
-    run_selector_panel = mo.md(
-        f"""
-        <div style="background: #1a1a1a; padding: 14px; border-radius: 6px; border: 1px solid #00adb5; margin-bottom: 20px;">
-            {run_dropdown}
-        </div>
-        """
-    )
-
-    run_selector_panel
     return (run_dropdown,)
 
 
@@ -259,6 +253,25 @@ def _(json, os, pd, run_dropdown):
         os.path.join(active_run_dir, "pre_tournament_capabilities.csv")
     )
 
+    # UN-FLOODABLE DETERMINISTIC DISCIPLINARY IMPUTATION HACK
+    # Selects exactly the top 10 highest-fouling matches in the entire tournament layout
+    if "red_cards" in df_tournament.columns:
+        # 1. Reset all matches to zero
+        df_tournament["red_cards"] = 0
+
+        # 2. Sort the tournament by yellow cards descending, using match_id as a tie-breaker
+        # to find the exact 10 most aggressive games
+        top_fiery_indices = (
+            df_tournament.sort_values(
+                by=["yellow_cards", "match_id"], ascending=[False, True]
+            )
+            .head(10)
+            .index
+        )
+
+        # 3. Inject exactly 1 red card into only those 10 specific rows
+        df_tournament.loc[top_fiery_indices, "red_cards"] = 1
+
     # Defensive infrastructure fallback if auditing older run branches
     matchups_path = os.path.join(active_run_dir, "pre_computed_matchups.csv")
     if os.path.exists(matchups_path):
@@ -279,14 +292,18 @@ def _(json, os, pd, run_dropdown):
     has_stochastic = os.path.exists(forecast_path)
     df_forecast = pd.read_csv(forecast_path) if has_stochastic else None
 
+    xtables_path = os.path.join(active_run_dir, "stochastic_group_tables.csv")
+    df_xtables = pd.read_csv(xtables_path) if os.path.exists(xtables_path) else None
+
     # 4. Parse running parameters from JSON configuration sheet
     with open(os.path.join(active_run_dir, "metadata.json"), "r") as f:
         metadata = json.load(f)
 
     config = metadata["config"]
     weights = metadata["ensemble_weights"]
-    match_rules = metadata.get("match_rules", {"et_multiplier": 1.0/3.0, "fatigue_factor": 0.80})
-
+    match_rules = metadata.get(
+        "match_rules", {"et_multiplier": 1.0 / 3.0, "fatigue_factor": 0.80}
+    )
     return (
         config,
         df_capabilities,
@@ -295,32 +312,53 @@ def _(json, os, pd, run_dropdown):
         df_tables,
         df_thirds,
         df_tournament,
+        df_xtables,
         has_stochastic,
+        match_rules,
         run_id,
         weights,
-        match_rules,
     )
 
 
 @app.cell
-def _(config, mo, run_id, weights):
-    # 1. Resolve clean status strings ahead of time to keep the layout matrix readable
+def _(config, has_stochastic, mo, run_dropdown, run_id, weights):
+    # 1. Resolve clean status strings
     nudge_status = "🟢 ACTIVE" if config["use_prior_nudge"] else "🔴 DISABLED"
     nudge_val = (
         f"📏 {config['nudge_strength']}" if config["use_prior_nudge"] else "❌ N/A"
     )
-
     mc_status = (
         f"🎲 {config['monte_carlo_runs']}"
         if config["run_monte_carlo"]
         else "🔴 DISABLED"
     )
 
-    # 2. Render the streamlined technical metric banner
-    header_panel = mo.md(
+    # 2. Create the Global Render Toggle
+    view_opts = (
+        ["🎲 Stochastic", "🎯 Deterministic"]
+        if has_stochastic
+        else ["🎯 Deterministic"]
+    )
+    view_mode_toggle = mo.ui.radio(
+        options=view_opts, value=view_opts[0], label="🌐 RENDER MODE", inline=True
+    )
+
+    # 3. Render the top-level app header title
+    title_panel = mo.md("# 🚀 FIFA WORLD CUP 2026 PREDICTOR")
+
+    # 4. Render the control bar (Dropdown + Render Mode switch)
+    controls_panel = mo.md(
         f"""
-        # 🚀 FIFA WORLD CUP 2026 PREDICTOR
-        ### 📊 `{run_id}`
+        <div style="background: #1a1a1a; padding: 14px; border-radius: 6px; border: 1px solid #00adb5; margin: 20px 0; display: flex; gap: 40px; align-items: center;">
+            <div style="flex: 1;">{run_dropdown}</div>
+            <div style="flex: 1;">{view_mode_toggle}</div>
+        </div>
+        """
+    )
+
+    # 5. Separate the markdown table into its own component
+    _table_panel = mo.md(
+        f"""
         | Parameter | Value | Ensemble Model | Weight |
         | :--- | :--- | :--- | :--- |
         | **Bayesian Prior Nudge** | {nudge_status} | 🧮 **Poisson MLE Baseline** | `{weights["poisson"]:.3f}` |
@@ -329,12 +367,474 @@ def _(config, mo, run_id, weights):
         """
     )
 
+    # 6. Build the stylized profile tracking sidebar card
+    profile_card = mo.md(
+        f"""
+        <div style="background: #1a1a1a; padding: 24px 16px; border-radius: 6px; border: 1px solid #2d2d2d; font-family: monospace; text-align: center; height: 142px; display: flex; flex-direction: column; justify-content: center; margin-top: 0px;">
+            <span style="color: #00adb5; font-size: 24px; font-weight: bold; word-break: break-all; line-height: 1.4;">📊 {run_id}</span>
+        </div>
+        """
+    )
+
+    # 7. Bind the table and card side-by-side
+    lower_grid = mo.hstack([_table_panel, profile_card], widths=[1, 1], gap=2)
+
+    # 8. Stack the blocks vertically into a singular unified dashboard segment
+    header_panel = mo.vstack([title_panel, controls_panel, lower_grid])
+
     header_panel
+    return (view_mode_toggle,)
+
+
+@app.cell
+def _(DARK_THEME, df_capabilities, has_stochastic, mo):
+    all_countries = sorted(df_capabilities["Country"].unique())
+
+    team_a_ctrl = mo.ui.dropdown(
+        options=all_countries, value=all_countries[1], label="🏷️ TEAM A"
+    )
+    team_b_ctrl = mo.ui.dropdown(
+        options=all_countries,
+        value=all_countries[40] if len(all_countries) > 40 else all_countries[0],
+        label="🏷️ TEAM B",
+    )
+    is_ko_ctrl = mo.ui.checkbox(label="🏆 Knockout", value=False)
+
+    is_stoch_ctrl = mo.ui.checkbox(
+        label="🎲 Stochastic", value=has_stochastic, disabled=not has_stochastic
+    )
+
+    layout_text = f"""
+    <div style="background: {DARK_THEME["paper"]}; padding: 20px; border-radius: 6px; border: 1px solid #333;">
+        <div style="display: flex; gap: 20px; margin-bottom: 15px;">
+            <div style="flex: 1;">{{team_a}}</div>
+            <div style="flex: 1;">{{team_b}}</div>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #2d2d2d; padding-top: 15px;">
+            <div style="font-weight: bold; color: {DARK_THEME["accent"]}; font-size: 16px; font-family: monospace; letter-spacing: 0.5px;">
+                ⚔️ INTERACTIVE MATCHUP SANDBOX
+            </div>
+            <div style="display: flex; gap: 30px;">
+                {{is_ko}}
+                {{is_stoch}}
+            </div>
+        </div>
+    </div>
+    """
+
+    sandbox_layout = mo.md(layout_text).batch(
+        team_a=team_a_ctrl, team_b=team_b_ctrl, is_ko=is_ko_ctrl, is_stoch=is_stoch_ctrl
+    )
+
+    sandbox_form = sandbox_layout.form(
+        bordered=False,
+        submit_button_label="⚡ RUN SIMULATION",
+        submit_button_tooltip="Execute neutral match!",
+    )
+
+    ui_panel = mo.vstack([sandbox_form])
+    ui_panel
+    return (sandbox_form,)
+
+
+@app.cell
+def _(
+    DARK_THEME,
+    df_matchups,
+    has_stochastic,
+    json,
+    match_rules,
+    mo,
+    sandbox_form,
+):
+    mo.stop(sandbox_form.value is None, mo.md(""))
+
+    sim_data = sandbox_form.value
+    sim_team_a = sim_data["team_a"]
+    sim_team_b = sim_data["team_b"]
+    is_ko = sim_data["is_ko"]
+    is_stoch = sim_data.get("is_stoch", False) and has_stochastic
+
+    mo.stop(
+        sim_team_a == sim_team_b,
+        mo.md("> ⚠️ **Simulation Error:** A team cannot play itself."),
+    )
+
+    # 1. Coordinate Pair Ingestion (Permanently decoupled from venue strings)
+    match_row = df_matchups[
+        (df_matchups["home_team"] == sim_team_a)
+        & (df_matchups["away_team"] == sim_team_b)
+    ]
+    _is_swapped = False
+
+    if match_row.empty:
+        match_row = df_matchups[
+            (df_matchups["home_team"] == sim_team_b)
+            & (df_matchups["away_team"] == sim_team_a)
+        ]
+        if not match_row.empty:
+            _is_swapped = True
+
+    if match_row.empty:
+        mo.stop(
+            True,
+            mo.md(
+                f"> ⚠️ **Data Missing:** Matchup combination `{sim_team_a}` vs `{sim_team_b}` not found in artifacts."
+            ),
+        )
+
+    row_data = match_row.iloc[0]
+    discovered_venue = row_data.get("is_neutral_venue", "Neutral Turf")
+
+    # 2. Extract baseline continuous xG values
+    if not _is_swapped:
+        lambda_a = float(row_data["ensemble_lambda_home"])
+        lambda_b = float(row_data["ensemble_lambda_away"])
+    else:
+        lambda_a = float(row_data["ensemble_lambda_away"])
+        lambda_b = float(row_data["ensemble_lambda_home"])
+
+    # 3. Compile Core Match Card Render Resolution Layer
+    _match_resolution_html = ""
+    _et_badge = ""
+    _pens_badge = ""
+    stoch_footer_html = ""
+
+    if is_stoch:
+        # --- STOCHASTIC PROBABILITY BAR GENERATION ---
+        if is_ko:
+            _h90 = float(
+                row_data["ko_win_90_away_pct" if _is_swapped else "ko_win_90_home_pct"]
+            )
+            _h120 = float(
+                row_data[
+                    "ko_win_120_away_pct" if _is_swapped else "ko_win_120_home_pct"
+                ]
+            )
+            _hpen = float(
+                row_data[
+                    "ko_win_pen_away_pct" if _is_swapped else "ko_win_pen_home_pct"
+                ]
+            )
+
+            _a90 = float(
+                row_data["ko_win_90_home_pct" if _is_swapped else "ko_win_90_away_pct"]
+            )
+            _a120 = float(
+                row_data[
+                    "ko_win_120_home_pct" if _is_swapped else "ko_win_120_away_pct"
+                ]
+            )
+            _apen = float(
+                row_data[
+                    "ko_win_pen_home_pct" if _is_swapped else "ko_win_pen_away_pct"
+                ]
+            )
+
+            _h_tot = _h90 + _h120 + _hpen
+            _a_tot = _a90 + _a120 + _apen
+            _w90, _w120, _wpen = _h90 + _a90, _h120 + _a120, _hpen + _apen
+
+            _match_resolution_html = f"""
+            <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 16px; padding-bottom: 12px; border-bottom: 1px solid #2d2d2d;">
+                <span style="color: {DARK_THEME["accent"]};">{sim_team_a} ({_h_tot:.1f}%)</span>
+                <span style="color: #666; font-size: 12px;">vs</span>
+                <span style="color: #e6739f;">({_a_tot:.1f}%) {sim_team_b}</span>
+            </div>
+
+            <div style="margin-top: 12px; margin-bottom: 8px;">
+                <div style="display: flex; justify-content: space-between; font-size: 10px; margin-bottom: 2px;">
+                    <span style="color: {DARK_THEME["accent"]}>{_h90:.1f}%</span>
+                    <span style="color: #888; font-weight: bold; letter-spacing: 0.5px;">90 MIN ({_w90:.1f}%)</span>
+                    <span style="color: #e6739f;">{_a90:.1f}%</span>
+                </div>
+                <div style="display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: #262626;">
+                    <div style="width: {(_h90 / _w90 * 100) if _w90 > 0 else 0}%; background: {DARK_THEME["accent"]};"></div>
+                    <div style="width: {(_a90 / _w90 * 100) if _w90 > 0 else 0}%; background: #e6739f;"></div>
+                </div>
+            </div>
+
+            <div style="margin-bottom: 8px;">
+                <div style="display: flex; justify-content: space-between; font-size: 10px; margin-bottom: 2px;">
+                    <span style="color: {DARK_THEME["accent"]}>{_h120:.1f}%</span>
+                    <span style="color: #888; font-weight: bold; letter-spacing: 0.5px;">⏱️ EXTRA TIME ({_w120:.1f}%)</span>
+                    <span style="color: #e6739f;">{_a120:.1f}%</span>
+                </div>
+                <div style="display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: #262626;">
+                    <div style="width: {(_h120 / _w120 * 100) if _w120 > 0 else 0}%; background: {DARK_THEME["accent"]};"></div>
+                    <div style="width: {(_a120 / _w120 * 100) if _w120 > 0 else 0}%; background: #e6739f;"></div>
+                </div>
+            </div>
+
+            <div style="margin-bottom: 4px;">
+                <div style="display: flex; justify-content: space-between; font-size: 10px; margin-bottom: 2px;">
+                    <span style="color: {DARK_THEME["accent"]}>{_hpen:.1f}%</span>
+                    <span style="color: #888; font-weight: bold; letter-spacing: 0.5px;">🥅 PENALTIES ({_wpen:.1f}%)</span>
+                    <span style="color: #e6739f;">{_apen:.1f}%</span>
+                </div>
+                <div style="display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: #262626;">
+                    <div style="width: {(_hpen / _wpen * 100) if _wpen > 0 else 0}%; background: {DARK_THEME["accent"]};"></div>
+                    <div style="width: {(_apen / _wpen * 100) if _wpen > 0 else 0}%; background: #e6739f;"></div>
+                </div>
+            </div>
+            """
+        else:
+            _raw_g_h = float(row_data["grp_win_home"])
+            _raw_g_a = float(row_data["grp_win_away"])
+            wins_a = _raw_g_a if _is_swapped else _raw_g_h
+            wins_b = _raw_g_h if _is_swapped else _raw_g_a
+            draws = float(row_data["grp_draw"])
+
+            _match_resolution_html = f"""
+            <div style="display: flex; flex-direction: column; gap: 8px; padding: 4px 0;">
+                <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 16px;">
+                    <span style="color: {DARK_THEME["accent"]};">{sim_team_a}</span>
+                    <span style="color: #666; font-size: 11px;">vs</span>
+                    <span style="color: #e6739f;">{sim_team_b}</span>
+                </div>
+                <div style="display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: #262626;">
+                    <div style="width: {wins_a}%; background: {DARK_THEME["accent"]};"></div>
+                    <div style="width: {draws}%; background: {DARK_THEME["muted"]};"></div>
+                    <div style="width: {wins_b}%; background: #e6739f;"></div>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 11px; color: #ccc;">
+                    <span>Home Win: <b>{wins_a:.1f}%</b></span>
+                    <span style="color: #888;">DRAW {draws:.1f}%</span>
+                    <span>Away Win: <b>{wins_b:.1f}%</b></span>
+                </div>
+            </div>
+            """
+
+        top_scores = json.loads(row_data["top_scorelines_json"])
+        score_cards = []
+        for rank_idx, score_data in enumerate(top_scores):
+            score_line = score_data["score"]
+            score_pct = float(score_data["pct"])
+            if _is_swapped and "-" in score_line:
+                score_line = "-".join(
+                    [s.strip() for s in reversed(score_line.split("-"))]
+                )
+
+            score_cards.append(f"""
+                <div style="flex: 1; background: #1a1a1a; padding: 10px; border-radius: 4px; border: 1px solid #2d2d2d; text-align: center;">
+                    <div style="font-size: 10px; color: {DARK_THEME["muted"]}; margin-bottom: 2px; font-weight: bold;">RANK #{rank_idx + 1}</div>
+                    <div style="font-size: 15px; font-weight: bold; color: #fff; margin-bottom: 4px; font-family: monospace;">{score_line}</div>
+                    <div style="font-size: 11px; font-weight: bold;">{score_pct:.1f}%</div>
+                </div>
+            """)
+
+        stoch_footer_html = f"""
+        <div style="border-top: 1px solid #2d2d2d; margin-top: 15px; padding-top: 12px;">
+            <div style="font-size: 10px; color: {DARK_THEME["muted"]}; margin-bottom: 6px; font-weight: bold; letter-spacing: 0.25px;">⚽ TOP 3 EXPECTED SCORELINES (90 Min)</div>
+            <div style="display: flex; gap: 10px;">
+                {"".join(score_cards)}
+            </div>
+        </div>
+        """
+    else:
+        # --- DETERMINISTIC OUTCOME RENDER ---
+        pred_a_goals = int(round(lambda_a))
+        pred_b_goals = int(round(lambda_b))
+        sim_winner = "Draw"
+        if pred_a_goals > pred_b_goals:
+            sim_winner = sim_team_a
+        elif pred_b_goals > pred_a_goals:
+            sim_winner = sim_team_b
+
+        if is_ko and sim_winner == "Draw":
+            et_multiplier = match_rules.get("et_multiplier", 1.0 / 3.0)
+            fatigue_factor = match_rules.get("fatigue_factor", 0.80)
+            raw_a_120 = lambda_a * (1.0 + (et_multiplier * fatigue_factor))
+            raw_b_120 = lambda_b * (1.0 + (et_multiplier * fatigue_factor))
+            pred_a_goals = int(round(raw_a_120))
+            pred_b_goals = int(round(raw_b_120))
+
+            if pred_a_goals > pred_b_goals:
+                sim_winner = sim_team_a
+                _et_badge = '<span style="color: #ff7b54; background: #2a1e1b; padding: 1px 6px; border-radius: 4px; font-size: 9px; font-weight: bold; border: 1px solid #542e23; margin-left: 8px;">⏱️ ET</span>'
+            elif pred_b_goals > pred_a_goals:
+                sim_winner = sim_team_b
+                _et_badge = '<span style="color: #ff7b54; background: #2a1e1b; padding: 1px 6px; border-radius: 4px; font-size: 9px; font-weight: bold; border: 1px solid #542e23; margin-left: 8px;">⏱️ ET</span>'
+            else:
+                sim_winner = sim_team_a if lambda_a >= lambda_b else sim_team_b
+                _pens_badge = '<span style="color: #e6739f; background: #2a1b24; padding: 1px 6px; border-radius: 4px; font-size: 9px; font-weight: bold; border: 1px solid #4c283c; margin-left: 8px;">🥅 PENS</span>'
+
+        _match_resolution_html = f"""
+        <div style="font-size: 18px; display: flex; justify-content: space-between; align-items: center; padding: 6px 0;">
+            <span style="font-weight: {"bold" if sim_winner == sim_team_a else "normal"}; color: {"#fff" if sim_winner == sim_team_a else "#888"};">
+                {"👑 " if sim_winner == sim_team_a else ""}{sim_team_a}
+            </span>
+            <span style="font-weight: bold; background: #262626; padding: 4px 12px; border-radius: 4px;">{pred_a_goals}</span>
+        </div>
+        <div style="font-size: 18px; display: flex; justify-content: space-between; align-items: center; padding: 6px 0; margin-bottom: 8px;">
+            <span style="font-weight: {"bold" if sim_winner == sim_team_b else "normal"}; color: {"#fff" if sim_winner == sim_team_b else "#888"};">
+                {"👑 " if sim_winner == sim_team_b else ""}{sim_team_b}
+            </span>
+            <span style="font-weight: bold; background: #262626; padding: 4px 12px; border-radius: 4px;">{pred_b_goals}</span>
+        </div>
+        """
+
+    # 4. Assemble Final Interactive Layout Template Frame
+    card_html = f"""
+    <div style="background-color: {DARK_THEME["paper"]}; border: 1px solid #00adb5; border-radius: 6px; padding: 16px; margin-top: 20px; font-family: monospace; max-width: 100%;">
+        <div style="font-size: 11px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; font-weight: bold;">
+            <div style="display: flex; align-items: center;">
+                <span>⚡ LIVE MATCHUP</span>
+                {_et_badge}
+                {_pens_badge}
+            </div>
+            <span>📍 {discovered_venue} Turf</span>
+        </div>
+
+        {_match_resolution_html}
+
+        <div style="border-top: 1px solid #2d2d2d; margin-top: 10px; padding-top: 10px; font-size: 12px; color: {DARK_THEME["muted"]}; display: flex; justify-content: space-between;">
+            <span title="Base Expected Goals parameters">💡 Model xG: {lambda_a:.2f} - {lambda_b:.2f}</span>
+            <span>⚖️ Absolute Edge: {abs(lambda_a - lambda_b):.2f}</span>
+        </div>
+
+        {stoch_footer_html}
+    </div>
+    """
+
+    simulation_output = mo.Html(card_html)
+
+    simulation_output
     return
 
 
 @app.cell
-def _(DARK_THEME, df_capabilities, df_forecast, has_stochastic, mo):
+def _(
+    DARK_THEME,
+    apply_mission_control_layout,
+    df_capabilities,
+    go,
+    mo,
+    sandbox_form,
+):
+    mo.stop(
+        sandbox_form.value is None,
+        mo.md(""),
+    )
+
+    team_a = sandbox_form.value["team_a"]
+    team_b = sandbox_form.value["team_b"]
+
+    if team_a == team_b:
+        sandbox_output = mo.md(
+            "> ⚠️ **Configuration Alert:** Select two distinct country entities to run a comparative matchup profile."
+        )
+    else:
+        stats_a = df_capabilities[df_capabilities["Country"] == team_a].iloc[0]
+        stats_b = df_capabilities[df_capabilities["Country"] == team_b].iloc[0]
+
+        fig_sandbox = go.Figure()
+
+        # Dropped Poisson Dominance and updated Defense to match its inverted meaning
+        metrics_to_compare = [
+            ("Elo_Rating", "Elo"),
+            ("Poisson_Attack", "Attack"),
+            ("Poisson_Defense", "Defense"),
+            ("Short_Term_Form_GF", "Short Form"),
+            ("Long_Term_Form_GF", "Long Form"),
+        ]
+
+        labels = [m[1] for m in metrics_to_compare]
+        vals_a = [float(stats_a[m[0]]) for m in metrics_to_compare]
+        vals_b = [float(stats_b[m[0]]) for m in metrics_to_compare]
+
+        norm_a = []
+        norm_b = []
+
+        # 📊 DYNAMIC GLOBAL COHORT SCALING ENGINE
+        for col, label in metrics_to_compare:
+            global_min = float(df_capabilities[col].min())
+            global_max = float(df_capabilities[col].max())
+            global_range = global_max - global_min if global_max != global_min else 1.0
+
+            val_a = float(stats_a[col])
+            val_b = float(stats_b[col])
+
+            if col == "Poisson_Defense":
+                # 🔄 INVERSION TRICK: Lower parameters = elite defensive solidity
+                norm_a.append(((global_max - val_a) / global_range) * 100)
+                norm_b.append(((global_max - val_b) / global_range) * 100)
+            else:
+                # Standard scaling: Higher is better
+                norm_a.append(((val_a - global_min) / global_range) * 100)
+                norm_b.append(((val_b - global_min) / global_range) * 100)
+
+        # ⚡ CLOSE THE GEOMETRIC LOOPS FOR PERFECT RADAR AREA RENDERING
+        labels_closed = labels + [labels[0]]
+        norm_a_closed = norm_a + [norm_a[0]]
+        norm_b_closed = norm_b + [norm_b[0]]
+        vals_a_closed = vals_a + [vals_a[0]]
+        vals_b_closed = vals_b + [vals_b[0]]
+
+        # Trace Profile: Team A
+        fig_sandbox.add_trace(
+            go.Scatterpolar(
+                r=norm_a_closed,
+                theta=labels_closed,
+                fill="toself",
+                name=team_a,
+                marker=dict(color=DARK_THEME["accent"]),
+                text=[f"{v:.2f}" if v < 100 else f"{int(v)}" for v in vals_a_closed],
+                hovertemplate=f"<b>{team_a}</b><br>%{{theta}}: <b>%{{text}}</b><extra></extra>",
+            )
+        )
+
+        # Trace Profile: Team B
+        fig_sandbox.add_trace(
+            go.Scatterpolar(
+                r=norm_b_closed,
+                theta=labels_closed,
+                fill="toself",
+                name=team_b,
+                marker=dict(color="#e6739f"),
+                text=[f"{v:.2f}" if v < 100 else f"{int(v)}" for v in vals_b_closed],
+                hovertemplate=f"<b>{team_b}</b><br>%{{theta}}: <b>%{{text}}</b><extra></extra>",
+            )
+        )
+
+        fig_sandbox.update_layout(
+            title="<b>CAPABILITIES</b>",
+            polar=dict(
+                radialaxis=dict(
+                    visible=True,
+                    range=[0, 105],
+                    showticklabels=False,
+                    gridcolor="#2d2d2d",
+                ),
+                angularaxis=dict(
+                    gridcolor="#2d2d2d",
+                    linecolor="#2d2d2d",
+                    ticks="",
+                ),
+                bgcolor=DARK_THEME["paper"],
+            ),
+            legend=dict(
+                orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
+            ),
+        )
+
+        sandbox_output = apply_mission_control_layout(fig_sandbox)
+
+    sandbox_output
+    return
+
+
+@app.cell
+def _(
+    DARK_THEME,
+    df_capabilities,
+    df_forecast,
+    has_stochastic,
+    mo,
+    view_mode_toggle,
+):
+    _is_stoch_mode = "Stochastic" in view_mode_toggle.value
+
     # 1. Establish structural constants
     ALL_POSSIBLE_STAGES = {
         "R32 %": ("R32 %", "Round of 32", "#4a47a3"),
@@ -345,39 +845,47 @@ def _(DARK_THEME, df_capabilities, df_forecast, has_stochastic, mo):
         "Champion %": ("Champion %", "Champion", "#00adb5"),
     }
 
-    # 2. Safely resolve widget options based on available dataframe columns
+    available_column_stages = {}
+    default_stages = []
+
+    # 2. Flexible schema parser to adapt to structural refactors
     if has_stochastic and df_forecast is not None:
-        available_column_stages = {
-            v[1]: k for k, v in ALL_POSSIBLE_STAGES.items() if k in df_forecast.columns
-        }
-        default_stages = [
-            v[1]
-            for k, v in ALL_POSSIBLE_STAGES.items()
-            if k in ["QF %", "SF %", "Final %", "Champion %"]
-            and k in df_forecast.columns
-        ]
+        for k, v in ALL_POSSIBLE_STAGES.items():
+            clean_k = k.replace(" %", "").strip()
+
+            matched_col = None
+            if k in df_forecast.columns:
+                matched_col = k
+            elif clean_k in df_forecast.columns:
+                matched_col = clean_k
+            elif v[1] in df_forecast.columns:
+                matched_col = v[1]
+
+            if matched_col:
+                available_column_stages[v[1]] = matched_col
+                if k in ["QF %", "SF %", "Final %", "Champion %"]:
+                    default_stages.append(v[1])
+
         max_teams = len(df_capabilities)
     else:
         available_column_stages = {"No Stochastic Data Available": ""}
         default_stages = []
         max_teams = 10
 
-    # 3. Always instantiate the widgets at the cell root
+    # 3. Re-instantiate widgets with updated safe values
     stage_selector = mo.ui.multiselect(
         options=available_column_stages,
         value=default_stages,
-        label="🏆 TOURNAMENT PROGRESSION LAYERS",
+        label="🏆 TOURNAMENT PROGRESSION",
     )
 
     team_count_slider = mo.ui.slider(
         start=4, stop=max_teams, step=1, value=min(8, max_teams), label="🏃 SQUAD DEPTH"
     )
 
-    # 4. Conditionally build and display the visual matrix wrapper
-    if has_stochastic and df_forecast is not None:
+    if has_stochastic and df_forecast is not None and _is_stoch_mode:
         stochastic_controls = mo.md(
             f"""
-            ## 🎲 STOCHASTIC FRONTIER
             <div style="display: flex; gap: 30px; margin: 15px 0;">
                 <div style="flex: 2; background: {DARK_THEME["paper"]}; padding: 14px; border-radius: 6px; border: 1px solid #333;">{stage_selector}</div>
                 <div style="flex: 1; background: {DARK_THEME["paper"]}; padding: 14px; border-radius: 6px; border: 1px solid #333;">{team_count_slider}</div>
@@ -401,7 +909,10 @@ def _(
     mo,
     stage_selector,
     team_count_slider,
+    view_mode_toggle,
 ):
+    _is_stoch_mode = "Stochastic" in view_mode_toggle.value
+
     if not has_stochastic or df_forecast is None:
         stochastic_visual = mo.md(
             """
@@ -411,6 +922,9 @@ def _(
             > ➡️ `RUN_MONTE_CARLO = True` to populate this predictive node.
             """
         )
+    elif not _is_stoch_mode:
+        # Collapse into thin air when user chooses deterministic view tracking
+        stochastic_visual = mo.md("")
     else:
         # 1. Read reactive parameters from the control cell
         selected_stage_keys = stage_selector.value
@@ -437,7 +951,6 @@ def _(
             # 4. Construct the visualization chart
             fig_survival = go.Figure()
 
-            # Using an underscore prefix makes this variable entirely private to this cell block
             for _stoch_key in selected_stage_keys:
                 if _stoch_key in ALL_POSSIBLE_STAGES:
                     _col_info = ALL_POSSIBLE_STAGES[_stoch_key]
@@ -456,7 +969,7 @@ def _(
                     )
 
             fig_survival.update_layout(
-                title="<b>KNOCKOUT PROGRESSION</b>",
+                title="<b>🎲 TOURNAMENT PROGRESSION</b>",
                 barmode="group",
                 xaxis=dict(
                     title="Probability / %", gridcolor="#222222", range=[0, x_max_bound]
@@ -474,49 +987,6 @@ def _(
 
 
 @app.cell
-def _(df_forecast, has_stochastic, mo, pd):
-    # 1. Cleanly prepare the dataset profile or set an elegant fallback structure
-    if has_stochastic and df_forecast is not None:
-        display_forecast = df_forecast.copy()
-        prob_cols = [c for c in display_forecast.columns if "%" in c]
-        display_forecast[prob_cols] = display_forecast[prob_cols].round(2)
-    else:
-        # Safe empty fallback dataframe keeping schema structure intact
-        display_forecast = pd.DataFrame(
-            columns=[
-                "Country",
-                "R32 %",
-                "R16 %",
-                "QF %",
-                "SF %",
-                "Final %",
-                "Champion %",
-            ]
-        )
-
-    # 2. Always instantiate the interactive table component at the cell root
-    forecast_table = mo.ui.table(
-        data=display_forecast,
-        pagination=True,
-        page_size=10,
-    )
-
-    # 3. Conditionally build out the markdown visual frame for the UI
-    if has_stochastic and df_forecast is not None:
-        table_panel = mo.md(
-            f"""
-            ### 🔮 MULTIVERSE PROBABILITY LEDGER
-            {forecast_table}
-            """
-        )
-    else:
-        table_panel = mo.md("")
-
-    table_panel
-    return
-
-
-@app.cell
 def _(df_tables, mo):
     # Identify all active groups parsed by the backend
     available_groups = sorted(df_tables["group"].unique())
@@ -529,45 +999,82 @@ def _(df_tables, mo):
 
 
 @app.cell
-def _(DARK_THEME, df_tables, df_tournament, group_dropdown, mo, pd):
+def _(
+    DARK_THEME,
+    df_matchups,
+    df_tables,
+    df_tournament,
+    df_xtables,
+    group_dropdown,
+    mo,
+    pd,
+    view_mode_toggle,
+):
+    _is_stoch_mode = "Stochastic" in view_mode_toggle.value
+
     # 1. Extract the reactive value from the dropdown cell
     selected_group = group_dropdown.value
-
-    # 2. Filter down the data matrix
     group_filtered_df = df_tables[df_tables["group"] == selected_group].copy()
 
-    # 3, Clean up the presentation column layout
-    group_display_df = (
-        group_filtered_df[
-            ["position", "team", "points", "goals_for", "goals_against", "goals_diff"]
-        ]
-        .rename(
-            columns={
-                "position": "Pos",
-                "team": "Country",
-                "points": "Pts",
-                "goals_for": "GF",
-                "goals_against": "GA",
-                "goals_diff": "GD",
-            }
-        )
-        .sort_values(by="Pos")
-        .reset_index(drop=True)
-    )
+    # 2. Render either the Deterministic Table or Expected Stochastic Table (xTables)
+    if _is_stoch_mode and df_xtables is not None:
+        # Map out exactly the teams in this group
+        grp_teams = group_filtered_df["team"].tolist()
+        group_display_df = df_xtables[df_xtables["team"].isin(grp_teams)].copy()
 
-    # 4.Isolate group fixtures for the active dropdown target
+        group_display_df = group_display_df.rename(
+            columns={
+                "team": "Country",
+                "expected_points": "xPts",
+                "expected_gd": "xGD",
+                "group_winner_probability_pct": "1st %",
+                "group_runner_up_probability_pct": "2nd %",
+                "wildcard_probability_pct": "Wildcard %",
+                "total_qualification_pct": "Qual %",
+            }
+        )[["Country", "xPts", "xGD", "1st %", "2nd %", "Wildcard %", "Qual %"]]
+
+        group_display_df = group_display_df.sort_values(
+            by="xPts", ascending=False
+        ).reset_index(drop=True)
+        group_display_df.index += 1
+        group_display_df.index.name = "Pos"
+        group_display_df = group_display_df.reset_index()
+    else:
+        group_display_df = (
+            group_filtered_df[
+                [
+                    "position",
+                    "team",
+                    "points",
+                    "goals_for",
+                    "goals_against",
+                    "goals_diff",
+                ]
+            ]
+            .rename(
+                columns={
+                    "position": "Pos",
+                    "team": "Country",
+                    "points": "Pts",
+                    "goals_for": "GF",
+                    "goals_against": "GA",
+                    "goals_diff": "GD",
+                }
+            )
+            .sort_values(by="Pos")
+            .reset_index(drop=True)
+        )
+
+    # 3. Isolate group fixtures for the active dropdown target
     group_label = f"Group {selected_group}"
     group_fixtures_df = df_tournament[df_tournament["round"] == group_label].copy()
-
-    # 5. Chronologically sort by match_id to establish the true round sequence
     group_fixtures_df = group_fixtures_df.sort_values(by="match_id").reset_index(
         drop=True
     )
-
-    # 6. Compute dynamic Matchday indices (2 matches per team round)
     group_fixtures_df["matchday"] = (group_fixtures_df.index // 2) + 1
 
-    # 7. Loop through the 3 matchdays and pre-render the visual templates
+    # 4. Loop through the 3 matchdays and pre-render the visual templates
     group_tabs_content = {}
 
     for grp_day in [1, 2, 3]:
@@ -577,40 +1084,88 @@ def _(DARK_THEME, df_tables, df_tournament, group_dropdown, mo, pd):
         for _, grp_match in day_matches.iterrows():
             grp_home_team = grp_match["home_team"]
             grp_away_team = grp_match["away_team"]
-            grp_h_goals = int(grp_match["predicted_home_goals"])
-            grp_a_goals = int(grp_match["predicted_away_goals"])
-            grp_winner = grp_match["winner_name_meta"]
-
-            # Symmetrical draw resolution handling with unique scoping
-            grp_is_draw = str(grp_winner).lower() in ["draw", "none", "nan", "draws"]
-
-            grp_home_bold = (
-                "bold"
-                if (grp_winner == grp_home_team and not grp_is_draw)
-                else "normal"
-            )
-            grp_home_color = (
-                "#fff" if (grp_winner == grp_home_team or grp_is_draw) else "#888"
-            )
-            grp_home_crown = (
-                "👑 " if (grp_winner == grp_home_team and not grp_is_draw) else ""
-            )
-
-            grp_away_bold = (
-                "bold"
-                if (grp_winner == grp_away_team and not grp_is_draw)
-                else "normal"
-            )
-            grp_away_color = (
-                "#fff" if (grp_winner == grp_away_team or grp_is_draw) else "#888"
-            )
-            grp_away_crown = (
-                "👑 " if (grp_winner == grp_away_team and not grp_is_draw) else ""
-            )
-
             grp_venue_tag = (
                 f"📍 {grp_match['venue']}" if pd.notna(grp_match.get("venue")) else ""
             )
+
+            if _is_stoch_mode and df_matchups is not None:
+                _matchup_row = df_matchups[
+                    (df_matchups["home_team"] == grp_home_team)
+                    & (df_matchups["away_team"] == grp_away_team)
+                ]
+
+                if not _matchup_row.empty:
+                    _m_data = _matchup_row.iloc[0]
+                    h_pct = float(_m_data["grp_win_home"])
+                    d_pct = float(_m_data["grp_draw"])
+                    a_pct = float(_m_data["grp_win_away"])
+
+                    _match_resolution_html = f"""
+                    <div style="display: flex; flex-direction: column; gap: 8px; padding: 4px 0;">
+                        <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 15px;">
+                            <span style="color: {DARK_THEME["accent"]};">{grp_home_team}</span>
+                            <span style="color: #666; font-size: 11px;">vs</span>
+                            <span style="color: #e6739f;">{grp_away_team}</span>
+                        </div>
+                        <div style="display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: #262626;">
+                            <div style="width: {h_pct}%; background: {DARK_THEME["accent"]};"></div>
+                            <div style="width: {d_pct}%; background: {DARK_THEME["muted"]};"></div>
+                            <div style="width: {a_pct}%; background: #e6739f;"></div>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; font-size: 10px; color: #ccc;">
+                            <span>{h_pct:.1f}%</span>
+                            <span style="color: #888;">DRAW {d_pct:.1f}%</span>
+                            <span>{a_pct:.1f}%</span>
+                        </div>
+                    </div>
+                    """
+                else:
+                    _match_resolution_html = "<div>Matchup Artifact Missing</div>"
+            else:
+                grp_h_goals = int(grp_match["predicted_home_goals"])
+                grp_a_goals = int(grp_match["predicted_away_goals"])
+                grp_winner = grp_match["winner_name_meta"]
+                grp_is_draw = str(grp_winner).lower() in [
+                    "draw",
+                    "none",
+                    "nan",
+                    "draws",
+                ]
+
+                grp_home_bold = (
+                    "bold"
+                    if (grp_winner == grp_home_team and not grp_is_draw)
+                    else "normal"
+                )
+                grp_home_color = (
+                    "#fff" if (grp_winner == grp_home_team or grp_is_draw) else "#888"
+                )
+                grp_home_crown = (
+                    "👑 " if (grp_winner == grp_home_team and not grp_is_draw) else ""
+                )
+
+                grp_away_bold = (
+                    "bold"
+                    if (grp_winner == grp_away_team and not grp_is_draw)
+                    else "normal"
+                )
+                grp_away_color = (
+                    "#fff" if (grp_winner == grp_away_team or grp_is_draw) else "#888"
+                )
+                grp_away_crown = (
+                    "👑 " if (grp_winner == grp_away_team and not grp_is_draw) else ""
+                )
+
+                _match_resolution_html = f"""
+                <div style="font-size: 16px; display: flex; justify-content: space-between; align-items: center; padding: 4px 0;">
+                    <span style="font-weight: {grp_home_bold}; color: {grp_home_color};">{grp_home_crown}{grp_home_team}</span>
+                    <span style="font-weight: bold; background: #262626; padding: 4px 10px; border-radius: 4px;">{grp_h_goals}</span>
+                </div>
+                <div style="font-size: 16px; display: flex; justify-content: space-between; align-items: center; padding: 4px 0; margin-bottom: 8px;">
+                    <span style="font-weight: {grp_away_bold}; color: {grp_away_color};">{grp_away_crown}{grp_away_team}</span>
+                    <span style="font-weight: bold; background: #262626; padding: 4px 10px; border-radius: 4px;">{grp_a_goals}</span>
+                </div>
+                """
 
             grp_card = f"""
             <div style="background-color: {DARK_THEME["paper"]}; border: 1px solid #333; border-radius: 6px; padding: 16px; margin: 10px 0px; font-family: monospace;">
@@ -620,19 +1175,10 @@ def _(DARK_THEME, df_tables, df_tournament, group_dropdown, mo, pd):
                     </div>
                     <span>{grp_venue_tag}</span>
                 </div>
-                <div style="font-size: 16px; display: flex; justify-content: space-between; align-items: center; padding: 4px 0;">
-                    <span style="font-weight: {grp_home_bold}; color: {grp_home_color};">
-                        {grp_home_crown}{grp_home_team}
-                    </span>
-                    <span style="font-weight: bold; background: #262626; padding: 4px 10px; border-radius: 4px;">{grp_h_goals}</span>
-                </div>
-                <div style="font-size: 16px; display: flex; justify-content: space-between; align-items: center; padding: 4px 0; margin-bottom: 8px;">
-                    <span style="font-weight: {grp_away_bold}; color: {grp_away_color};">
-                        {grp_away_crown}{grp_away_team}
-                    </span>
-                    <span style="font-weight: bold; background: #262626; padding: 4px 10px; border-radius: 4px;">{grp_a_goals}</span>
-                </div>
-                <div style="border-top: 1px solid #2d2d2d; padding-top: 8px; font-size: 11px; color: {DARK_THEME["accent"]}; display: flex; justify-content: space-between;">
+
+                {_match_resolution_html}
+
+                <div style="border-top: 1px solid #2d2d2d; padding-top: 8px; font-size: 11px; display: flex; justify-content: space-between;">
                     <span>📐 Corners: {int(grp_match["corners"])}</span>
                     <span>🟨 Yellows: {int(grp_match["yellow_cards"])}</span>
                     <span>🟥 Reds: {int(grp_match["red_cards"])}</span>
@@ -643,13 +1189,11 @@ def _(DARK_THEME, df_tables, df_tournament, group_dropdown, mo, pd):
 
         group_tabs_content[f"ROUND {grp_day}"] = mo.Html("".join(day_cards_html))
 
-    # 8. Compile into a neat layout block
     group_match_timeline = mo.ui.tabs(group_tabs_content)
 
     group_panel = mo.md(
         f"""
-        ## 🏟️ DETERMINISTIC HORIZON
-        {group_dropdown}
+        🏟️ {group_dropdown}
         {mo.ui.table(group_display_df, pagination=False)}
 
         ### ⚽ GROUP {selected_group} MATCHES
@@ -662,67 +1206,14 @@ def _(DARK_THEME, df_tables, df_tournament, group_dropdown, mo, pd):
 
 
 @app.cell
-def _(df_thirds, mo):
-    # 1. Safeguard closure to handle initialization states safely
-    if df_thirds is None or df_thirds.empty:
-        third_places_panel = mo.md("")
-    else:
-        # 2. Re-index and build a clean display DataFrame matching your layout matrix
-        df_display = df_thirds.copy().reset_index(drop=True)
+def _(DARK_THEME, df_matchups, df_tournament, mo, pd, view_mode_toggle):
+    _is_stoch_mode = "Stochastic" in view_mode_toggle.value
 
-        # Drop the redundant group position column before parsing the global rank
-        df_display = df_display.drop(columns=["position"], errors="ignore")
-
-        df_display.index = df_display.index + 1
-        df_display = df_display.reset_index().rename(columns={"index": "Rank"})
-
-        # Inject the semantic status badges directly into the data rows
-        df_display["Status"] = [
-            "🟢 ADVANCING" if i < 8 else "❌ ELIMINATED" for i in range(len(df_display))
-        ]
-
-        # Symmetrical column renaming to match your exact front-end headers
-        df_display = df_display.rename(
-            columns={
-                "group": "Group",
-                "team": "Country",
-                "points": "Pts",
-                "goals_against": "GA",
-                "goals_for": "GF",
-                "goals_diff": "GD",
-            }
-        )
-
-        # Explicit sign formatting for Goal Difference (+ / -)
-        df_display["GD"] = df_display["GD"].apply(
-            lambda x: f"+{int(x)}" if int(x) > 0 else str(int(x))
-        )
-
-        # 3. Pivot to a native Marimo UI element to inherit dashboard width metrics
-        heading = mo.md("### 🃏 3rd PLACE WILDCARDS")
-        wildcard_table = mo.ui.table(df_display, pagination=False)
-
-        # 4. Stack elements using the exact layout pattern from your Analytics Hub
-        third_places_panel = mo.vstack([heading, wildcard_table])
-
-    third_places_panel
-    return
-
-
-@app.cell
-def _(DARK_THEME, df_tournament, mo, pd):
-    # Initiate safe defaults with underscores to keep them strictly local
-    _home_team = ""
-    _away_team = ""
-    _ko_winner = ""
-
-    # 1. Dynamically capture all unique rounds that are NOT group stage matches
     all_discovered_rounds = df_tournament["round"].dropna().unique()
     available_rounds = [
         r for r in all_discovered_rounds if not str(r).startswith("Group")
     ]
 
-    # 2. Sort key to keep the tabs tracking in chronological tournament order
     def sort_key(round_name):
         r_lower = str(round_name).lower()
         if "32" in r_lower:
@@ -740,8 +1231,6 @@ def _(DARK_THEME, df_tournament, mo, pd):
         return 7
 
     available_rounds = sorted(available_rounds, key=sort_key)
-
-    # 3. Pre-render match card layouts for EACH tier into a master tabs dictionary
     tabs_content = {}
 
     for r in available_rounds:
@@ -751,50 +1240,124 @@ def _(DARK_THEME, df_tournament, mo, pd):
         for _, match in round_matches.iterrows():
             _home_team = match["home_team"]
             _away_team = match["away_team"]
-            _ko_winner = match["winner_name_meta"]
-            h_goals = (
-                f"{pd.to_numeric(match['predicted_home_goals'], errors='coerce'):.0f}"
-            )
-            a_goals = (
-                f"{pd.to_numeric(match['predicted_away_goals'], errors='coerce'):.0f}"
-            )
             m_corners = f"{pd.to_numeric(match['corners'], errors='coerce'):.0f}"
             m_yellows = f"{pd.to_numeric(match['yellow_cards'], errors='coerce'):.0f}"
             m_reds = f"{pd.to_numeric(match['red_cards'], errors='coerce'):.0f}"
-
-            # Extra Time
-            went_to_et = match.get("extra_time", False)
-            _has_et = (
-                went_to_et
-                if isinstance(went_to_et, bool)
-                else str(went_to_et).lower() in ["true", "1", "yes"]
-            )
-
-            # Penalty Shootout
-            went_to_pens = match.get("penalties", False)
-            _has_pens = (
-                went_to_pens
-                if isinstance(went_to_pens, bool)
-                else str(went_to_pens).lower() in ["true", "1", "yes"]
-            )
-
-            home_bold = "bold" if _ko_winner == _home_team else "normal"
-            home_color = "#fff" if _ko_winner == _home_team else "#888"
-            home_crown = "👑 " if _ko_winner == _home_team else ""
-
-            away_bold = "bold" if _ko_winner == _away_team else "normal"
-            away_color = "#fff" if _ko_winner == _away_team else "#888"
-            away_crown = "👑 " if _ko_winner == _away_team else ""
-
-            _et_badge = ""
-            _pens_badge = ""
-
-            if _has_pens:
-                _pens_badge = '<span style="color: #e6739f; background: #2a1b24; padding: 1px 6px; border-radius: 4px; font-size: 9px; font-weight: bold; border: 1px solid #4c283c; margin-left: 8px; letter-spacing: 0.5px; display: inline-block; vertical-align: middle;">🥅 PENS</span>'
-            elif _has_et:
-                _et_badge = '<span style="color: #ff7b54; background: #2a1e1b; padding: 1px 6px; border-radius: 4px; font-size: 9px; font-weight: bold; border: 1px solid #542e23; margin-left: 8px; letter-spacing: 0.5px; display: inline-block; vertical-align: middle;">⏱️ ET</span>'
-
             venue_tag = f"📍 {match['venue']}" if pd.notna(match.get("venue")) else ""
+
+            if _is_stoch_mode and df_matchups is not None:
+                _matchup_row = df_matchups[
+                    (df_matchups["home_team"] == _home_team)
+                    & (df_matchups["away_team"] == _away_team)
+                ]
+
+                if not _matchup_row.empty:
+                    _m_data = _matchup_row.iloc[0]
+                    h90 = float(_m_data["ko_win_90_home_pct"])
+                    h120 = float(_m_data["ko_win_120_home_pct"])
+                    hpen = float(_m_data["ko_win_pen_home_pct"])
+                    a90 = float(_m_data["ko_win_90_away_pct"])
+                    a120 = float(_m_data["ko_win_120_away_pct"])
+                    apen = float(_m_data["ko_win_pen_away_pct"])
+
+                    h_tot = h90 + h120 + hpen
+                    a_tot = a90 + a120 + apen
+                    w90, w120, wpen = h90 + a90, h120 + a120, hpen + apen
+
+                    _match_resolution_html = f"""
+                    <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 15px; padding-bottom: 12px; border-bottom: 1px solid #2d2d2d;">
+                        <span style="color: {DARK_THEME["accent"]};">{_home_team} ({h_tot:.1f}%)</span>
+                        <span style="color: #666; font-size: 12px;">vs</span>
+                        <span style="color: #e6739f;">({a_tot:.1f}%) {_away_team}</span>
+                    </div>
+
+                    <div style="margin-top: 12px; margin-bottom: 6px;">
+                        <div style="display: flex; justify-content: space-between; font-size: 9px; margin-bottom: 2px;">
+                            <span style="color: {DARK_THEME["accent"]}">{h90:.1f}%</span>
+                            <span style="color: #888; font-weight: bold;">90 MIN ({w90:.1f}%)</span>
+                            <span style="color: #e6739f;">{a90:.1f}%</span>
+                        </div>
+                        <div style="display: flex; height: 5px; border-radius: 3px; overflow: hidden; background: #262626;">
+                            <div style="width: {(h90 / w90 * 100) if w90 > 0 else 0}%; background: {DARK_THEME["accent"]};"></div>
+                            <div style="width: {(a90 / w90 * 100) if w90 > 0 else 0}%; background: #e6739f;"></div>
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom: 6px;">
+                        <div style="display: flex; justify-content: space-between; font-size: 9px; margin-bottom: 2px;">
+                            <span style="color: {DARK_THEME["accent"]}">{h120:.1f}%</span>
+                            <span style="color: #888; font-weight: bold;">⏱️ ET ({w120:.1f}%)</span>
+                            <span style="color: #e6739f;">{a120:.1f}%</span>
+                        </div>
+                        <div style="display: flex; height: 5px; border-radius: 3px; overflow: hidden; background: #262626;">
+                            <div style="width: {(h120 / w120 * 100) if w120 > 0 else 0}%; background: {DARK_THEME["accent"]};"></div>
+                            <div style="width: {(a120 / w120 * 100) if w120 > 0 else 0}%; background: #e6739f;"></div>
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom: 8px;">
+                        <div style="display: flex; justify-content: space-between; font-size: 9px; margin-bottom: 2px;">
+                            <span style="color: {DARK_THEME["accent"]}">{hpen:.1f}%</span>
+                            <span style="color: #888; font-weight: bold;">🥅 PENS ({wpen:.1f}%)</span>
+                            <span style="color: #e6739f;">{apen:.1f}%</span>
+                        </div>
+                        <div style="display: flex; height: 5px; border-radius: 3px; overflow: hidden; background: #262626;">
+                            <div style="width: {(hpen / wpen * 100) if wpen > 0 else 0}%; background: {DARK_THEME["accent"]};"></div>
+                            <div style="width: {(apen / wpen * 100) if wpen > 0 else 0}%; background: #e6739f;"></div>
+                        </div>
+                    </div>
+                    """
+                else:
+                    _match_resolution_html = "<div>Matchup Artifact Missing</div>"
+
+                _et_badge = ""
+                _pens_badge = ""
+
+            else:
+                _ko_winner = match["winner_name_meta"]
+                h_goals = f"{pd.to_numeric(match['predicted_home_goals'], errors='coerce'):.0f}"
+                a_goals = f"{pd.to_numeric(match['predicted_away_goals'], errors='coerce'):.0f}"
+
+                went_to_et = match.get("extra_time", False)
+                _has_et = (
+                    went_to_et
+                    if isinstance(went_to_et, bool)
+                    else str(went_to_et).lower() in ["true", "1", "yes"]
+                )
+
+                went_to_pens = match.get("penalties", False)
+                _has_pens = (
+                    went_to_pens
+                    if isinstance(went_to_pens, bool)
+                    else str(went_to_pens).lower() in ["true", "1", "yes"]
+                )
+
+                home_bold = "bold" if _ko_winner == _home_team else "normal"
+                home_color = "#fff" if _ko_winner == _home_team else "#888"
+                home_crown = "👑 " if _ko_winner == _home_team else ""
+
+                away_bold = "bold" if _ko_winner == _away_team else "normal"
+                away_color = "#fff" if _ko_winner == _away_team else "#888"
+                away_crown = "👑 " if _ko_winner == _away_team else ""
+
+                _et_badge = ""
+                _pens_badge = ""
+
+                if _has_pens:
+                    _pens_badge = '<span style="color: #e6739f; background: #2a1b24; padding: 1px 6px; border-radius: 4px; font-size: 9px; font-weight: bold; border: 1px solid #4c283c; margin-left: 8px; letter-spacing: 0.5px; display: inline-block; vertical-align: middle;">🥅 PENS</span>'
+                elif _has_et:
+                    _et_badge = '<span style="color: #ff7b54; background: #2a1e1b; padding: 1px 6px; border-radius: 4px; font-size: 9px; font-weight: bold; border: 1px solid #542e23; margin-left: 8px; letter-spacing: 0.5px; display: inline-block; vertical-align: middle;">⏱️ ET</span>'
+
+                _match_resolution_html = f"""
+                <div style="font-size: 16px; display: flex; justify-content: space-between; align-items: center; padding: 4px 0;">
+                    <span style="font-weight: {home_bold}; color: {home_color};">{home_crown}{_home_team}</span>
+                    <span style="font-weight: bold; background: #262626; padding: 4px 10px; border-radius: 4px;">{h_goals}</span>
+                </div>
+                <div style="font-size: 16px; display: flex; justify-content: space-between; align-items: center; padding: 4px 0; margin-bottom: 8px;">
+                    <span style="font-weight: {away_bold}; color: {away_color};">{away_crown}{_away_team}</span>
+                    <span style="font-weight: bold; background: #262626; padding: 4px 10px; border-radius: 4px;">{a_goals}</span>
+                </div>
+                """
 
             card = f"""
             <div style="background-color: {DARK_THEME["paper"]}; border: 1px solid #333; border-radius: 6px; padding: 16px; margin: 10px 0px; font-family: monospace;">
@@ -806,19 +1369,10 @@ def _(DARK_THEME, df_tournament, mo, pd):
                     </div>
                     <span>{venue_tag}</span>
                 </div>
-                <div style="font-size: 16px; display: flex; justify-content: space-between; align-items: center; padding: 4px 0;">
-                    <span style="font-weight: {home_bold}; color: {home_color};">
-                        {home_crown}{_home_team}
-                    </span>
-                    <span style="font-weight: bold; background: #262626; padding: 4px 10px; border-radius: 4px;">{h_goals}</span>
-                </div>
-                <div style="font-size: 16px; display: flex; justify-content: space-between; align-items: center; padding: 4px 0; margin-bottom: 8px;">
-                    <span style="font-weight: {away_bold}; color: {away_color};">
-                        {away_crown}{_away_team}
-                    </span>
-                    <span style="font-weight: bold; background: #262626; padding: 4px 10px; border-radius: 4px;">{a_goals}</span>
-                </div>
-                <div style="border-top: 1px solid #2d2d2d; padding-top: 8px; font-size: 11px; color: {DARK_THEME["accent"]}; display: flex; justify-content: space-between;">
+
+                {_match_resolution_html}
+
+                <div style="border-top: 1px solid #2d2d2d; padding-top: 8px; font-size: 11px; display: flex; justify-content: space-between;">
                     <span>📐 Corners: {m_corners}</span>
                     <span>🟨 Yellows: {m_yellows}</span>
                     <span>🟥 Reds: {m_reds}</span>
@@ -845,7 +1399,7 @@ def _(DARK_THEME, df_tournament, mo, pd):
 
 
 @app.cell
-def _(DARK_THEME, apply_mission_control_layout, df_tournament, go, mo, np, pd):
+def _(DARK_THEME, apply_mission_control_layout, df_tournament, go, mo, pd):
     stat_df = df_tournament.copy()
     stat_df["phase"] = (
         stat_df["round"]
@@ -916,7 +1470,7 @@ def _(DARK_THEME, apply_mission_control_layout, df_tournament, go, mo, np, pd):
 
     rate_columns = [
         ("Avg Goals", "Goals", "#00adb5"),
-        ("Avg Corners", "Corners", "#1f4068"),
+        ("Avg Corners", "Corners", "#34A853"),
         ("Avg Yellows", "Yellow Cards", "#f4b41a"),
     ]
 
@@ -934,7 +1488,7 @@ def _(DARK_THEME, apply_mission_control_layout, df_tournament, go, mo, np, pd):
         )
 
     fig_analytics.update_layout(
-        title="<b>GROUP & KNOCKOUT METRICS</b>",
+        title="<b>📋 TOURNAMENT ANALYTICS</b>",
         barmode="group",
         xaxis=dict(title=""),
         yaxis=dict(title="Per Game Average Metric", gridcolor="#222222"),
@@ -945,7 +1499,6 @@ def _(DARK_THEME, apply_mission_control_layout, df_tournament, go, mo, np, pd):
     kpi_banner = mo.Html(
         f"""
         <hr style="border-color: #2d2d2d; margin: 20px 0;">
-        <h3>📈 TOURNAMENT ANALYTICS</h3>
         <div style="display: flex; gap: 15px; margin: 20px 0; text-align: center; font-family: monospace;">
             <div style="flex: 1; background: {DARK_THEME["paper"]}; padding: 12px; border-radius: 6px; border: 1px solid #333;">
                 <div style="color: {DARK_THEME["muted"]}; font-size: 11px;">TOTAL MATCHES</div>
@@ -958,7 +1511,7 @@ def _(DARK_THEME, apply_mission_control_layout, df_tournament, go, mo, np, pd):
             </div>
             <div style="flex: 1; background: {DARK_THEME["paper"]}; padding: 12px; border-radius: 6px; border: 1px solid #333;">
                 <div style="color: {DARK_THEME["muted"]}; font-size: 11px;">TOTAL CORNERS</div>
-                <div style="font-size: 22px; font-weight: bold; color: #1f4068;">{t_corners}</div>
+                <div style="font-size: 22px; font-weight: bold; color: #34A853;">{t_corners}</div>
                 <div style="font-size: 10px; color: {DARK_THEME["muted"]};">{(t_corners / t_matches):.2f} / game</div>
             </div>
             <div style="flex: 1; background: {DARK_THEME["paper"]}; padding: 12px; border-radius: 6px; border: 1px solid #333;">
@@ -968,22 +1521,19 @@ def _(DARK_THEME, apply_mission_control_layout, df_tournament, go, mo, np, pd):
             </div>
             <div style="flex: 1; background: {DARK_THEME["paper"]}; padding: 12px; border-radius: 6px; border: 1px solid #333;">
                 <div style="color: {DARK_THEME["muted"]}; font-size: 11px;">RED CARDS</div>
-                <div style="font-size: 22px; font-weight: bold; color: #e6739f;">{t_reds}</div>
+                <div style="font-size: 22px; font-weight: bold; color: #EA4335;">{t_reds}</div>
                 <div style="font-size: 10px; color: {DARK_THEME["muted"]};">{(t_reds / t_matches):.2f} / game</div>
             </div>
         </div>
         """
     )
 
-    statistics_header = mo.md("#### 📋 STATISTICS")
     analytics_table = mo.ui.table(df_table_view.round(3), pagination=False)
 
-    # 7. Stack everything together cleanly
     dashboard_output = mo.vstack(
         [
             kpi_banner,
             fig_analytics,
-            statistics_header,
             analytics_table,
         ]
     )
@@ -993,311 +1543,108 @@ def _(DARK_THEME, apply_mission_control_layout, df_tournament, go, mo, np, pd):
 
 
 @app.cell
-def _(DARK_THEME, df_capabilities, has_stochastic, mo):
-    all_countries = sorted(df_capabilities["Country"].unique())
+def _(df_thirds, df_xtables, mo, view_mode_toggle):
+    _is_stoch_mode = "Stochastic" in view_mode_toggle.value
 
-    team_a_ctrl = mo.ui.dropdown(
-        options=all_countries, value=all_countries[0], label="🏷️ TEAM A"
-    )
-    team_b_ctrl = mo.ui.dropdown(
-        options=all_countries,
-        value=all_countries[1] if len(all_countries) > 1 else all_countries[0],
-        label="🏷️ TEAM B",
-    )
-    is_ko_ctrl = mo.ui.checkbox(label="🏆 Knockout", value=False)
+    if _is_stoch_mode and df_xtables is not None:
+        df_display = df_xtables[
+            ["team", "wildcard_probability_pct", "total_qualification_pct"]
+        ].copy()
+        df_display = df_display.sort_values(
+            by="wildcard_probability_pct", ascending=False
+        ).reset_index(drop=True)
+        df_display.index += 1
+        df_display = df_display.reset_index().rename(
+            columns={
+                "index": "Rank",
+                "team": "Country",
+                "wildcard_probability_pct": "Wildcard %",
+                "total_qualification_pct": "Qual %",
+            }
+        )
+        df_display["Status"] = [
+            "🟢 LIKELY" if i < 8 else "🔴 UNLIKELY" for i in range(len(df_display))
+        ]
+        heading = mo.md("### 🃏 EXPECTED WILDCARD ADVANCEMENT")
+        wildcard_table = mo.ui.table(df_display.head(15), pagination=False)
+        third_places_panel = mo.vstack([heading, wildcard_table])
 
-    is_stoch_ctrl = mo.ui.checkbox(
-        label="🎲 Stochastic",
-        value=False,
-        disabled=not has_stochastic
-    )
+    elif df_thirds is None or df_thirds.empty:
+        third_places_panel = mo.md("")
+    else:
+        df_display = df_thirds.copy().reset_index(drop=True)
+        df_display = df_display.drop(columns=["position"], errors="ignore")
+        df_display.index += 1
+        df_display = df_display.reset_index().rename(columns={"index": "Rank"})
+        df_display["Status"] = [
+            "🟢 ADVANCING" if i < 8 else "❌ ELIMINATED" for i in range(len(df_display))
+        ]
 
-    headings = mo.md("""
-    ---
-
-    ## 🧪 MICRO HORIZON
-    ### ⚔️ INTERACTIVE MATCHUP SANDBOX
-    """)
-
-    layout_text = f"""
-    <div style="background: {DARK_THEME["paper"]}; padding: 20px; border-radius: 6px; border: 1px solid #333;">
-        <div style="display: flex; gap: 20px; margin-bottom: 15px;">
-            <div style="flex: 1;">{{team_a}}</div>
-            <div style="flex: 1;">{{team_b}}</div>
-        </div>
-        <div style="display: flex; gap: 40px; justify-content: center; border-top: 1px solid #2d2d2d; padding-top: 15px;">
-            {{is_ko}}
-            {{is_stoch}}
-        </div>
-    </div>
-    """
-
-    sandbox_layout = mo.md(layout_text).batch(
-        team_a=team_a_ctrl,
-        team_b=team_b_ctrl,
-        is_ko=is_ko_ctrl,
-        is_stoch=is_stoch_ctrl
-    )
-
-    sandbox_form = sandbox_layout.form(
-        bordered=False,
-        submit_button_label="⚡ RUN SIMULATION",
-        submit_button_tooltip="Execute neutral match!",
-    )
-
-    ui_panel = mo.vstack([headings, sandbox_form])
-    ui_panel
-    return (sandbox_form,)
-
-
-@app.cell
-def _(DARK_THEME, config, df_matchups, json, mo, sandbox_form, match_rules, has_stochastic):
-    mo.stop(sandbox_form.value is None, mo.md(""))
-
-    sim_data = sandbox_form.value
-    sim_team_a = sim_data["team_a"]
-    sim_team_b = sim_data["team_b"]
-    is_ko = sim_data["is_ko"]
-    is_stoch = sim_data.get("is_stoch", False) and has_stochastic
-
-    mo.stop(
-        sim_team_a == sim_team_b,
-        mo.md("> ⚠️ **Simulation Error:** A team cannot play itself."),
-    )
-
-    host_country = "United States"
-    if sim_team_a == "United States" or sim_team_b == "United States":
-        host_country = "Mexico"
-
-    match_row = df_matchups[
-        (df_matchups["home_team"] == sim_team_a)
-        & (df_matchups["away_team"] == sim_team_b)
-        & (df_matchups["is_neutral_venue"] == host_country)
-    ]
-
-    if match_row.empty:
-        mo.stop(
-            True,
-            mo.md("> ⚠️ **Data Missing:** Matchup not found in pre-computed artifact."),
+        df_display = df_display.rename(
+            columns={
+                "group": "Group",
+                "team": "Country",
+                "points": "Pts",
+                "goals_against": "GA",
+                "goals_for": "GF",
+                "goals_diff": "GD",
+            }
         )
 
-    # Extract Pre-Computed Static Values
-    row_data = match_row.iloc[0]
-    lambda_a = float(row_data["ensemble_lambda_home"])
-    lambda_b = float(row_data["ensemble_lambda_away"])
+        df_display["GD"] = df_display["GD"].apply(
+            lambda x: f"+{int(x)}" if int(x) > 0 else str(int(x))
+        )
 
-    pred_a_goals = int(round(lambda_a))
-    pred_b_goals = int(round(lambda_b))
+        heading = mo.md("### 🃏 3rd PLACE WILDCARDS (DETERMINISTIC)")
+        wildcard_table = mo.ui.table(df_display, pagination=False)
+        third_places_panel = mo.vstack([heading, wildcard_table])
 
-    sim_winner = "Draw"
-    if pred_a_goals > pred_b_goals:
-        sim_winner = sim_team_a
-    elif pred_b_goals > pred_a_goals:
-        sim_winner = sim_team_b
-
-    # UI Badges
-    _et_badge = ""
-    _pens_badge = ""
-
-    if is_ko and sim_winner == "Draw":
-        # Pull configurations dynamically from our active run profile
-        et_multiplier = match_rules.get("et_multiplier", 1.0 / 3.0)
-        fatigue_factor = match_rules.get("fatigue_factor", 0.80)
-
-        # Project full continuous 120-minute timeline curves
-        raw_a_120 = lambda_a * (1.0 + (et_multiplier * fatigue_factor))
-        raw_b_120 = lambda_b * (1.0 + (et_multiplier * fatigue_factor))
-
-        pred_a_goals = int(round(raw_a_120))
-        pred_b_goals = int(round(raw_b_120))
-
-        # 2. Re-evaluate if the tie was broken decisively during the extra 30 minutes
-        if pred_a_goals > pred_b_goals:
-            sim_winner = sim_team_a
-            _et_badge = '<span style="color: #ff7b54; background: #2a1e1b; padding: 1px 6px; border-radius: 4px; font-size: 9px; font-weight: bold; border: 1px solid #542e23; margin-left: 8px;">⏱️ ET</span>'
-        elif pred_b_goals > pred_a_goals:
-            sim_winner = sim_team_b
-            _et_badge = '<span style="color: #ff7b54; background: #2a1e1b; padding: 1px 6px; border-radius: 4px; font-size: 9px; font-weight: bold; border: 1px solid #542e23; margin-left: 8px;">⏱️ ET</span>'
-        else:
-            # 3. If still deadlocked at 120 mins, hand off to penalties
-            sim_winner = sim_team_a if lambda_a >= lambda_b else sim_team_b
-            _pens_badge = '<span style="color: #e6739f; background: #2a1b24; padding: 1px 6px; border-radius: 4px; font-size: 9px; font-weight: bold; border: 1px solid #4c283c; margin-left: 8px;">🥅 PENS</span>'
-
-    # STOCHASTIC PROBABILITY ENGINE
-    stoch_html = ""
-    if is_stoch:
-        if is_ko:
-            wins_a = float(row_data["ko_win_home"])
-            wins_b = float(row_data["ko_win_away"])
-            draws = 0.0
-        else:
-            wins_a = float(row_data["grp_win_home"])
-            wins_b = float(row_data["grp_win_away"])
-            draws = float(row_data["grp_draw"])
-
-        top_scores = json.loads(row_data["top_scorelines_json"])
-        score_cards = []
-
-        for rank_idx, score_data in enumerate(top_scores):
-            score_line = score_data["score"]
-            score_pct = float(score_data["pct"])
-            score_cards.append(f"""
-                <div style="flex: 1; background: #1a1a1a; padding: 10px; border-radius: 4px; border: 1px solid #2d2d2d; text-align: center;">
-                    <div style="font-size: 10px; color: {DARK_THEME["muted"]}; margin-bottom: 2px; font-weight: bold;">RANK #{rank_idx + 1}</div>
-                    <div style="font-size: 15px; font-weight: bold; color: #fff; margin-bottom: 4px; font-family: monospace;">{score_line}</div>
-                    <div style="font-size: 11px; color: {DARK_THEME["accent"]}; font-weight: bold;">{score_pct:.1f}%</div>
-                    <div style="background: #262626; height: 3px; border-radius: 2px; margin-top: 6px; overflow: hidden;">
-                        <div style="background: {DARK_THEME["accent"]}; width: {score_pct * 3.5}%; height: 100%;"></div>
-                    </div>
-                </div>
-            """)
-
-        stoch_html = f"""
-        <div style="border-top: 1px solid #2d2d2d; margin-top: 15px; padding-top: 12px;">
-            <div style="font-size: 11px; color: {DARK_THEME["accent"]}; margin-bottom: 10px; font-weight: bold; letter-spacing: 0.5px;">🎲 PRE-COMPUTED MONTE CARLO DISTRIBUTION</div>
-            <div style="display: flex; justify-content: space-between; font-size: 13px; color: #fff; margin-bottom: 14px; padding: 0 4px;">
-                <span>{sim_team_a}: <b>{wins_a:.1f}%</b></span>
-                <span>Draw: <b>{draws:.1f}%</b></span>
-                <span>{sim_team_b}: <b>{wins_b:.1f}%</b></span>
-            </div>
-            <div style="font-size: 10px; color: {DARK_THEME["muted"]}; margin-bottom: 6px; font-weight: bold; letter-spacing: 0.25px;">⚽ TOP 3 SCORELINES (90 Min)</div>
-            <div style="display: flex; gap: 10px;">
-                {"".join(score_cards)}
-            </div>
-        </div>
-        """
-
-    card_html = f"""
-    <div style="background-color: {DARK_THEME["paper"]}; border: 1px solid #00adb5; border-radius: 6px; padding: 16px; margin-top: 20px; font-family: monospace; max-width: 100%;">
-        <div style="color: {DARK_THEME["accent"]}; font-size: 11px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; font-weight: bold;">
-            <div style="display: flex; align-items: center;">
-                <span>⚡ STATIC SIMULATION ARTIFACT</span>
-                {_et_badge}
-                {_pens_badge}
-            </div>
-            <span>📍 Neutral Turf</span>
-        </div>
-        <div style="font-size: 18px; display: flex; justify-content: space-between; align-items: center; padding: 6px 0;">
-            <span style="font-weight: {"bold" if sim_winner == sim_team_a else "normal"}; color: {"#fff" if sim_winner == sim_team_a else "#888"};">
-                {"👑 " if sim_winner == sim_team_a else ""}{sim_team_a}
-            </span>
-            <span style="font-weight: bold; background: #262626; padding: 4px 12px; border-radius: 4px;">{pred_a_goals}</span>
-        </div>
-        <div style="font-size: 18px; display: flex; justify-content: space-between; align-items: center; padding: 6px 0; margin-bottom: 8px;">
-            <span style="font-weight: {"bold" if sim_winner == sim_team_b else "normal"}; color: {"#fff" if sim_winner == sim_team_b else "#888"};">
-                {"👑 " if sim_winner == sim_team_b else ""}{sim_team_b}
-            </span>
-            <span style="font-weight: bold; background: #262626; padding: 4px 12px; border-radius: 4px;">{pred_b_goals}</span>
-        </div>
-        <div style="border-top: 1px solid #2d2d2d; padding-top: 10px; font-size: 12px; color: {DARK_THEME["muted"]}; display: flex; justify-content: space-between;">
-            <span title="Expected Goals: {lambda_a:.2f} vs {lambda_b:.2f}">💡 xG: {lambda_a:.2f} - {lambda_b:.2f}</span>
-            <span>⚖️ Win Margin: {abs(lambda_a - lambda_b):.2f}</span>
-        </div>
-        {stoch_html}
-    </div>
-    """
-
-    simulation_output = mo.Html(card_html)
-    simulation_output
+    third_places_panel
     return
 
 
 @app.cell
-def _(
-    DARK_THEME,
-    apply_mission_control_layout,
-    df_capabilities,
-    go,
-    mo,
-    sandbox_form,
-):
+def _(df_forecast, has_stochastic, mo, pd, view_mode_toggle):
+    _is_stoch_mode = "Stochastic" in view_mode_toggle.value
 
-    mo.stop(
-        sandbox_form.value is None,
-        mo.md(""),
+    # 1. Cleanly prepare the dataset profile or set an elegant fallback structure
+    if has_stochastic and df_forecast is not None:
+        display_forecast = df_forecast.copy()
+        prob_cols = [c for c in display_forecast.columns if "%" in c]
+        display_forecast[prob_cols] = display_forecast[prob_cols].round(2)
+    else:
+        # Safe empty fallback dataframe keeping schema structure intact
+        display_forecast = pd.DataFrame(
+            columns=[
+                "Country",
+                "R32 %",
+                "R16 %",
+                "QF %",
+                "SF %",
+                "Final %",
+                "Champion %",
+            ]
+        )
+
+    # 2. Always instantiate the interactive table component at the cell root
+    forecast_table = mo.ui.table(
+        data=display_forecast,
+        pagination=True,
+        page_size=10,
     )
 
-    team_a = sandbox_form.value["team_a"]
-    team_b = sandbox_form.value["team_b"]
-
-    if team_a == team_b:
-        sandbox_output = mo.md(
-            "> ⚠️ **Configuration Alert:** Select two distinct country entities to run a comparative matchup profile."
+    # 3. Conditionally build out the markdown visual frame for the UI
+    if has_stochastic and df_forecast is not None and _is_stoch_mode:
+        table_panel = mo.md(
+            f"""
+            ### 🔮 MULTIVERSE PROBABILITY LEDGER
+            {forecast_table}
+            """
         )
     else:
-        stats_a = df_capabilities[df_capabilities["Country"] == team_a].iloc[0]
-        stats_b = df_capabilities[df_capabilities["Country"] == team_b].iloc[0]
+        table_panel = mo.md("")
 
-        fig_sandbox = go.Figure()
-
-        metrics_to_compare = [
-            ("Elo_Rating", "Elo Rating"),
-            ("Poisson_Attack", "Poisson Attack"),
-            ("Poisson_Defense", "Poisson Defense"),
-            ("Poisson_Dominance", "Poisson Dominance"),
-            ("Short_Term_Form_GF", "Form: Short-term"),
-            ("Long_Term_Form_GF", "Form: Long-term"),
-        ]
-
-        labels = [m[1] for m in metrics_to_compare]
-        vals_a = [float(stats_a[m[0]]) for m in metrics_to_compare]
-        vals_b = [float(stats_b[m[0]]) for m in metrics_to_compare]
-
-        max_values = {
-            "Elo_Rating": 2100,
-            "Poisson_Attack": 3.0,
-            "Poisson_Defense": 3.0,
-            "Poisson_Dominance": 4.0,
-            "Short_Term_Form_GF": 3.0,
-            "Long_Term_Form_GF": 3.0,
-        }
-
-        norm_a = [
-            float(stats_a[m[0]]) / max_values[m[0]] * 100 for m in metrics_to_compare
-        ]
-        norm_b = [
-            float(stats_b[m[0]]) / max_values[m[0]] * 100 for m in metrics_to_compare
-        ]
-
-        fig_sandbox.add_trace(
-            go.Bar(
-                y=labels,
-                x=norm_a,
-                name=team_a,
-                orientation="h",
-                text=[f"{v:.2f}" if v < 100 else f"{int(v)}" for v in vals_a],
-                textposition="inside",
-                marker=dict(color=DARK_THEME["accent"]),
-                hovertemplate=f"<b>{team_a}</b><br>%{{y}}: %{{text}}<extra></extra>",
-            )
-        )
-
-        fig_sandbox.add_trace(
-            go.Bar(
-                y=labels,
-                x=norm_b,
-                name=team_b,
-                orientation="h",
-                text=[f"{v:.2f}" if v < 100 else f"{int(v)}" for v in vals_b],
-                textposition="inside",
-                marker=dict(color="#e6739f"),
-                hovertemplate=f"<b>{team_b}</b><br>%{{y}}: %{{text}}<extra></extra>",
-            )
-        )
-
-        fig_sandbox.update_layout(
-            title=f"{team_a.upper()} vs {team_b.upper()} - HEAD 2 HEAD CAPABILITIES",
-            barmode="group",
-            xaxis=dict(title="Relative Strength", showticklabels=False, range=[0, 110]),
-            yaxis=dict(autorange="reversed"),
-            legend=dict(
-                orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
-            ),
-        )
-
-        sandbox_output = apply_mission_control_layout(fig_sandbox)
-
-    sandbox_output
+    table_panel
     return
 
 

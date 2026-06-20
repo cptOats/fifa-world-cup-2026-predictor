@@ -214,8 +214,8 @@ def train_poisson_ratings(
     ratings = {}
     for team, idx in team_to_idx.items():
         ratings[team] = {
-            "attack": max(0.1000, float(fit_attacks[idx])),
-            "defense": max(0.2500, float(fit_defenses[idx])),
+            "attack": max(0.3, float(fit_attacks[idx])),
+            "defense": max(0.05, float(fit_defenses[idx])),
         }
 
     global_home_avg = global_neutral_avg * fit_gamma
@@ -260,7 +260,7 @@ def train_poisson_oof_predictions(
 
     for fold, (train_idx, test_idx) in enumerate(tscv.split(feature_matrix), 1):
         logging.info(
-            f"🔄 Processing Poisson Out-of-Fold Cross-Validation (Fold {fold}/3)..."
+            f"🔄 Processing {suffix}-Poisson Out-of-Fold Cross-Validation (Fold {fold}/3)..."
         )
 
         train_df = feature_matrix.iloc[train_idx].copy()
@@ -409,12 +409,13 @@ def predict_poisson_match(
         is_neutral = 1
 
     # Estimate Basic Proxy Metrics
-    raw_corners = (5.0 * home_rating["attack"] * away_rating["defense"]) + (
-        5.0 * away_rating["attack"] * home_rating["defense"]
-    )
-    raw_yellows = (2.0 * home_rating["defense"] * away_rating["attack"]) + (
-        2.0 * away_rating["defense"] * home_rating["attack"]
-    )
+    # 📐 Corners: Driven by attack towards 9 corners / 90 min
+    raw_corners = 5.0 + 0.35 * (home_rating["attack"] + away_rating["attack"])
+
+    # 🟨 Yellows: Driven by attack towards 3.4 yellows / 90 min
+    raw_yellows = 1.0 + 0.21 * (home_rating["attack"] + away_rating["attack"])
+
+    # 🟥 Reds: Low probability event
     raw_reds = 0.12 if is_neutral == 0 else 0.10
 
     return lambda_home, lambda_away, raw_corners, raw_yellows, raw_reds

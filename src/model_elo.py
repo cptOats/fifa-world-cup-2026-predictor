@@ -7,13 +7,11 @@ import pandas as pd
 class EloEngine:
     """A thermodynamic rating system that evaluates and tracks football team capabilities."""
 
-
     def __init__(self, k_factor=40, default_elo=1500):
         """Initializes the Elo engine with baseline scaling constraints."""
         self.k_factor = k_factor
         self.default_elo = default_elo
         self.ratings = {}
-
 
     def get_rating(self, team):
         """Safely fetches a team's current rating, initializing it if absent."""
@@ -21,7 +19,6 @@ class EloEngine:
         if team not in self.ratings:
             self.ratings[team] = self.default_elo
         return self.ratings[team]
-
 
     def _calculate_expected_score(
         self, r_home, r_away, is_neutral=0, home_advantage=100
@@ -35,7 +32,6 @@ class EloEngine:
         w_away = 1.0 - w_home
         return w_home, w_away
 
-
     def _get_goal_margin_multiplier(self, home_goals, away_goals):
         """Calculates the standard World Football Elo goal differential index scalar."""
 
@@ -46,7 +42,6 @@ class EloEngine:
             return 1.5
         else:
             return (11.0 + goal_diff) / 8.0
-
 
     def fit(self, historical_matches_df: pd.DataFrame):
         """Processes a match ledger chronologically to update team ratings step-by-step."""
@@ -86,7 +81,6 @@ class EloEngine:
             current_k = self.k_factor * match_weight
             self.ratings[home] += current_k * g_factor * (actual_home - w_home)
             self.ratings[away] += current_k * g_factor * (actual_away - w_away)
-
 
     def predict_elo_match(
         self, home_team, away_team, is_neutral=0, baseline_goals=1.35, alpha=2.2

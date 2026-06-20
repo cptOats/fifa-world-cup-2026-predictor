@@ -10,8 +10,6 @@ from src.model_poisson import predict_poisson_match
 def simulate_stochastic_match(
     lambda_h: float,
     lambda_a: float,
-    elo_h: float,
-    elo_a: float,
     rng: np.random.Generator,
     match_rules: dict[str, float],
     is_knockout: bool = False,

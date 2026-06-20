@@ -118,8 +118,6 @@ def run_monte_carlo_master(
             h_goals, a_goals, _ = simulate_stochastic_match(
                 l_h,
                 l_a,
-                elo_engine.get_rating(home),
-                elo_engine.get_rating(away),
                 rng,
                 match_rules,
                 is_knockout=False,
@@ -213,8 +211,6 @@ def run_monte_carlo_master(
             h_goals_arr, a_goals_arr, _ = simulate_stochastic_match(
                 l_h,
                 l_a,
-                elo_engine.get_rating(home),
-                elo_engine.get_rating(away),
                 rng,
                 match_rules=match_rules,
                 is_knockout=True,
@@ -292,7 +288,6 @@ def run_monte_carlo_master(
 
 def precompute_sandbox_matchups(
     all_teams,
-    venue_country,
     ratings,
     g_home,
     g_away,
@@ -307,7 +302,7 @@ def precompute_sandbox_matchups(
     fat_runs=10000,
 ):
     """
-    Isolated Sandbox Cache Generation.
+    Isolated Sandbox Cache Generation on Neutral Turf.
     Evaluates pairwise permutations using joint copula distributions.
     """
     rng = np.random.default_rng(1989)
@@ -315,8 +310,9 @@ def precompute_sandbox_matchups(
 
     from itertools import permutations
 
+    sandbox_venue = "Neutral"
     matchup_pairs = list(permutations(all_teams, 2))
-    matchup_keys = [(h, a, venue_country) for h, a in matchup_pairs]
+    matchup_keys = [(h, a, sandbox_venue) for h, a in matchup_pairs]
 
     lambda_cache = batch_evaluate_consensus(
         matchup_keys=matchup_keys,
@@ -334,14 +330,9 @@ def precompute_sandbox_matchups(
 
     compiled_matchups = []
     for (h, a, cache_neutral), (l_h, l_a, c_exp, y_exp) in lambda_cache.items():
-        elo_h = elo_engine.get_rating(h)
-        elo_a = elo_engine.get_rating(a)
-
         grp_h, grp_a, _ = simulate_stochastic_match(
             l_h,
             l_a,
-            elo_h,
-            elo_a,
             rng,
             match_rules,
             is_knockout=False,
@@ -359,11 +350,9 @@ def precompute_sandbox_matchups(
             [{"score": s, "pct": (c / fat_runs) * 100} for s, c in top_scores]
         )
 
-        ko_h, ko_a, ko_phase = simulate_stochastic_match(
+        _, _, ko_phase = simulate_stochastic_match(
             l_h,
             l_a,
-            elo_h,
-            elo_a,
             rng,
             match_rules,
             is_knockout=True,

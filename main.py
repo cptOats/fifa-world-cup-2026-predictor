@@ -195,7 +195,9 @@ def main():
     )
 
     # --- Poisson ---
-    logging.info("🧮 Resolving Joint Maximum Likelihood Estimations for Poisson...")
+    logging.info(
+        f"🧮 Resolving {'dixon_coles' if (MODEL_TYPE == 'poisson') else 'pure'}-Poisson Joint Maximum Likelihood Estimations..."
+    )
     ratings, g_home, g_away, g_neutral = train_poisson_ratings(
         dixon_coles=(MODEL_TYPE == "poisson")
     )
@@ -461,7 +463,6 @@ def main():
         logging.info("⚔️  Spinning up Sandbox pairwise matrix computations...")
         df_sandbox = precompute_sandbox_matchups(
             all_teams=participating_teams,
-            venue_country=group_fixtures["venue_country"].iloc[0],
             ratings=ratings,
             g_home=g_home,
             g_away=g_away,
