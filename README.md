@@ -7,7 +7,15 @@
 [![Framework: Marimo](https://img.shields.io/badge/UI-Marimo-lightgrey.svg)](https://marimo.io/)
 [![Deployment: WASM](https://img.shields.io/badge/WebAssembly-Supported-orange.svg)](https://webassembly.org/)
 
-🖼️
+<!-- Hero Image -->
+<img width="98.5%" alt="tournament-progression-5x4" src="https://github.com/user-attachments/assets/a8c1bb1f-8bb6-4263-b929-5d8f00ae036b" />
+<br>
+
+<!-- Additional Images -->
+<p align="center">
+  <img width="49%" alt="tournament-matches-1x1" src="https://github.com/user-attachments/assets/409bef02-d046-4f8f-8ee5-66d5f8dcc650" />
+  <img width="49%" alt="sandbox-1x1" src="https://github.com/user-attachments/assets/5823e653-bc26-4784-a67d-2348f5052776" />
+</p>
 
 **End-to-end MLOps pipeline and reactive simulation dashboard designed to forecast the 2026 FIFA World Cup.**
 
@@ -43,12 +51,12 @@ uv run main.py
 * **3. Visualize the Results**<br>
 Unpack your run data in an interactive and immersive python native dashboard.
 ```bash
-uv marimo run dashboard.py
+uv run marimo run dashboard.py
 ```
 
 ---
 
-### Prerequisites
+### ⬇️ Installation
 * [uv](https://docs.astral.sh/uv/getting-started/installation/) installed
 * [Git](https://git-scm.com/install/) installed
 
