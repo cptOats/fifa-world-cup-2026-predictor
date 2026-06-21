@@ -275,14 +275,17 @@ def _(glob, mo, os):
 def _(PUBLIC_DIR, json, os, pd, run_dropdown):
     run_id = run_dropdown.value
 
+    # Check local drive boundaries (Evaluates to False in browser sandbox)
     local_run_dir = os.path.join("data", "runs", run_id)
     is_local = os.path.exists(local_run_dir)
 
-    def get_data_path(filename: str) -> str:
+    def get_data_path(filename: str):
         if is_local:
             return os.path.join(local_run_dir, filename)
         else:
-            return str(PUBLIC_DIR / run_id / filename)
+            # Coerce to string to guarantee f-string concatenation works flawlessly
+            base_url = str(PUBLIC_DIR).rstrip("/")
+            return f"{base_url}/{run_id}/{filename}"
 
     # Centralized robust loading wrapper to strip browser/CDN compression conflicts
     def load_csv(filename: str):
