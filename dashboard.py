@@ -68,11 +68,19 @@ def _():
     import pandas as pd
     import plotly.graph_objects as go
 
-    # 1. Capture the raw notebook location string
+    # 1. Capture the raw location (could be None, str, or Path)
     raw_loc = mo.notebook_location()
 
-    # 2. Fallback to the current working directory "." if None, then wrap in a Path object
-    PUBLIC_DIR = pathlib.Path(raw_loc if raw_loc is not None else ".") / "public"
+    # 2. Stringify safely to check the schema without crashing on local Path objects
+    loc_str = str(raw_loc) if raw_loc is not None else ""
+
+    if loc_str.startswith("http"):
+        # WASM Mode: Maintain pristine URL string formatting
+        PUBLIC_DIR = loc_str.rstrip("/") + "/public"
+    else:
+        # Local Mode: Safely resolve the absolute storage path string
+        base_path = pathlib.Path(raw_loc if raw_loc is not None else ".").resolve()
+        PUBLIC_DIR = str(base_path / "public")
 
     # Define styling palette
     DARK_THEME = {
@@ -224,7 +232,7 @@ def _(DARK_THEME, mo):
 
 
 @app.cell
-def _(PUBLIC_DIR, glob, mo, os):
+def _(glob, mo, os):
     # 1. Check local disk first
     local_runs_path = os.path.join("data", "runs", "run_*")
     all_runs = sorted(glob.glob(local_runs_path), key=os.path.getmtime)
@@ -258,26 +266,26 @@ def _(PUBLIC_DIR, glob, mo, os):
 def _(PUBLIC_DIR, json, os, pd, run_dropdown):
     run_id = run_dropdown.value
 
-    # 1. Establish an environmental gatekeeper check
+    # Check if running locally or on the web
     local_run_dir = os.path.join("data", "runs", run_id)
     is_local = os.path.exists(local_run_dir)
 
-    # 2. Dynamic path resolver framework
+    # URL-safe network routing layer
     def get_data_path(filename: str) -> str:
         if is_local:
             return os.path.join(local_run_dir, filename)
         else:
-            # WEB MODE: Point directly to the specific subfolder inside public/
-            return str(PUBLIC_DIR / run_id / filename)
+            # Web/WASM Mode: Explicitly merge using standard web slashes
+            return f"{PUBLIC_DIR}/{run_id}/{filename}"
 
     def asset_exists(filename: str) -> bool:
         if is_local:
             return os.path.exists(os.path.join(local_run_dir, filename))
         else:
-            # In WASM mode, assume bundled baseline production assets exist
+            # Assume compiled deployment folder assets exist on remote server
             return True
 
-    # 3. Stream datasets into active memory
+    # Stream datasets into active memory
     df_tournament = pd.read_csv(get_data_path("deterministic_tournament.csv"))
     df_tables = pd.read_csv(get_data_path("deterministic_group_tables.csv"))
     df_thirds = pd.read_csv(get_data_path("deterministic_third_places.csv"))
@@ -295,7 +303,7 @@ def _(PUBLIC_DIR, json, os, pd, run_dropdown):
         )
         df_tournament.loc[top_fiery_indices, "red_cards"] = 1
 
-    # 4. Conditionally unpack optional stochastic models
+    # Unpack match engine sandboxes
     if asset_exists("stochastic_sandbox_matchups.csv"):
         df_matchups = pd.read_csv(get_data_path("stochastic_sandbox_matchups.csv"))
     else:
@@ -318,20 +326,23 @@ def _(PUBLIC_DIR, json, os, pd, run_dropdown):
     else:
         df_forecast, df_xtables, df_tournament_stoch = None, None, None
 
-    # 5. Extract structural pipeline runtime constraints
+    # Parse structural pipeline runtime parameters
     metadata_path = get_data_path("metadata.json")
     if is_local:
         with open(metadata_path, "r") as f:
             metadata = json.load(f)
     else:
-        # Cross-platform: Pandas network layer reads json from HTTP URLs cleanly without open()
+        # Clean HTTP stream ingestion for json via Pandas network abstraction
         metadata = pd.read_json(metadata_path, typ="series").to_dict()
 
-    config = metadata["config"]
-    weights = metadata["ensemble_weights"]
+    config = metadata.get("config", {"model_type": "blend"})
+    weights = metadata.get(
+        "ensemble_weights", {"poisson": 0.33, "elo": 0.33, "xgb": 0.34}
+    )
     match_rules = metadata.get(
         "match_rules", {"et_multiplier": 1.0 / 3.0, "fatigue_factor": 0.80}
     )
+
     return (
         config,
         df_capabilities,
