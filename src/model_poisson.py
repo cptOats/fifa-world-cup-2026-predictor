@@ -236,7 +236,10 @@ def train_poisson_ratings(
 
 
 def train_poisson_oof_predictions(
-    feature_matrix, poisson_alpha=0.00047, dixon_coles=False
+    feature_matrix,
+    poisson_alpha=0.00047,
+    dixon_coles=False,
+    cv_folds=3,
 ):
     """Calculates leak-proof out-of-fold Poisson predictions."""
 
@@ -256,11 +259,11 @@ def train_poisson_oof_predictions(
     n_matches = len(feature_matrix)
     oof_home_preds = np.zeros(n_matches)
     oof_away_preds = np.zeros(n_matches)
-    tscv = TimeSeriesSplit(n_splits=3)
+    tscv = TimeSeriesSplit(n_splits=cv_folds)
 
     for fold, (train_idx, test_idx) in enumerate(tscv.split(feature_matrix), 1):
         logging.info(
-            f"🔄 Processing {suffix}-Poisson Out-of-Fold Cross-Validation (Fold {fold}/3)..."
+            f"🔄 Processing {suffix}-Poisson Out-of-Fold Cross-Validation (Fold {fold}/{cv_folds})..."
         )
 
         train_df = feature_matrix.iloc[train_idx].copy()

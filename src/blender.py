@@ -5,6 +5,7 @@ import logging
 import numpy as np
 import pandas as pd
 from scipy.optimize import Bounds, LinearConstraint, minimize
+from sklearn.linear_model import Ridge
 from sklearn.metrics import mean_squared_error
 
 
@@ -16,6 +17,7 @@ def find_optimal_blend_weights(
     oof_away_preds: np.ndarray,
     oof_poisson_home: np.ndarray,
     oof_poisson_away: np.ndarray,
+    method: str = "ridge",
 ) -> dict[str, float]:
     """Calibrates leak-proof optimal consensus blend weights across all modeling layers."""
 
@@ -47,51 +49,95 @@ def find_optimal_blend_weights(
     x_home_active = oof_home_preds[validation_horizon]
     x_away_active = oof_away_preds[validation_horizon]
 
-    # 3. Define Clean Loss Function
-    def loss_function(weights):
-        """Loss Function"""
-
-        w_poisson, w_elo, w_xgb = weights
-
-        pred_home = (
-            (w_poisson * p_home_active)
-            + (w_elo * e_home_active)
-            + (w_xgb * x_home_active)
-        )
-        pred_away = (
-            (w_poisson * p_away_active)
-            + (w_elo * e_away_active)
-            + (w_xgb * x_away_active)
+    if method == "ridge":
+        # --- PATHWAY A: Level-1 Meta-Learner (Ridge Stacking) ---
+        logging.info(
+            "🧠 Resolving weights via L2-Regularized Ridge Stacking Regressor..."
         )
 
-        return (
-            mean_squared_error(y_home_active, pred_home)
-            + mean_squared_error(y_away_active, pred_away)
-        ) / 2.0
+        # Stack features vertically to enforce symmetry (No home/away bias in meta-learner)
+        y_stacked = np.concatenate([y_home_active, y_away_active])
+        X_home = np.column_stack([p_home_active, e_home_active, x_home_active])
+        X_away = np.column_stack([p_away_active, e_away_active, x_away_active])
+        X_stacked = np.vstack([X_home, X_away])
 
-    # 4. Enforce Optimization Bounds and Constraints
-    bounds = Bounds([0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
-    constraints = LinearConstraint([[1.0, 1.0, 1.0]], lb=[1.0], ub=[1.0])
-    initial_guess = [0.3333, 0.3333, 0.3333]
+        # fit_intercept=False ensures 0 xG input = 0 xG output. positive=True preserves physical logic.
+        meta_learner = Ridge(alpha=10.0, fit_intercept=False, positive=True)
 
-    res = minimize(
-        loss_function,
-        initial_guess,
-        method="SLSQP",
-        bounds=bounds,
-        constraints=constraints,
-    )
+        try:
+            meta_learner.fit(X_stacked, y_stacked)
+            raw_weights = meta_learner.coef_
 
-    if not res.success:
-        logging.warning(
-            f"⚠️ Optimization failed to converge smoothly! Reason: {res.message}. Falling back to default uniform balance."
+            if np.sum(raw_weights) <= 0:
+                raise ValueError("Ridge regression collapsed to zero weights.")
+
+            # Normalize weights to sum to 1.0 (Preserves UI symmetry and relative scale)
+            normalized_weights = raw_weights / np.sum(raw_weights)
+
+            optimized_weights = {
+                "poisson": float(normalized_weights[0]),
+                "elo": float(normalized_weights[1]),
+                "xgb": float(normalized_weights[2]),
+            }
+
+        except Exception as e:
+            logging.warning(
+                f"⚠️ Meta-Learner failed to fit! Reason: {e}. Falling back to default uniform balance."
+            )
+            optimized_weights = {"poisson": 0.3333, "elo": 0.3333, "xgb": 0.3334}
+
+    elif method == "scipy":
+        # --- PATHWAY B: SciPy Constrained Optimization (Legacy) ---
+        logging.info("🧩 Resolving weights via SciPy Bounded SLSQP solver...")
+
+        def loss_function(weights):
+            """Loss Function"""
+            w_poisson, w_elo, w_xgb = weights
+
+            pred_home = (
+                (w_poisson * p_home_active)
+                + (w_elo * e_home_active)
+                + (w_xgb * x_home_active)
+            )
+            pred_away = (
+                (w_poisson * p_away_active)
+                + (w_elo * e_away_active)
+                + (w_xgb * x_away_active)
+            )
+
+            return (
+                mean_squared_error(y_home_active, pred_home)
+                + mean_squared_error(y_away_active, pred_away)
+            ) / 2.0
+
+        bounds = Bounds([0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
+        constraints = LinearConstraint([[1.0, 1.0, 1.0]], lb=[1.0], ub=[1.0])
+        initial_guess = [0.3333, 0.3333, 0.3333]
+
+        res = minimize(
+            loss_function,
+            initial_guess,
+            method="SLSQP",
+            bounds=bounds,
+            constraints=constraints,
         )
-        return {"poisson": 0.3333, "elo": 0.3333, "xgb": 0.3334}
 
-    optimized_weights = {
-        "poisson": float(res.x[0]),
-        "elo": float(res.x[1]),
-        "xgb": float(res.x[2]),
-    }
+        if not res.success:
+            logging.warning(
+                f"⚠️ Optimization failed to converge smoothly! Reason: {res.message}. Falling back to default uniform balance."
+            )
+            return {"poisson": 0.3333, "elo": 0.3333, "xgb": 0.3334}
+
+        optimized_weights = {
+            "poisson": float(res.x[0]),
+            "elo": float(res.x[1]),
+            "xgb": float(res.x[2]),
+        }
+    else:
+        # --- PATHWAY C: Invalid Configuration Guard ---
+        logging.error(
+            f"❌ Configuration Error: Invalid blend method '{method}' requested. Expected 'stacking' or 'scipy'."
+        )
+        raise ValueError("Unsupported blending method.")
 
     return optimized_weights

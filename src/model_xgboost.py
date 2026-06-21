@@ -10,7 +10,9 @@ from sklearn.metrics import d2_tweedie_score
 from sklearn.model_selection import TimeSeriesSplit
 
 
-def train_production_xgboost_models(feature_matrix, feature_columns, alpha=0.00047):
+def train_production_xgboost_models(
+    feature_matrix, feature_columns, alpha=0.00047, cv_folds=3
+):
     """Trains production XGBoost models with automated disk caching for validation states."""
 
     ARTIFACTS_DIR = os.path.join("data", "artifacts")
@@ -43,7 +45,7 @@ def train_production_xgboost_models(feature_matrix, feature_columns, alpha=0.000
     X = feature_matrix[feature_columns]
     y_home = feature_matrix["home_score"]
     y_away = feature_matrix["away_score"]
-    tscv = TimeSeriesSplit(n_splits=3)
+    tscv = TimeSeriesSplit(n_splits=cv_folds)
 
     oof_home_preds = np.zeros(len(feature_matrix))
     oof_away_preds = np.zeros(len(feature_matrix))
@@ -51,7 +53,7 @@ def train_production_xgboost_models(feature_matrix, feature_columns, alpha=0.000
 
     for fold, (train_idx, test_idx) in enumerate(tscv.split(X), 1):
         logging.info(
-            f"🔄 Processing XGBoost Out-of-Fold Cross-Validation (Fold {fold}/3)..."
+            f"🔄 Processing XGBoost Out-of-Fold Cross-Validation (Fold {fold}/{cv_folds})..."
         )
 
         X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]

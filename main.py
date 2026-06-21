@@ -5,8 +5,8 @@ import json
 import logging
 import os
 import shutil
+from typing import TypedDict
 
-import numpy as np
 import pandas as pd
 
 from src.blender import find_optimal_blend_weights
@@ -37,26 +37,49 @@ from src.transform import (
     prepare_historical_features,
 )
 
+
+class TrainingConfig(TypedDict):
+    friendly_weight: float
+    time_slice_start: str
+    start_of_tournament: str
+    decay_alpha: float
+    cv_folds: int
+
+
+class MatchRulesConfig(TypedDict):
+    et_multiplier: float
+    fatigue_factor: float
+    card_boost_factor: float
+    draw_copula: float
+
+
+# =====================================================================
+
 # --- MODEL CONFIGURATION ---
-MODEL_TYPE = "blend"  # "blend", "poisson", "elo", "xgb"
-RUN_MONTE_CARLO = True  # Enable for full predictive power
-MONTE_CARLO_RUNS = 10000  # Recommend 10K+
-FORCE_RETRAIN = False  # Deletes model artifacts and OOF arrays
+MODEL_TYPE: str = "blend"  # "blend", "poisson", "elo", "xgb"
+BLEND_METHOD: str = "scipy"  # "ridge", "scipy"
+RUN_MONTE_CARLO: bool = False  # Enable for full predictive power
+MONTE_CARLO_RUNS: int = 10000  # Recommend 10K+
+FORCE_RETRAIN: bool = True  # Deletes model artifacts and OOF arrays
 
 # --- TRAINING VARIABLES ---
-TRAINING_VARIABLES = {
+TRAINING_VARIABLES: TrainingConfig = {
     "friendly_weight": 0.4,
     "time_slice_start": "1998-01-01",
     "start_of_tournament": "2026-06-11",
+    "decay_alpha": 0.00047,
+    "cv_folds": 3,
 }
 
 # --- TOURNAMENT RULES ---
-MATCH_RULES = {
+MATCH_RULES: MatchRulesConfig = {
     "et_multiplier": 1.0 / 3.0,
     "fatigue_factor": 0.80,
     "card_boost_factor": 1.75,
     "draw_copula": 0.08,
 }
+
+# =====================================================================
 
 # --- PIPELINE INITIALIZATION & LOGGING ---
 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M")
@@ -110,19 +133,8 @@ def main():
         DATACAMP_TO_KAGGLE
     )
 
-    # Pre-compute venue countries and neutrality flags for Group Stage instantly
+    # Pre-compute venue countries
     group_fixtures["venue_country"] = group_fixtures["venue"].apply(get_venue_country)
-    group_fixtures["is_neutral"] = np.where(
-        (group_fixtures["home_team"] == group_fixtures["venue_country"])
-        | (group_fixtures["away_team"] == group_fixtures["venue_country"]),
-        0,
-        1,
-    )
-
-    raw_teams = set(group_fixtures["home_team"].unique()) | set(
-        group_fixtures["away_team"].unique()
-    )
-    participating_teams: list[str] = [str(team) for team in raw_teams]
 
     # --- Launch Prediction Pipeline ---
     logging.info(f"🚀 Launching World Cup Prediction Pipeline [Engine: {MODEL_TYPE}]")
@@ -145,21 +157,29 @@ def main():
         f"🧮 Resolving {'dixon_coles' if (MODEL_TYPE == 'poisson') else 'pure'}-Poisson Joint Maximum Likelihood Estimations..."
     )
     ratings, g_home, g_away, g_neutral = train_poisson_ratings(
-        dixon_coles=(MODEL_TYPE == "poisson")
+        poisson_alpha=(TRAINING_VARIABLES["decay_alpha"]),
+        dixon_coles=(MODEL_TYPE == "poisson"),
     )
     oof_poisson_home, oof_poisson_away = train_poisson_oof_predictions(
-        feature_matrix, dixon_coles=(MODEL_TYPE == "poisson")
+        feature_matrix,
+        poisson_alpha=TRAINING_VARIABLES["decay_alpha"],
+        dixon_coles=(MODEL_TYPE == "poisson"),
+        cv_folds=TRAINING_VARIABLES["cv_folds"],
     )
 
     # --- XGBoost ---
     logging.info("🌲 Training dynamic XGBoost count model...")
     xgb_home, xgb_away, oof_home_preds, oof_away_preds, cv_metrics = (
-        train_production_xgboost_models(feature_matrix, feature_columns)
+        train_production_xgboost_models(
+            feature_matrix,
+            feature_columns,
+            alpha=TRAINING_VARIABLES["decay_alpha"],
+            cv_folds=TRAINING_VARIABLES["cv_folds"],
+        )
     )
 
     # CALIBRATE OPTIMAL CONSENSUS WEIGHTS
     if MODEL_TYPE == "blend":
-        logging.info("🧩 Optimizing consensus blend via bounded SciPy solver...")
         blend_weights = find_optimal_blend_weights(
             feature_matrix=feature_matrix,
             g_home=g_home,
@@ -168,6 +188,7 @@ def main():
             oof_away_preds=oof_away_preds,
             oof_poisson_home=oof_poisson_home,
             oof_poisson_away=oof_poisson_away,
+            method=BLEND_METHOD,
         )
     elif MODEL_TYPE == "poisson":
         blend_weights = {"poisson": 1.0, "elo": 0.0, "xgb": 0.0}
@@ -177,7 +198,7 @@ def main():
         blend_weights = {"poisson": 0.0, "elo": 0.0, "xgb": 1.0}
     else:
         raise ValueError(
-            f"❌ Unsupported MODEL_TYPE: '{MODEL_TYPE}'. Choose from 'blend', 'poisson', 'elo', 'xgb'."
+            "Unsupported MODEL_TYPE. Choose from 'blend', 'poisson', 'elo', 'xgb'."
         )
 
     logging.info(
@@ -186,6 +207,10 @@ def main():
 
     # State tracking setup
     logging.info("📊 Extracting final pre-tournament team form states...")
+    raw_teams = set(group_fixtures["home_team"].unique()) | set(
+        group_fixtures["away_team"].unique()
+    )
+    participating_teams: list[str] = [str(team) for team in raw_teams]
     latest_team_form = extract_latest_team_form(feature_matrix, participating_teams)
 
     # --- GROUP STAGE SIMULATION ---

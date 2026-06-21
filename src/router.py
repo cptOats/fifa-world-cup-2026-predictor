@@ -304,7 +304,7 @@ def simulate_knockout_waterfall(
     g_away_avg: float,
     g_neutral_avg: float,
     blend_weights: dict[str, float],
-    match_rules: dict[str, float],
+    match_rules,
     elo_engine=None,
     xgb_home=None,
     xgb_away=None,
@@ -316,12 +316,12 @@ def simulate_knockout_waterfall(
     # Swap out 'assert' for explicit conditional guards to force type-narrowing
     if feature_columns is None:
         raise ValueError(
-            "❌ Type Guard: feature_columns list cannot be None inside the routing layer."
+            "Type Guard: feature_columns list cannot be None inside the routing layer."
         )
 
     if latest_team_form is None:
         raise ValueError(
-            "❌ Type Guard: latest_team_form map cannot be None inside the routing layer."
+            "Type Guard: latest_team_form map cannot be None inside the routing layer."
         )
 
     raw_dir = os.path.join("data", "raw")

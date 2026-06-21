@@ -104,9 +104,7 @@ def _validate_entity_resolution(translation_dict: dict[str, str]) -> None:
         raise LookupError("Pipeline halted due to unresolved entity names.")
 
 
-def prepare_historical_features(
-    translation_dict: dict[str, str], training_variables: dict[str, str | float]
-) -> str:
+def prepare_historical_features(translation_dict, training_variables) -> str:
     """Ingests raw match data, verifies structural formatting, and builds core feature metrics."""
 
     # Execute defensive string verification gate before handling any heavy matrix logic

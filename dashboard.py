@@ -18,15 +18,15 @@ Dashboard Layout Matrix:
 
     2. 🧪 MICRO HORIZON SANDBOX
         Executes isolated head-to-head simulations on pure neutral ground.
-        Renders an adaptive match outcome card (equipped with dynamic joint
-        copula distribution bars) alongside relative feature capability charts.
+        Renders an adaptive match outcome card with distribution bars.
+        Displays a beautiful Plotly radar with head 2 head capabilities.
 
     3. 🎲 STOCHASTIC PROGRESSION CHART
         Generates responsive horizontal survival charts via Plotly, driving
         granular predictive trends based on selected tournament tiers and
         squad depth parameters.
 
-    4. 🏟️ TOURNAMENT HORIZON (GROUP STAGE)
+    4. 🏟️ GROUP STAGE
         Evaluates active group standings tables—dynamically transitioning
         between deterministic points and expected stochastic xPts/xGD metrics—
         coupled with reactive multi-round match timeline cards.
