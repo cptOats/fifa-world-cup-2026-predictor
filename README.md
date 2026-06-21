@@ -10,9 +10,7 @@
 **End-to-end MLOps pipeline and reactive simulation dashboard designed to forecast the 2026 FIFA World Cup.**
 
 <!-- Hero Image -->
-<a href="https://cptoats.github.io/fifa-world-cup-2026-predictor/" target="_blank">
-  <img width="98.5%" alt="tournament-progression-5x4" src="https://github.com/user-attachments/assets/a3c1da80-aab7-4e11-8802-862cbccfd800" />
-</a>
+<img width="98.5%" alt="tournament-progression-5x4" src="https://github.com/user-attachments/assets/a3c1da80-aab7-4e11-8802-862cbccfd800" />
 <br>
 
 <!-- Additional Images -->
