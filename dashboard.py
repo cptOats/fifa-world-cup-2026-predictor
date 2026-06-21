@@ -63,22 +63,22 @@ def _():
     import json
     import os
     import pathlib
+    import sys
 
     import marimo as mo
     import pandas as pd
     import plotly.graph_objects as go
 
-    # 1. Capture the raw location (could be None, str, or Path)
-    raw_loc = mo.notebook_location()
+    # 1. ENVIRONMENT GATEKEEPER: Detect the WebAssembly sandbox flawlessly
+    # Inside a browser WASM engine, sys.platform evaluates explicitly to "emscripten"
+    IS_WASM = sys.platform == "emscripten"
 
-    # 2. Stringify safely to check the schema without crashing on local Path objects
-    loc_str = str(raw_loc) if raw_loc is not None else ""
-
-    if loc_str.startswith("http"):
-        # WASM Mode: Maintain pristine URL string formatting
-        PUBLIC_DIR = loc_str.rstrip("/") + "/public"
+    if IS_WASM:
+        # Web/WASM Mode: Point directly to your live production GitHub Pages URL
+        PUBLIC_DIR = "https://cptOats.github.io/fifa-world-cup-2026-predictor/public"
     else:
-        # Local Mode: Safely resolve the absolute storage path string
+        # Local Mode: Safely resolve the absolute path string on your desktop drive
+        raw_loc = mo.notebook_location()
         base_path = pathlib.Path(raw_loc if raw_loc is not None else ".").resolve()
         PUBLIC_DIR = str(base_path / "public")
 
