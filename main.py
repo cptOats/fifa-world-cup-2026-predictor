@@ -76,7 +76,7 @@ TRAINING_VARIABLES: TrainingConfig = {
     "time_slice_start": "1998-01-01",
     "start_of_tournament": "2026-06-11",
     "decay_alpha": 0.00047,
-    "cv_folds": 2,
+    "cv_folds": 10,
 }
 
 # --- TOURNAMENT RULES ---
@@ -90,7 +90,8 @@ MATCH_RULES: MatchRulesConfig = {
 # =====================================================================
 
 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M")
-run_name = f"run_{MODEL_TYPE}_{timestamp}"
+blend_suffix = f"_{BLEND_METHOD}" if MODEL_TYPE == "blend" else ""
+run_name = f"run_{MODEL_TYPE}{blend_suffix}_{timestamp}"
 run_dir = os.path.join("data", "runs", run_name)
 os.makedirs(run_dir, exist_ok=True)
 
@@ -139,7 +140,9 @@ def main():
 
     group_fixtures["venue_country"] = group_fixtures["venue"].apply(get_venue_country)
 
-    logging.info(f"🚀 Launching World Cup Prediction Pipeline [Engine: {MODEL_TYPE}]")
+    logging.info(
+        f"🚀 Launching World Cup Prediction Pipeline [Engine: {MODEL_TYPE}{blend_suffix}]"
+    )
 
     # --- MODEL: Continuous Dynamic Elo ---
     logging.info(
@@ -331,8 +334,9 @@ def main():
         "timestamp": timestamp,
         "config": {
             "model_type": MODEL_TYPE,
+            "blend_method": BLEND_METHOD if MODEL_TYPE == "blend" else None,
             "run_monte_carlo": RUN_MONTE_CARLO,
-            "monte_carlo_runs": MONTE_CARLO_RUNS,
+            "monte_carlo_runs": MONTE_CARLO_RUNS if RUN_MONTE_CARLO else None,
         },
         "training_variables": TRAINING_VARIABLES,
         "match_rules": MATCH_RULES,

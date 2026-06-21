@@ -3,8 +3,8 @@ Model Consensus Blending and Meta-Ensemble Optimization Layer.
 
 This module resolves the optimal weights required to blend individual base learners
 into a single continuous expected goals (xG) vector.
-It supports both L2-regularized Ridge regression (Stacking) and SciPy constrained
-optimization (Bounded SLSQP) to ensure physical logic is preserved.
+It supports both unnormalized L2-regularized Ridge regression (Stacking) and
+SciPy constrained optimization (Bounded SLSQP) to ensure physical logic is preserved.
 """
 
 import logging
@@ -97,13 +97,12 @@ def find_optimal_blend_weights(
             if np.sum(raw_weights) <= 0:
                 raise ValueError("Ridge regression collapsed to zero weights.")
 
-            # Normalize coefficients into fractional percentages summing to 1.0
-            normalized_weights = raw_weights / np.sum(raw_weights)
-
+            # Preserve L2: expect sum to ~1 without normalization shows
+            # learners are highly calibrated and output scaled Expected Goals.
             optimized_weights = {
-                "poisson": float(normalized_weights[0]),
-                "elo": float(normalized_weights[1]),
-                "xgb": float(normalized_weights[2]),
+                "poisson": float(raw_weights[0]),
+                "elo": float(raw_weights[1]),
+                "xgb": float(raw_weights[2]),
             }
 
         except Exception as e:
@@ -113,7 +112,7 @@ def find_optimal_blend_weights(
             optimized_weights = {"poisson": 0.3333, "elo": 0.3333, "xgb": 0.3334}
 
     elif method == "scipy":
-        # --- PATHWAY B: SciPy Constrained Optimization (Legacy) ---
+        # --- PATHWAY B: SciPy Constrained Optimization ---
         logging.info("🧩 Resolving weights via SciPy Bounded SLSQP solver...")
 
         def loss_function(weights):
