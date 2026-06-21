@@ -1,12 +1,3 @@
-# /// script
-# requires-python = ">=3.12"
-# dependencies = [
-#     "marimo",
-#     "pandas",
-#     "plotly",
-# ]
-# ///
-
 # pyright: reportUnusedExpression=false
 # ruff: noqa: B018
 
@@ -275,30 +266,35 @@ def _(glob, mo, os):
 def _(PUBLIC_DIR, json, os, pd, run_dropdown):
     run_id = run_dropdown.value
 
-    # Check if running locally or on the web
     local_run_dir = os.path.join("data", "runs", run_id)
     is_local = os.path.exists(local_run_dir)
 
-    # URL-safe network routing layer
     def get_data_path(filename: str) -> str:
         if is_local:
             return os.path.join(local_run_dir, filename)
         else:
-            # Web/WASM Mode: Explicitly merge using standard web slashes
-            return f"{PUBLIC_DIR}/{run_id}/{filename}"
+            return str(PUBLIC_DIR / run_id / filename)
 
-    def asset_exists(filename: str) -> bool:
+    # Centralized robust loading wrapper to strip browser/CDN compression conflicts
+    def load_csv(filename: str):
+        path = get_data_path(filename)
         if is_local:
-            return os.path.exists(os.path.join(local_run_dir, filename))
+            return pd.read_csv(path)
         else:
-            # Assume compiled deployment folder assets exist on remote server
-            return True
+            # Forcing "identity" prevents Pandas from double-unzipping raw browser streams
+            return pd.read_csv(path, compression="identity")
 
-    # Stream datasets into active memory
-    df_tournament = pd.read_csv(get_data_path("deterministic_tournament.csv"))
-    df_tables = pd.read_csv(get_data_path("deterministic_group_tables.csv"))
-    df_thirds = pd.read_csv(get_data_path("deterministic_third_places.csv"))
-    df_capabilities = pd.read_csv(get_data_path("pre_tournament_capabilities.csv"))
+    # 1. CORE DETERMINISTIC INGESTION
+    try:
+        df_tournament = load_csv("deterministic_tournament.csv")
+        df_tables = load_csv("deterministic_group_tables.csv")
+        df_thirds = load_csv("deterministic_third_places.csv")
+        df_capabilities = load_csv("pre_tournament_capabilities.csv")
+    except Exception as e:
+        raise RuntimeError(
+            f"🚨 CRITICAL DATA FETCH ERROR: Unable to load run sequence '{run_id}'. "
+            f"Verify your public/ subfolders exactly match the dropdown strings."
+        ) from e
 
     # --- UN-FLOODABLE DETERMINISTIC DISCIPLINARY IMPUTATION HACK ---
     if "red_cards" in df_tournament.columns:
@@ -312,10 +308,10 @@ def _(PUBLIC_DIR, json, os, pd, run_dropdown):
         )
         df_tournament.loc[top_fiery_indices, "red_cards"] = 1
 
-    # Unpack match engine sandboxes
-    if asset_exists("stochastic_sandbox_matchups.csv"):
-        df_matchups = pd.read_csv(get_data_path("stochastic_sandbox_matchups.csv"))
-    else:
+    # 2. OPTIONAL STOCHASTIC MODELS (Graceful failover guards)
+    try:
+        df_matchups = load_csv("stochastic_sandbox_matchups.csv")
+    except Exception:
         df_matchups = pd.DataFrame(
             columns=[
                 "home_team",
@@ -326,23 +322,31 @@ def _(PUBLIC_DIR, json, os, pd, run_dropdown):
             ]
         )
 
-    has_stochastic = asset_exists("stochastic_forecast.csv")
-
-    if has_stochastic:
-        df_forecast = pd.read_csv(get_data_path("stochastic_forecast.csv"))
-        df_xtables = pd.read_csv(get_data_path("stochastic_group_tables.csv"))
-        df_tournament_stoch = pd.read_csv(get_data_path("stochastic_tournament.csv"))
-    else:
+    try:
+        df_forecast = load_csv("stochastic_forecast.csv")
+        df_xtables = load_csv("stochastic_group_tables.csv")
+        df_tournament_stoch = load_csv("stochastic_tournament.csv")
+        has_stochastic = True
+    except Exception:
         df_forecast, df_xtables, df_tournament_stoch = None, None, None
+        has_stochastic = False
 
-    # Parse structural pipeline runtime parameters
+    # 3. RUNTIME PARAMETERS METADATA PARSING
     metadata_path = get_data_path("metadata.json")
     if is_local:
-        with open(metadata_path, "r") as f:
-            metadata = json.load(f)
+        try:
+            with open(metadata_path, "r") as f:
+                metadata = json.load(f)
+        except Exception:
+            metadata = {}
     else:
-        # Clean HTTP stream ingestion for json via Pandas network abstraction
-        metadata = pd.read_json(metadata_path, typ="series").to_dict()
+        try:
+            # Force compression rules on JSON loader as well
+            metadata = pd.read_json(
+                metadata_path, typ="series", compression="identity"
+            ).to_dict()
+        except Exception:
+            metadata = {}
 
     config = metadata.get("config", {"model_type": "blend"})
     weights = metadata.get(
