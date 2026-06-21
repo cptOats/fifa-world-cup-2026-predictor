@@ -1,4 +1,10 @@
-"""Automated Data Ingestion and Infrastructure Gateway Layer."""
+"""
+Automated Data Ingestion and Infrastructure Gateway Layer.
+
+Ensures the necessary raw dependency files exist prior to model execution.
+Provides a fallback automated Kaggle scraper if core historical results
+are missing from the local environment.
+"""
 
 import logging
 import os
@@ -9,7 +15,8 @@ import kagglehub
 
 
 def _ingest_kaggle_data():
-    """Downloads historical international football results from Kaggle."""
+    """Downloads the martj42 international football results dataset via KaggleHub API."""
+
     cache_path = kagglehub.dataset_download(
         "martj42/international-football-results-from-1872-to-2017"
     )
@@ -25,7 +32,10 @@ def _ingest_kaggle_data():
 
 
 def verify_data_layer():
-    """Validates presence of tournament blueprints and manages automated Kaggle recovery."""
+    """
+    Validates presence of tournament blueprints and handles recovery actions.
+    Triggers a hard runtime exit if structural tournament maps are missing.
+    """
 
     datacamp_files = [
         os.path.join("data", "raw", "group_fixtures.csv"),
@@ -38,10 +48,9 @@ def verify_data_layer():
         os.path.join("data", "raw", "former_names.csv"),
     ]
 
-    # 1. Check DataCamp Blueprints (Hard Gate Validation)
+    # 1. Hard Gate Validation: Structural bracket files cannot be auto-scraped
     missing_datacamp = [f for f in datacamp_files if not os.path.exists(f)]
     if missing_datacamp:
-        # LOGGING.CRITICAL: This represents an unrecoverable runtime block
         logging.critical(
             "🛑 CRITICAL COMPONENT MISMATCH: TOURNAMENT BLUEPRINTS MISSING"
         )
@@ -54,10 +63,9 @@ def verify_data_layer():
         print("\n📝 Drop them inside your native local path: data/raw/")
         sys.exit(1)
 
-    # 2. Check Kaggle History (Automated Recoverable Execution Layer)
+    # 2. Soft Gate Validation: Kaggle history can be automatically recovered
     missing_kaggle = [f for f in kaggle_files if not os.path.exists(f)]
     if missing_kaggle:
-        # LOGGING.WARNING: Alerting user that a script recovery action is triggering
         logging.warning(
             "⚠️  Missing local historical files. Initializing automated scraper..."
         )

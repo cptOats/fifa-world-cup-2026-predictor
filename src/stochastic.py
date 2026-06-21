@@ -1,4 +1,10 @@
-"""Stochastic Simulation and Probabilistic Forecasting Engine."""
+"""
+Stochastic Simulation and Probabilistic Forecasting Engine.
+
+Executes optimized Monte Carlo parallel permutations. Converts pre-computed baseline
+predictive intensities via Bivariate Copulas to track exact probability distributions
+across 'xTables' (xPts/xGD) and tournament survival metrics.
+"""
 
 import json
 from collections import Counter
@@ -30,7 +36,7 @@ def run_monte_carlo_master(
     match_rules,
     n_simulations=10000,
 ):
-    """Executes randomized tournament simulations using an optimized global matchup cache."""
+    """Executes randomized tournament simulations caching multi-dimensional pairwise keys natively."""
 
     rho_val = match_rules.get("draw_copula", 0.08)
     rng = np.random.default_rng(seed=69)
@@ -54,7 +60,6 @@ def run_monte_carlo_master(
         for team in participating_teams
     }
 
-    # --- EXPECTED GROUP TABLES (xTABLE) ---
     xtable_ledger = {
         team: {
             "expected_points": 0.0,
@@ -67,7 +72,7 @@ def run_monte_carlo_master(
         for team in participating_teams
     }
 
-    # 1. GENERATE ALL POSSIBLE MATCHUP KEYS
+    # 1. GENERATE ALL POSSIBLE MATCHUP KEYS AND BATCH EVALUATE
     matchup_keys = []
     unique_venues = list(group_fixtures["venue_country"].unique())
     for v_country in unique_venues:
@@ -76,7 +81,6 @@ def run_monte_carlo_master(
                 if h != a:
                     matchup_keys.append((h, a, v_country))
 
-    # 2. CALL THE MATCH ENGINE BATCH PROCESSOR
     lambda_cache = batch_evaluate_consensus(
         matchup_keys=matchup_keys,
         ratings=ratings,
@@ -94,11 +98,10 @@ def run_monte_carlo_master(
     group_fixtures_list = group_fixtures.to_dict(orient="records")
     knockout_template_list = raw_knockout_template.to_dict(orient="records")
 
-    # 3. START THE MONTE CARLO LOOP
+    # 2. BEGIN MONTE CARLO ITERATION
     for _ in range(n_simulations):
         group_results = []
 
-        # --- GROUP STAGE SAMPLING ---
         for row in group_fixtures_list:
             m_id, group, home, away = (
                 row["match_id"],
@@ -108,7 +111,6 @@ def run_monte_carlo_master(
             )
             l_h, l_a, c_exp, y_exp = lambda_cache[(home, away, row["venue_country"])]
 
-            # Use copula draw inflation for group stage
             h_goals, a_goals, _ = simulate_stochastic_match(
                 l_h,
                 l_a,
@@ -134,7 +136,7 @@ def run_monte_carlo_master(
         top_thirds = extract_best_third_places(tables)
         third_place_assignments = allocate_third_places(top_thirds)
 
-        # --- RECORD xTABLE POINTS & GOAL DIFFERENCE ---
+        # Record Expected Points (xPts)
         for _, row in tables.iterrows():
             team_val = row["team"]
             xtable_ledger[team_val]["expected_points"] += row["points"]
@@ -160,7 +162,6 @@ def run_monte_carlo_master(
             else:
                 metrics[team]["Group Stage Exit"] += 1
 
-        # --- SEQUENTIAL KNOCKOUT WATERFALL SAMPLING ---
         match_winners, match_losers = {}, {}
 
         for row in knockout_template_list:
@@ -171,37 +172,25 @@ def run_monte_carlo_master(
                 row["slot_away"],
             )
 
-            home = (
-                winners[slot_home.replace("Winner Group ", "").strip()]
-                if "Winner Group" in slot_home
-                else runners[slot_home.replace("Runner-up Group ", "").strip()]
-                if "Runner-up Group" in slot_home
-                else third_place_assignments[m_id]
-                if "Best 3rd" in slot_home
-                else match_winners[int(slot_home.replace("Winner Match ", "").strip())]
-                if "Winner Match" in slot_home
-                else match_losers[int(slot_home.replace("Loser Match ", "").strip())]
-                if "Loser Match" in slot_home
-                else slot_home
-            )
+            def _resolve_team(slot):
+                """Parse textual placeholder tags to route physical entities into the node."""
+                if "Winner Group" in slot:
+                    return winners[slot.replace("Winner Group ", "").strip()]
+                if "Runner-up Group" in slot:
+                    return runners[slot.replace("Runner-up Group ", "").strip()]
+                if "Best 3rd" in slot:
+                    return third_place_assignments[m_id]
+                if "Winner Match" in slot:
+                    return match_winners[int(slot.replace("Winner Match ", "").strip())]
+                if "Loser Match" in slot:
+                    return match_losers[int(slot.replace("Loser Match ", "").strip())]
+                return slot
 
-            away = (
-                winners[slot_away.replace("Winner Group ", "").strip()]
-                if "Winner Group" in slot_away
-                else runners[slot_away.replace("Runner-up Group ", "").strip()]
-                if "Runner-up Group" in slot_away
-                else third_place_assignments[m_id]
-                if "Best 3rd" in slot_away
-                else match_winners[int(slot_away.replace("Winner Match ", "").strip())]
-                if "Winner Match" in slot_away
-                else match_losers[int(slot_away.replace("Loser Match ", "").strip())]
-                if "Loser Match" in slot_away
-                else slot_away
-            )
+            home = _resolve_team(slot_home)
+            away = _resolve_team(slot_away)
 
             l_h, l_a, _, _ = lambda_cache[(home, away, row["venue_country"])]
 
-            # CENTRALIZED STOCHASTIC MATCH RESOLUTION
             h_goals_arr, a_goals_arr, _ = simulate_stochastic_match(
                 l_h,
                 l_a,
@@ -253,6 +242,8 @@ def run_monte_carlo_master(
                 ),
             }
         )
+
+    # 3. Compile Fractional Probability Output Matrices
     df_xtables = pd.DataFrame(xtable_rows).sort_values(
         by="expected_points", ascending=False
     )
@@ -296,34 +287,20 @@ def precompute_sandbox_matchups(
     fat_runs=10000,
     host_nations=None,
 ):
-    """
-    Isolated Sandbox Cache Generation.
-    Evaluates pairwise permutations on Neutral Turf AND specific Host venues.
-    """
-    if host_nations is None:
-        host_nations = ["United States", "Mexico", "Canada"]
+    """Isolates all pairwise permutations into an explicit Sandbox UI cache limit."""
 
+    host_nations = host_nations or ["United States", "Mexico", "Canada"]
     rng = np.random.default_rng(1989)
     rho_val = match_rules.get("draw_copula", 0.08)
 
     from itertools import permutations
 
-    matchup_keys = []
+    matchup_keys = [(h, a, "Neutral") for h, a in permutations(all_teams, 2)]
+    for host in [h for h in host_nations if h in all_teams]:
+        matchup_keys.extend([(host, opp, host) for opp in all_teams if opp != host])
+        matchup_keys.extend([(opp, host, host) for opp in all_teams if opp != host])
 
-    # 1. Base Neutral Permutations (Everyone vs Everyone)
-    for h, a in permutations(all_teams, 2):
-        matchup_keys.append((h, a, "Neutral"))
-
-    # 2. Host Advantage Permutations (Hosts play everyone at home)
-    for host in host_nations:
-        if host in all_teams:
-            for opp in all_teams:
-                if opp != host:
-                    matchup_keys.append((host, opp, host))
-                    matchup_keys.append((opp, host, host))
-
-    # Clean duplicates just in case
-    matchup_keys = list(dict.fromkeys(matchup_keys))
+    matchup_keys = list(dict.fromkeys(matchup_keys))  # Remove accidental overlaps
 
     lambda_cache = batch_evaluate_consensus(
         matchup_keys=matchup_keys,
@@ -340,7 +317,7 @@ def precompute_sandbox_matchups(
     )
 
     compiled_matchups = []
-    for (h, a, venue_country), (l_h, l_a, c_exp, y_exp) in lambda_cache.items():
+    for (h, a, venue_country), (l_h, l_a, _, _) in lambda_cache.items():
         grp_h, grp_a, _ = simulate_stochastic_match(
             l_h,
             l_a,
@@ -410,12 +387,8 @@ def precompute_sandbox_matchups(
 def build_expected_stochastic_bracket(
     df_xtables, df_sandbox, raw_knockout_template, group_fixtures
 ):
-    """
-    Builds the 'Most Likely' probabilistic knockout bracket using xPts
-    from the Monte Carlo simulation and >50% threshold stochastic sandbox outcomes.
-    """
+    """Builds a 'Most Likely' UI probabilistic bracket mapping directly from xPts logic."""
 
-    # 1. Map teams to groups using the static fixtures
     team_to_group = {}
     for _, row in group_fixtures.iterrows():
         team_to_group[row["home_team"]] = row["group"]
@@ -423,8 +396,6 @@ def build_expected_stochastic_bracket(
 
     df_xt = df_xtables.copy()
     df_xt["group"] = df_xt["team"].map(team_to_group)
-
-    # 2. Sort by expected points and expected GD to determine group ranks
     df_xt = df_xt.sort_values(
         by=["group", "expected_points", "expected_gd"], ascending=[True, False, False]
     )
@@ -433,10 +404,7 @@ def build_expected_stochastic_bracket(
     winners = df_xt[df_xt["position"] == 1].set_index("group")["team"].to_dict()
     runners = df_xt[df_xt["position"] == 2].set_index("group")["team"].to_dict()
 
-    # 3. Resolve the Top 4 Third-Place Teams using xPts
     thirds = df_xt[df_xt["position"] == 3].copy()
-
-    # Temporarily rename columns to trick the deterministic router into accepting xPts
     top_thirds = (
         thirds.rename(
             columns={"expected_points": "points", "expected_gd": "goals_diff"}
@@ -444,13 +412,9 @@ def build_expected_stochastic_bracket(
         .sort_values(by=["points", "goals_diff"], ascending=[False, False])
         .head(8)
     )
-
     third_place_assignments = allocate_third_places(top_thirds)
 
-    # 4. Traverse the bracket using stochastic win probabilities
-    match_winners = {}
-    match_losers = {}
-    bracket_rows = []
+    match_winners, match_losers, bracket_rows = {}, {}, []
 
     knockout_list = raw_knockout_template.to_dict(orient="records")
 
@@ -461,34 +425,22 @@ def build_expected_stochastic_bracket(
         slot_home = row["slot_home"]
         slot_away = row["slot_away"]
 
-        # Match Routing Resolution
-        home = (
-            winners[slot_home.replace("Winner Group ", "").strip()]
-            if "Winner Group" in slot_home
-            else runners[slot_home.replace("Runner-up Group ", "").strip()]
-            if "Runner-up Group" in slot_home
-            else third_place_assignments[m_id]
-            if "Best 3rd" in slot_home
-            else match_winners[int(slot_home.replace("Winner Match ", "").strip())]
-            if "Winner Match" in slot_home
-            else match_losers[int(slot_home.replace("Loser Match ", "").strip())]
-            if "Loser Match" in slot_home
-            else slot_home
-        )
+        def _resolve_team(slot):
+            """Parse textual placeholder tags to route physical entities into the node."""
+            if "Winner Group" in slot:
+                return winners[slot.replace("Winner Group ", "").strip()]
+            if "Runner-up Group" in slot:
+                return runners[slot.replace("Runner-up Group ", "").strip()]
+            if "Best 3rd" in slot:
+                return third_place_assignments[m_id]
+            if "Winner Match" in slot:
+                return match_winners[int(slot.replace("Winner Match ", "").strip())]
+            if "Loser Match" in slot:
+                return match_losers[int(slot.replace("Loser Match ", "").strip())]
+            return slot
 
-        away = (
-            winners[slot_away.replace("Winner Group ", "").strip()]
-            if "Winner Group" in slot_away
-            else runners[slot_away.replace("Runner-up Group ", "").strip()]
-            if "Runner-up Group" in slot_away
-            else third_place_assignments[m_id]
-            if "Best 3rd" in slot_away
-            else match_winners[int(slot_away.replace("Winner Match ", "").strip())]
-            if "Winner Match" in slot_away
-            else match_losers[int(slot_away.replace("Loser Match ", "").strip())]
-            if "Loser Match" in slot_away
-            else slot_away
-        )
+        home = _resolve_team(slot_home)
+        away = _resolve_team(slot_away)
 
         # If neither team is the host nation, it's structurally neutral turf
         if home != v_country and away != v_country:
@@ -496,7 +448,6 @@ def build_expected_stochastic_bracket(
         else:
             lookup_venue = v_country
 
-        # Query Sandbox for Absolute Stochastic Edge
         sb_row = df_sandbox[
             (df_sandbox["home_team"] == home)
             & (df_sandbox["away_team"] == away)
@@ -540,14 +491,13 @@ def build_expected_stochastic_bracket(
             prob_h, prob_a = 50.0, 50.0
             l_h, l_a = 1.0, 1.0
 
-        # Determine Absolute Probabilistic Winner
         winner = home if prob_h >= prob_a else away
-        loser = away if winner == home else home
+        match_winners[m_id], match_losers[m_id] = (
+            winner,
+            away if winner == home else home,
+        )
 
-        match_winners[m_id] = winner
-        match_losers[m_id] = loser
-
-        # Format cosmetic UI goal integers to respect the stochastic winner
+        # Format UI cosmetic integers to strictly align with Stochastic win edges
         pred_h_goals, pred_a_goals = int(round(l_h)), int(round(l_a))
         if pred_h_goals == pred_a_goals:
             if winner == home:

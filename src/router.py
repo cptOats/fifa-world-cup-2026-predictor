@@ -1,4 +1,10 @@
-"""Tournament Group Standings and Knockout Stage Routing Engine."""
+"""
+Tournament Group Standings and Knockout Stage Routing Engine.
+
+Evaluates multi-key ascending/descending pandas sorts to dictate group standings.
+It uses a recursive backtracking search to accurately map the complex logic behind
+the official 8 "Best Third Place" wildcard slots into the Round of 32 constraints.
+"""
 
 import logging
 import os
@@ -8,7 +14,8 @@ import pandas as pd
 from src.match_engine import evaluate_match_consensus, simulate_deterministic_match
 from src.transform import get_venue_country
 
-# The official tournament group dependencies for the 8 third-place wildcard slots
+# Official tournament wildcard constraints defining which group's 3rd place
+# entity maps to which specific knockout bracket slot.
 THIRD_PLACE_CONSTRAINTS = {
     75: {"A", "B", "C", "D", "F"},
     78: {"C", "D", "F", "G", "H"},
@@ -22,16 +29,14 @@ THIRD_PLACE_CONSTRAINTS = {
 
 
 def resolve_group_tables(predicted_fixtures_list_or_df):
-    """Compiles tables natively. Accepts either a List of Dicts (Fast) or DataFrame (Legacy)."""
+    """Compiles match timelines natively into structured standing point grids."""
 
-    # Check if we were passed a DataFrame (from deterministic) or List of Dicts (from Stochastic)
     is_df = isinstance(predicted_fixtures_list_or_df, pd.DataFrame)
     records = (
         predicted_fixtures_list_or_df.to_dict("records")
         if is_df
         else predicted_fixtures_list_or_df
     )
-
     table_records = {}
 
     for row in records:
@@ -69,13 +74,11 @@ def resolve_group_tables(predicted_fixtures_list_or_df):
     for stats in compiled_list:
         stats["goals_diff"] = stats["goals_for"] - stats["goals_against"]
 
-    # Native Python Multi-key Sort (Equivalent to Pandas Ascending/Descending)
-    # Group (Asc), Points (Desc), Goal Diff (Desc), Goals For (Desc)
+    # Native Multi-key Sort: Group (Asc), Points (Desc), Goal Diff (Desc), Goals For (Desc)
     compiled_list.sort(
         key=lambda x: (x["group"], -x["points"], -x["goals_diff"], -x["goals_for"])
     )
 
-    # Add position integers
     current_group = None
     pos = 1
     for row in compiled_list:
@@ -89,7 +92,7 @@ def resolve_group_tables(predicted_fixtures_list_or_df):
 
 
 def extract_best_third_places(group_tables_df):
-    """Isolates all 12 third-place finishers and extracts the top 8 wildcards."""
+    """Isolates and returns the top 8 advancing wildcards from all 3rd place finishes."""
 
     third_places = group_tables_df[group_tables_df["position"] == 3].copy()
     ranked_thirds = third_places.sort_values(
@@ -100,7 +103,7 @@ def extract_best_third_places(group_tables_df):
 
 
 def allocate_third_places(advancing_thirds_df):
-    """Maps qualifying third-place teams to unique knockout match slots."""
+    """Maps qualifying third-place teams to knockout slots using recursive backtracking."""
 
     teams = list(zip(advancing_thirds_df["group"], advancing_thirds_df["team"]))
     slot_ids = list(THIRD_PLACE_CONSTRAINTS.keys())
@@ -108,32 +111,27 @@ def allocate_third_places(advancing_thirds_df):
     def backtrack(
         team_idx: int, current_assignment: dict[int, str]
     ) -> dict[int, str] | None:
-        """Finds a valid slot assignment using a backtracking search algorithm."""
-        # Base case: All teams have been successfully assigned
+        """DFS recursive state exploration to satisfy wildcard dependency matrix."""
+
         if team_idx == len(teams):
             return current_assignment
 
         group, team_name = teams[team_idx]
 
-        # Try assigning the current team to an available slot
         for slot in slot_ids:
             if slot not in current_assignment:
-                # Check if the team's group is allowed in this slot
                 if group in THIRD_PLACE_CONSTRAINTS[slot]:
                     next_assignment = current_assignment.copy()
                     next_assignment[slot] = team_name
-
-                    # Recurse for the next team
                     result = backtrack(team_idx + 1, next_assignment)
                     if result is not None:
                         return result
 
         return None
 
-    # Kick off the recursive backtracking search
     assignment = backtrack(0, {})
 
-    # GREEDY FALLBACK: If a chaotic Monte Carlo universe breaks the official matrix
+    # GREEDY FALLBACK: Triggers if a chaotic stochastic distribution breaks matrix viability
     if assignment is None:
         logging.debug(
             "Wildcard constraint broken by stochastic upset. Applying greedy fallback."
@@ -149,12 +147,12 @@ def allocate_third_places(advancing_thirds_df):
     return assignment
 
 
-def generate_round_of_32_draw(group_tables_df, third_place_mapping):
-    """Reads the template layout and substitutes placeholders with actual country names."""
-
+def generate_round_of_32_draw(
+    group_tables_df: pd.DataFrame, third_place_mapping: dict[int, str]
+) -> pd.DataFrame:
+    """Reads the template layout and substitutes placeholders with actual country names for the Round of 32."""
     raw_dir = os.path.join("data", "raw")
     knockout_template = pd.read_csv(os.path.join(raw_dir, "knockout_slots.csv"))
-
     r32_df = knockout_template[knockout_template["round"] == "Round of 32"].copy()
 
     winners = (
@@ -172,27 +170,23 @@ def generate_round_of_32_draw(group_tables_df, third_place_mapping):
     away_teams = []
 
     for _, row in r32_df.iterrows():
-        match_id = row["match_id"]
+        match_id = int(row["match_id"])
         slot_home = row["slot_home"]
         slot_away = row["slot_away"]
 
-        if "Winner Group" in slot_home:
-            grp = slot_home.replace("Winner Group ", "").strip()
-            home_teams.append(winners[grp])
-        elif "Runner-up Group" in slot_home:
-            grp = slot_home.replace("Runner-up Group ", "").strip()
-            home_teams.append(runners_up[grp])
-        else:
-            home_teams.append(third_place_mapping[match_id])
+        def _resolve_team(slot):
+            """Parse textual placeholder tags to route the physical entities into the node."""
 
-        if "Winner Group" in slot_away:
-            grp = slot_away.replace("Winner Group ", "").strip()
-            away_teams.append(winners[grp])
-        elif "Runner-up Group" in slot_away:
-            grp = slot_away.replace("Runner-up Group ", "").strip()
-            away_teams.append(runners_up[grp])
-        else:
-            away_teams.append(third_place_mapping[match_id])
+            if "Winner Group" in slot:
+                return winners[slot.replace("Winner Group ", "").strip()]
+            if "Runner-up Group" in slot:
+                return runners_up[slot.replace("Runner-up Group ", "").strip()]
+            if "Best 3rd" in slot:
+                return third_place_mapping[match_id]
+            return slot
+
+        home_teams.append(_resolve_team(slot_home))
+        away_teams.append(_resolve_team(slot_away))
 
     r32_df["home_team"] = home_teams
     r32_df["away_team"] = away_teams
@@ -216,7 +210,7 @@ def simulate_deterministic_group_stage(
     feature_columns,
     latest_team_form,
 ):
-    """Simulates the deterministic group stage fixtures using model consensus."""
+    """Executes deterministic iteration across all group stage blueprints."""
 
     group_results = []
 
@@ -228,7 +222,6 @@ def simulate_deterministic_group_stage(
         venue_country = row["venue_country"]
         venue = row.get("venue", "Neutral")
 
-        # Call Match Engine
         raw_home, raw_away, p_corners, p_yellows, p_reds = evaluate_match_consensus(
             home_team=home,
             away_team=away,
@@ -245,7 +238,6 @@ def simulate_deterministic_group_stage(
             latest_team_form=latest_team_form,
         )
 
-        # Resolve final integer logic
         final_home, final_away, winner_side, t_corn, t_yell, t_red, _, _ = (
             simulate_deterministic_match(
                 raw_home,
@@ -280,7 +272,6 @@ def simulate_deterministic_group_stage(
     top_thirds = extract_best_third_places(group_tables)
     third_place_assignments = allocate_third_places(top_thirds)
 
-    # Data Frame Adjustments
     predicted_fixtures["round"] = "Group " + predicted_fixtures["group"]
     predicted_fixtures["extra_time"] = False
     predicted_fixtures["penalties"] = False
@@ -311,17 +302,11 @@ def simulate_knockout_waterfall(
     feature_columns: list[str] | None = None,
     latest_team_form: dict[str, dict[str, float]] | None = None,
 ) -> pd.DataFrame:
-    """Simulates the knockout bracket tree sequentially from Round of 32 down to the Final."""
+    """Simulates the knockout bracket tree sequentially from Round of 32 to the Final."""
 
-    # Swap out 'assert' for explicit conditional guards to force type-narrowing
-    if feature_columns is None:
+    if feature_columns is None or latest_team_form is None:
         raise ValueError(
             "Type Guard: feature_columns list cannot be None inside the routing layer."
-        )
-
-    if latest_team_form is None:
-        raise ValueError(
-            "Type Guard: latest_team_form map cannot be None inside the routing layer."
         )
 
     raw_dir = os.path.join("data", "raw")
@@ -351,38 +336,22 @@ def simulate_knockout_waterfall(
         slot_away = row["slot_away"]
         venue_country = row["venue_country"]
 
-        # Resolve team slots
-        if "Winner Group" in slot_home:
-            home_team = winners[slot_home.replace("Winner Group ", "").strip()]
-        elif "Runner-up Group" in slot_home:
-            home_team = runners_up[slot_home.replace("Runner-up Group ", "").strip()]
-        elif "Best 3rd" in slot_home:
-            home_team = third_place_mapping[match_id]
-        elif "Winner Match" in slot_home:
-            home_team = match_winners[
-                int(slot_home.replace("Winner Match ", "").strip())
-            ]
-        elif "Loser Match" in slot_home:
-            home_team = match_losers[int(slot_home.replace("Loser Match ", "").strip())]
-        else:
-            home_team = slot_home
+        def _resolve_team(slot):
+            """Parse textual placeholder tags to route the physical entities into the node."""
+            if "Winner Group" in slot:
+                return winners[slot.replace("Winner Group ", "").strip()]
+            if "Runner-up Group" in slot:
+                return runners_up[slot.replace("Runner-up Group ", "").strip()]
+            if "Best 3rd" in slot:
+                return third_place_mapping[match_id]
+            if "Winner Match" in slot:
+                return match_winners[int(slot.replace("Winner Match ", "").strip())]
+            if "Loser Match" in slot:
+                return match_losers[int(slot.replace("Loser Match ", "").strip())]
+            return slot
 
-        if "Winner Group" in slot_away:
-            away_team = winners[slot_away.replace("Winner Group ", "").strip()]
-        elif "Runner-up Group" in slot_away:
-            away_team = runners_up[slot_away.replace("Runner-up Group ", "").strip()]
-        elif "Best 3rd" in slot_away:
-            away_team = third_place_mapping[match_id]
-        elif "Winner Match" in slot_away:
-            away_team = match_winners[
-                int(slot_away.replace("Winner Match ", "").strip())
-            ]
-        elif "Loser Match" in slot_away:
-            away_team = match_losers[int(slot_away.replace("Loser Match ", "").strip())]
-        else:
-            away_team = slot_away
+        home_team, away_team = _resolve_team(slot_home), _resolve_team(slot_away)
 
-        # 1. Get raw continuous intensities
         raw_home, raw_away, p_corners, p_yellows, p_reds = evaluate_match_consensus(
             home_team=home_team,
             away_team=away_team,
@@ -399,7 +368,6 @@ def simulate_knockout_waterfall(
             latest_team_form=latest_team_form,
         )
 
-        # Resolve timeline logic
         f_home, f_away, winner_side, t_corn, t_yell, t_red, is_et, is_pen = (
             simulate_deterministic_match(
                 raw_home,

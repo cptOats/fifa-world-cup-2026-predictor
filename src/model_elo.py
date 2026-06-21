@@ -1,39 +1,60 @@
-"""Dynamic Elo Rating Model."""
+"""
+Dynamic Elo Rating Model.
+
+A zero-sum thermodynamic rating system that tracks entity capabilities chronologically.
+It models historical team form independent of structured feature matrices, ensuring
+strict sequence resolution step-by-step through the historical ledger.
+"""
 
 import numpy as np
 import pandas as pd
 
 
 class EloEngine:
-    """A thermodynamic rating system that evaluates and tracks football team capabilities."""
+    """Maintains and updates point-in-time sequence ratings for international squads."""
 
     def __init__(self, k_factor=40, default_elo=1500):
-        """Initializes the Elo engine with baseline scaling constraints."""
+        """
+        Initializes the Elo engine with baseline scaling constraints.
+
+        Args:
+            k_factor (int): Volatility index governing rating swings per match.
+            default_elo (int): Baseline entry rating for new entities.
+        """
+
         self.k_factor = k_factor
         self.default_elo = default_elo
         self.ratings = {}
 
-    def get_rating(self, team):
-        """Safely fetches a team's current rating, initializing it if absent."""
+    def get_rating(self, team: str) -> float:
+        """Safely fetches a team's active rating, initializing it if absent."""
 
         if team not in self.ratings:
             self.ratings[team] = self.default_elo
         return self.ratings[team]
 
     def _calculate_expected_score(
-        self, r_home, r_away, is_neutral=0, home_advantage=100
-    ):
-        """Computes the logistic win expectancy for a matchup incorporating venue states."""
+        self,
+        r_home: float,
+        r_away: float,
+        is_neutral: int = 0,
+        home_advantage: float = 100,
+    ) -> tuple[float, float]:
+        """
+        Computes the logistic win expectancy probability curve.
 
-        # Symmetrical neutrality override: Host premium collapses to 0 on neutral grounds
+        Args:
+            is_neutral (int): Flag (1) to collapse the host premium mathematically.
+        """
+
         actual_home_adv = 0 if is_neutral == 1 else home_advantage
 
         w_home = 1 / (10 ** (-(r_home + actual_home_adv - r_away) / 400) + 1)
         w_away = 1.0 - w_home
         return w_home, w_away
 
-    def _get_goal_margin_multiplier(self, home_goals, away_goals):
-        """Calculates the standard World Football Elo goal differential index scalar."""
+    def _get_goal_margin_multiplier(self, home_goals: int, away_goals: int) -> float:
+        """Applies the standard World Football Elo goal differential index scalar."""
 
         goal_diff = abs(home_goals - away_goals)
         if goal_diff <= 1:
@@ -44,9 +65,9 @@ class EloEngine:
             return (11.0 + goal_diff) / 8.0
 
     def fit(self, historical_matches_df: pd.DataFrame):
-        """Processes a match ledger chronologically to update team ratings step-by-step."""
+        """Processes the match ledger chronologically to update sequence ratings."""
 
-        # Structural safeguard: Enforce strict sequence resolution across rolling timelines
+        # Structural safeguard: Enforce strictly chronological sequence resolution
         sorted_matches = historical_matches_df.sort_values(by="date").copy()
 
         for _, row in sorted_matches.iterrows():
@@ -57,16 +78,15 @@ class EloEngine:
             is_neutral = int(row.get("neutral", 0))
             match_weight = float(row.get("match_weight", 1.0))
 
-            # 1. Fetch current ratings before the whistle blows
+            # 1. Fetch ratings strictly *before* the match is played
             r_home = self.get_rating(home)
             r_away = self.get_rating(away)
 
-            # 2. Compute probability expectations passing the neutral flag
+            # 2. Compute probabilities and map targets
             w_home, w_away = self._calculate_expected_score(
                 r_home, r_away, is_neutral=is_neutral
             )
 
-            # 3. Map match outcomes (Win = 1.0, Draw = 0.5, Loss = 0.0)
             if h_goals > a_goals:
                 actual_home, actual_away = 1.0, 0.0
             elif a_goals > h_goals:
@@ -74,27 +94,31 @@ class EloEngine:
             else:
                 actual_home, actual_away = 0.5, 0.5
 
-            # 4. Compute the goal margin index scale factor
             g_factor = self._get_goal_margin_multiplier(h_goals, a_goals)
 
-            # 5. Execute the delta adjustment update step
+            # 3. Execute the delta adjustment update step
             current_k = self.k_factor * match_weight
             self.ratings[home] += current_k * g_factor * (actual_home - w_home)
             self.ratings[away] += current_k * g_factor * (actual_away - w_away)
 
     def predict_elo_match(
-        self, home_team, away_team, is_neutral=0, baseline_goals=1.35, alpha=2.2
-    ):
-        """Translates final Elo delta vectors back into discrete integer score lines."""
+        self,
+        home_team: str,
+        away_team: str,
+        is_neutral: int = 0,
+        baseline_goals: float = 1.35,
+        alpha: float = 2.2,
+    ) -> dict[str, float | int | str]:
+        """Translates final Elo delta vectors back into continuous goal intensities (lambdas)."""
+
         r_home = self.get_rating(home_team)
         r_away = self.get_rating(away_team)
 
-        # Added parameter signature injection to prevent unbound variable crashes
         w_home, _ = self._calculate_expected_score(
             r_home, r_away, is_neutral=is_neutral
         )
 
-        # Convert the continuous probability advantage into expected goal lambdas
+        # Map the continuous probability advantage into expected goal intensities
         lambda_home = max(0.1, baseline_goals + alpha * (w_home - 0.5))
         lambda_away = max(0.1, baseline_goals + alpha * (0.5 - w_home))
 

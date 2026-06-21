@@ -1,4 +1,10 @@
-"""Machine Learning: Gradient-Boosted Count Tree (XGBoost) Model."""
+"""
+Machine Learning: Gradient-Boosted Count Tree (XGBoost) Model.
+
+Implements Count Poisson objective regression using time-decay weighting (alpha).
+Includes strict TimeSeriesSplit cross-validation to isolate true out-of-fold
+predictions and calculate Deviance R-Squared (D2 Tweedie) metrics for model observability.
+"""
 
 import json
 import logging
@@ -13,14 +19,19 @@ from sklearn.model_selection import TimeSeriesSplit
 def train_production_xgboost_models(
     feature_matrix, feature_columns, alpha=0.00047, cv_folds=3
 ):
-    """Trains production XGBoost models with automated disk caching for validation states."""
+    """
+    Trains XGBoost structures with automated disk caching for validation states.
+
+    Returns:
+        tuple: (model_home, model_away, oof_home_preds, oof_away_preds, cv_metrics)
+    """
 
     ARTIFACTS_DIR = os.path.join("data", "artifacts")
     XGB_OOF_H_PATH = os.path.join(ARTIFACTS_DIR, "xgb_oof_home.npy")
     XGB_OOF_A_PATH = os.path.join(ARTIFACTS_DIR, "xgb_oof_away.npy")
     XGB_METRICS_PATH = os.path.join(ARTIFACTS_DIR, "xgb_cv_metrics.json")
 
-    # 1. Cache Hit Check
+    # 1. Cache Hit Check (Fast-path avoidance of CV overhead)
     if (
         os.path.exists(XGB_OOF_H_PATH)
         and os.path.exists(XGB_OOF_A_PATH)
@@ -34,14 +45,13 @@ def train_production_xgboost_models(
         with open(XGB_METRICS_PATH, "r") as f:
             cv_metrics = json.load(f)
 
-        # Re-load production models to ensure they are available downstream
         model_home = xgb.XGBRegressor()
         model_home.load_model(os.path.join(ARTIFACTS_DIR, "xgb_home_core.json"))
         model_away = xgb.XGBRegressor()
         model_away.load_model(os.path.join(ARTIFACTS_DIR, "xgb_away_core.json"))
         return model_home, model_away, oof_home_preds, oof_away_preds, cv_metrics
 
-    # 2. Run Cross Validation
+    # 2. Sequential Cross Validation Architecture
     X = feature_matrix[feature_columns]
     y_home = feature_matrix["home_score"]
     y_away = feature_matrix["away_score"]
@@ -60,16 +70,14 @@ def train_production_xgboost_models(
         y_h_train, y_h_test = y_home.iloc[train_idx], y_home.iloc[test_idx]
         y_a_train, y_a_test = y_away.iloc[train_idx], y_away.iloc[test_idx]
 
-        # Calculate fold-specific decay relative to the training fold's maximum date
+        # Calculate fold-specific exponential decay relative to the training set boundary
         train_dates = feature_matrix["match_date"].iloc[train_idx]
         fold_max_date = train_dates.max()
         days_elapsed_fold = (fold_max_date - train_dates).dt.days
         time_decay_fold = np.exp(-alpha * days_elapsed_fold)
-
-        # Generate compound weights
         w_train = time_decay_fold * feature_matrix["match_weight"].iloc[train_idx]
 
-        # Fit Home validation model
+        # Home Context Tree
         h_cv_model = xgb.XGBRegressor(
             objective="count:poisson",
             n_estimators=60,
@@ -80,7 +88,7 @@ def train_production_xgboost_models(
         h_cv_model.fit(X_train, y_h_train, sample_weight=w_train)
         oof_home_preds[test_idx] = h_cv_model.predict(X_test)
 
-        # Fit Away validation model
+        # Away Context Tree
         a_cv_model = xgb.XGBRegressor(
             objective="count:poisson",
             n_estimators=60,
@@ -91,16 +99,15 @@ def train_production_xgboost_models(
         a_cv_model.fit(X_train, y_a_train, sample_weight=w_train)
         oof_away_preds[test_idx] = a_cv_model.predict(X_test)
 
-        # Calculate Deviance R-squared
+        # Calculate Deviance R-squared for Count Poisson distributions
         dev_r2_h = d2_tweedie_score(y_h_test, oof_home_preds[test_idx], power=1)
         dev_r2_a = d2_tweedie_score(y_a_test, oof_away_preds[test_idx], power=1)
-
         cv_metrics[f"fold_{fold}"] = {
             "home_deviance_r2": dev_r2_h,
             "away_deviance_r2": dev_r2_a,
         }
 
-    # 3. Fit Production Models
+    # 3. Fit Production Models on all available data
     days_elapsed_prod = (
         feature_matrix["match_date"].max() - feature_matrix["match_date"]
     ).dt.days
@@ -124,7 +131,7 @@ def train_production_xgboost_models(
     model_away = xgb.XGBRegressor(**xgb_params)
     model_away.fit(X, y_away, sample_weight=w_prod)
 
-    # 4. Save Artifacts & OOF Arrays
+    # 4. Save Artifacts
     os.makedirs(ARTIFACTS_DIR, exist_ok=True)
     model_home.save_model(os.path.join(ARTIFACTS_DIR, "xgb_home_core.json"))
     model_away.save_model(os.path.join(ARTIFACTS_DIR, "xgb_away_core.json"))

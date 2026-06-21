@@ -1,4 +1,11 @@
-"""Vectorized Dixon-Coles Poisson Joint Maximum Likelihood Estimation Model."""
+"""
+Poisson Joint Maximum Likelihood Estimation Model.
+
+Solves complex multivariate matrices to extract isolated attack and defense ratings
+for every nation simultaneously. Incorporates time-decay weighting (alpha) to prioritize
+recent form, and an optional Dixon-Coles dependency parameter (rho) to model the
+interdependence of low-scoring draws.
+"""
 
 import json
 import logging
@@ -21,7 +28,8 @@ def _pure_poisson_neg_log_likelihood(
     N,
     global_neutral_avg,
 ):
-    """Vectorized independent Poisson log-likelihood."""
+    """Vectorized independent Poisson log-likelihood objective function."""
+
     attacks = params[:N]
     defenses = params[N : 2 * N]
     gamma = params[2 * N]
@@ -53,7 +61,8 @@ def _dixon_coles_neg_log_likelihood(
     N,
     global_neutral_avg,
 ):
-    """Vectorized negative log-likelihood function with active Dixon-Coles low-score coupling."""
+    """Vectorized log-likelihood handling the Dixon-Coles low-score interdependence coupling."""
+
     attacks = params[:N]
     defenses = params[N : 2 * N]
     gamma = params[2 * N]
@@ -82,7 +91,7 @@ def _dixon_coles_neg_log_likelihood(
     tau[mask_11] = 1.0 - rho
 
     if np.any(tau <= 0):
-        return 1e10
+        return 1e10  # Hard penalty for physically impossible bounds
 
     log_lik_home = -lam + home_scores * np.log(lam)
     log_lik_away = -mu + away_scores * np.log(mu)
@@ -93,7 +102,8 @@ def _dixon_coles_neg_log_likelihood(
 def train_poisson_ratings(
     poisson_alpha=0.00047, dixon_coles=False
 ) -> tuple[dict[str, dict[str, float]], float, float, float]:
-    """Fits team capabilities using a global Joint MLE framework with structural fast-paths."""
+    """Fits entity capabilities using a global Joint MLE architecture."""
+
     ARTIFACTS_DIR = os.path.join("data", "artifacts")
     filename = (
         "poisson_artifacts_dixon_coles.json"
@@ -119,6 +129,7 @@ def train_poisson_ratings(
     df = pd.read_parquet(processed_path)
     train_df = df[df["match_weight"] > 0].copy()
 
+    # Time Decay Weighting
     train_df["date"] = pd.to_datetime(train_df["date"])
     max_date = train_df["date"].max()
     days_elapsed = (max_date - train_df["date"]).dt.days
@@ -149,48 +160,35 @@ def train_poisson_ratings(
     weights = train_df["match_weight"].to_numpy()
     neutral_flags = train_df["neutral"].to_numpy()
 
+    constraint_matrix = np.zeros((1, 2 * N + (2 if dixon_coles else 1)))
+    constraint_matrix[0, N : 2 * N] = 1.0 / N
+    linear_constraint = LinearConstraint(constraint_matrix, lb=[1.0], ub=[1.0])
+
     if dixon_coles:
         initial_guess = np.concatenate([np.ones(N), np.ones(N), [1.20], [0.0]])
-        constraint_matrix = np.zeros((1, 2 * N + 2))
-        constraint_matrix[0, N : 2 * N] = 1.0 / N
         bounds = Bounds(
             np.concatenate([np.repeat(0.05, N), np.repeat(0.05, N), [0.5], [-0.25]]),
             np.concatenate([np.repeat(15.0, N), np.repeat(15.0, N), [2.5], [0.25]]),
         )
         obj_func = _dixon_coles_neg_log_likelihood
-        args = (
-            home_indices,
-            away_indices,
-            home_scores,
-            away_scores,
-            weights,
-            neutral_flags,
-            N,
-            global_neutral_avg,
-        )
     else:
-        # Fast-path bypasses parameter matrix: rho = zero
         initial_guess = np.concatenate([np.ones(N), np.ones(N), [1.20]])
-        constraint_matrix = np.zeros((1, 2 * N + 1))
-        constraint_matrix[0, N : 2 * N] = 1.0 / N
         bounds = Bounds(
             np.concatenate([np.repeat(0.05, N), np.repeat(0.05, N), [0.5]]),
             np.concatenate([np.repeat(15.0, N), np.repeat(15.0, N), [2.5]]),
         )
         obj_func = _pure_poisson_neg_log_likelihood
-        args = (
-            home_indices,
-            away_indices,
-            home_scores,
-            away_scores,
-            weights,
-            neutral_flags,
-            N,
-            global_neutral_avg,
-        )
 
-    linear_constraint = LinearConstraint(constraint_matrix, lb=[1.0], ub=[1.0])
-
+    args = (
+        home_indices,
+        away_indices,
+        home_scores,
+        away_scores,
+        weights,
+        neutral_flags,
+        N,
+        global_neutral_avg,
+    )
     res = minimize(
         obj_func,
         initial_guess,
@@ -241,21 +239,19 @@ def train_poisson_oof_predictions(
     dixon_coles=False,
     cv_folds=3,
 ):
-    """Calculates leak-proof out-of-fold Poisson predictions."""
+    """Calculates strict out-of-fold predictions to prevent target leakage during meta-learner blending."""
 
     ARTIFACTS_DIR = os.path.join("data", "artifacts")
     suffix = "dixon_coles" if dixon_coles else "pure"
     POISSON_OOF_H_PATH = os.path.join(ARTIFACTS_DIR, f"poisson_oof_home_{suffix}.npy")
     POISSON_OOF_A_PATH = os.path.join(ARTIFACTS_DIR, f"poisson_oof_away_{suffix}.npy")
 
-    # 1. Cache Hit Check
     if os.path.exists(POISSON_OOF_H_PATH) and os.path.exists(POISSON_OOF_A_PATH):
         logging.info(
             f"💾 Cached {suffix}-Poisson Out-of-Fold arrays detected. Skipping cross-validation loops..."
         )
         return np.load(POISSON_OOF_H_PATH), np.load(POISSON_OOF_A_PATH)
 
-    # 2. Run Cross Validation
     n_matches = len(feature_matrix)
     oof_home_preds = np.zeros(n_matches)
     oof_away_preds = np.zeros(n_matches)
@@ -303,10 +299,12 @@ def train_poisson_oof_predictions(
         weights = train_df["match_weight"].to_numpy()
         neutral_flags = train_df["is_neutral_venue"].to_numpy()
 
+        constraint_matrix = np.zeros((1, 2 * N + (2 if dixon_coles else 1)))
+        constraint_matrix[0, N : 2 * N] = 1.0 / N
+        linear_constraint = LinearConstraint(constraint_matrix, lb=[1.0], ub=[1.0])
+
         if dixon_coles:
             initial_guess = np.concatenate([np.ones(N), np.ones(N), [1.20], [0.0]])
-            constraint_matrix = np.zeros((1, 2 * N + 2))
-            constraint_matrix[0, N : 2 * N] = 1.0 / N
             bounds = Bounds(
                 np.concatenate(
                     [np.repeat(0.05, N), np.repeat(0.05, N), [0.5], [-0.25]]
@@ -314,38 +312,24 @@ def train_poisson_oof_predictions(
                 np.concatenate([np.repeat(15.0, N), np.repeat(15.0, N), [2.5], [0.25]]),
             )
             obj_func = _dixon_coles_neg_log_likelihood
-            args = (
-                home_indices,
-                away_indices,
-                home_scores,
-                away_scores,
-                weights,
-                neutral_flags,
-                N,
-                fold_neutral_avg,
-            )
         else:
             initial_guess = np.concatenate([np.ones(N), np.ones(N), [1.20]])
-            constraint_matrix = np.zeros((1, 2 * N + 1))
-            constraint_matrix[0, N : 2 * N] = 1.0 / N
             bounds = Bounds(
                 np.concatenate([np.repeat(0.05, N), np.repeat(0.05, N), [0.5]]),
                 np.concatenate([np.repeat(15.0, N), np.repeat(15.0, N), [2.5]]),
             )
             obj_func = _pure_poisson_neg_log_likelihood
-            args = (
-                home_indices,
-                away_indices,
-                home_scores,
-                away_scores,
-                weights,
-                neutral_flags,
-                N,
-                fold_neutral_avg,
-            )
 
-        linear_constraint = LinearConstraint(constraint_matrix, lb=[1.0], ub=[1.0])
-
+        args = (
+            home_indices,
+            away_indices,
+            home_scores,
+            away_scores,
+            weights,
+            neutral_flags,
+            N,
+            fold_neutral_avg,
+        )
         res = minimize(
             obj_func,
             initial_guess,
@@ -356,17 +340,18 @@ def train_poisson_oof_predictions(
             options={"maxiter": 1000, "ftol": 1e-5, "disp": False},
         )
 
-        fold_attacks = res.x[:N]
-        fold_defenses = res.x[N : 2 * N]
-        fold_gamma = res.x[2 * N]
+        fold_attacks, fold_defenses, fold_gamma = (
+            res.x[:N],
+            res.x[N : 2 * N],
+            res.x[2 * N],
+        )
 
         for idx, row in test_df.iterrows():
-            h_team = row["home_team"]
-            a_team = row["away_team"]
+            h_idx, a_idx = (
+                team_to_idx.get(row["home_team"], -1),
+                team_to_idx.get(row["away_team"], -1),
+            )
             is_neutral = row.get("is_neutral_venue", 0)
-
-            h_idx = team_to_idx.get(h_team, -1)
-            a_idx = team_to_idx.get(a_team, -1)
 
             atk_h = fold_attacks[h_idx] if h_idx != -1 else 1.0
             def_h = fold_defenses[h_idx] if h_idx != -1 else 1.0
@@ -374,7 +359,6 @@ def train_poisson_oof_predictions(
             def_a = fold_defenses[a_idx] if a_idx != -1 else 1.0
 
             home_premium = fold_gamma if is_neutral == 0 else 1.0
-
             oof_home_preds[idx] = atk_h * def_a * fold_neutral_avg * home_premium
             oof_away_preds[idx] = (
                 atk_a
@@ -383,7 +367,6 @@ def train_poisson_oof_predictions(
                 * (1.0 / home_premium if is_neutral == 0 else 1.0)
             )
 
-    # 4. Save Artifacts & OOF Arrays
     os.makedirs(ARTIFACTS_DIR, exist_ok=True)
     np.save(POISSON_OOF_H_PATH, oof_home_preds)
     np.save(POISSON_OOF_A_PATH, oof_away_preds)
@@ -394,7 +377,8 @@ def train_poisson_oof_predictions(
 def predict_poisson_match(
     home, away, venue_country, ratings, g_home, g_away, g_neutral
 ) -> tuple[float, float, float, float, float]:
-    """Generates continuous baseline match targets matching model api requirements."""
+    """Generates continuous baseline match targets aligning with model API constraints."""
+
     home_rating = ratings.get(home, {"attack": 1.0, "defense": 1.0})
     away_rating = ratings.get(away, {"attack": 1.0, "defense": 1.0})
 
@@ -411,14 +395,9 @@ def predict_poisson_match(
         lambda_away = away_rating["attack"] * home_rating["defense"] * g_neutral
         is_neutral = 1
 
-    # Estimate Basic Proxy Metrics
-    # 📐 Corners: Driven by attack towards 9 corners / 90 min
+    # Estimate Disciplinary Proxy Metrics mapping to attack intensities
     raw_corners = 5.0 + 0.35 * (home_rating["attack"] + away_rating["attack"])
-
-    # 🟨 Yellows: Driven by attack towards 3.4 yellows / 90 min
     raw_yellows = 0.8 + 0.22 * (home_rating["attack"] + away_rating["attack"])
-
-    # 🟥 Reds: Low probability event
     raw_reds = 0.12 if is_neutral == 0 else 0.10
 
     return lambda_home, lambda_away, raw_corners, raw_yellows, raw_reds

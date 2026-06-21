@@ -1,4 +1,11 @@
-"""Model Consensus Blending and Meta-Ensemble Optimization Layer."""
+"""
+Model Consensus Blending and Meta-Ensemble Optimization Layer.
+
+This module resolves the optimal weights required to blend individual base learners
+into a single continuous expected goals (xG) vector.
+It supports both L2-regularized Ridge regression (Stacking) and SciPy constrained
+optimization (Bounded SLSQP) to ensure physical logic is preserved.
+"""
 
 import logging
 
@@ -19,12 +26,28 @@ def find_optimal_blend_weights(
     oof_poisson_away: np.ndarray,
     method: str = "ridge",
 ) -> dict[str, float]:
-    """Calibrates leak-proof optimal consensus blend weights across all modeling layers."""
+    """
+    Calibrates leak-proof optimal consensus blend weights across all modeling layers.
+
+    Args:
+        feature_matrix (pd.DataFrame): Master matrix containing actual historical targets.
+        g_home (float): Global average home goals.
+        g_away (float): Global average away goals.
+        oof_home_preds (np.ndarray): Out-of-fold XGBoost home predictions.
+        oof_away_preds (np.ndarray): Out-of-fold XGBoost away predictions.
+        oof_poisson_home (np.ndarray): Out-of-fold Poisson home predictions.
+        oof_poisson_away (np.ndarray): Out-of-fold Poisson away predictions.
+        method (str): Solver method - "ridge" (Stacking) or "scipy" (SLSQP).
+
+    Returns:
+        dict[str, float]: Normalized weight distribution summing to 1.0.
+    """
 
     actual_home_goals = feature_matrix["home_score"].to_numpy()
     actual_away_goals = feature_matrix["away_score"].to_numpy()
 
     # 1. Materialize Point-in-Time Historical Elo Baselines (Vectorized)
+    # We use a simplified Elo-to-Goals projection solely for the meta-learner feature space.
     global_neutral_avg = (g_home + g_away) / 2.0
 
     home_elo = feature_matrix["home_elo_rating"].to_numpy()
@@ -35,6 +58,7 @@ def find_optimal_blend_weights(
     elo_away = np.maximum(0.0, global_neutral_avg - rating_diff)
 
     # 2. Establish Validation Horizon Mask
+    # Filters out rows where out-of-fold predictions couldn't be generated (early history)
     validation_horizon = oof_home_preds > 0
 
     y_home_active = actual_home_goals[validation_horizon]
@@ -55,13 +79,15 @@ def find_optimal_blend_weights(
             "🧠 Resolving weights via L2-Regularized Ridge Stacking Regressor..."
         )
 
-        # Stack features vertically to enforce symmetry (No home/away bias in meta-learner)
+        # Stack features vertically to enforce symmetry.
+        # Prevents the meta-learner from developing a home/away specific bias.
         y_stacked = np.concatenate([y_home_active, y_away_active])
         X_home = np.column_stack([p_home_active, e_home_active, x_home_active])
         X_away = np.column_stack([p_away_active, e_away_active, x_away_active])
         X_stacked = np.vstack([X_home, X_away])
 
-        # fit_intercept=False ensures 0 xG input = 0 xG output. positive=True preserves physical logic.
+        # fit_intercept=False ensures 0 xG inputs strictly yield 0 xG output.
+        # positive=True prevents the model from taking "short" positions on base learners.
         meta_learner = Ridge(alpha=10.0, fit_intercept=False, positive=True)
 
         try:
@@ -71,7 +97,7 @@ def find_optimal_blend_weights(
             if np.sum(raw_weights) <= 0:
                 raise ValueError("Ridge regression collapsed to zero weights.")
 
-            # Normalize weights to sum to 1.0 (Preserves UI symmetry and relative scale)
+            # Normalize coefficients into fractional percentages summing to 1.0
             normalized_weights = raw_weights / np.sum(raw_weights)
 
             optimized_weights = {
@@ -91,7 +117,8 @@ def find_optimal_blend_weights(
         logging.info("🧩 Resolving weights via SciPy Bounded SLSQP solver...")
 
         def loss_function(weights):
-            """Loss Function"""
+            """Computes symmetric Mean Squared Error across both scoring perspectives."""
+
             w_poisson, w_elo, w_xgb = weights
 
             pred_home = (
@@ -110,6 +137,7 @@ def find_optimal_blend_weights(
                 + mean_squared_error(y_away_active, pred_away)
             ) / 2.0
 
+        # Constraints: 0.0 <= weight <= 1.0, Sum of weights == 1.0
         bounds = Bounds([0.0, 0.0, 0.0], [1.0, 1.0, 1.0])
         constraints = LinearConstraint([[1.0, 1.0, 1.0]], lb=[1.0], ub=[1.0])
         initial_guess = [0.3333, 0.3333, 0.3333]
@@ -134,7 +162,6 @@ def find_optimal_blend_weights(
             "xgb": float(res.x[2]),
         }
     else:
-        # --- PATHWAY C: Invalid Configuration Guard ---
         logging.error(
             f"❌ Configuration Error: Invalid blend method '{method}' requested. Expected 'stacking' or 'scipy'."
         )

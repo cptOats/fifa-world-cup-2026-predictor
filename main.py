@@ -1,4 +1,10 @@
-"""World Cup Prediction Pipeline Orchestration Script."""
+"""
+FIFA World Cup 2026 Predictor: Pipeline Orchestrator.
+
+This Directed Acyclic Graph executes the entire end-to-end predictive architecture.
+It uses an Extract, Transform, Load framework: spins up machine learning models, blends
+an ensemble, runs monte-carlo stochastic simulations, and caches artifacts and run data.
+"""
 
 import datetime
 import json
@@ -54,13 +60,15 @@ class MatchRulesConfig(TypedDict):
 
 
 # =====================================================================
+# MLOPS FLIGHT CONTROLS
+# =====================================================================
 
 # --- MODEL CONFIGURATION ---
 MODEL_TYPE: str = "blend"  # "blend", "poisson", "elo", "xgb"
-BLEND_METHOD: str = "scipy"  # "ridge", "scipy"
-RUN_MONTE_CARLO: bool = False  # Enable for full predictive power
+BLEND_METHOD: str = "ridge"  # "ridge", "scipy"
+RUN_MONTE_CARLO: bool = True  # Enable for full predictive power
 MONTE_CARLO_RUNS: int = 10000  # Recommend 10K+
-FORCE_RETRAIN: bool = True  # Deletes model artifacts and OOF arrays
+FORCE_RETRAIN: bool = False  # Deletes model artifacts and OOF arrays
 
 # --- TRAINING VARIABLES ---
 TRAINING_VARIABLES: TrainingConfig = {
@@ -68,7 +76,7 @@ TRAINING_VARIABLES: TrainingConfig = {
     "time_slice_start": "1998-01-01",
     "start_of_tournament": "2026-06-11",
     "decay_alpha": 0.00047,
-    "cv_folds": 3,
+    "cv_folds": 2,
 }
 
 # --- TOURNAMENT RULES ---
@@ -81,13 +89,12 @@ MATCH_RULES: MatchRulesConfig = {
 
 # =====================================================================
 
-# --- PIPELINE INITIALIZATION & LOGGING ---
 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M")
 run_name = f"run_{MODEL_TYPE}_{timestamp}"
 run_dir = os.path.join("data", "runs", run_name)
 os.makedirs(run_dir, exist_ok=True)
 
-# Set up silent terminal logging but verbose file logging
+# Centralize execution logging natively separating file and terminal streams
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
@@ -101,13 +108,12 @@ logging.basicConfig(
 def main():
     """Executes the end-to-end World Cup prediction pipeline."""
 
-    # --- Pre-flight Checks: asserts strict PiT architecture ---
     logging.info("✈️  Running pre-flight checks...")
     test_point_in_time_leakage()
 
     ARTIFACTS_DIR = os.path.join("data", "artifacts")
 
-    # --- CACHE MANAGEMENT LAYER ---
+    # Cache Management Guard
     if FORCE_RETRAIN:
         logging.info(
             "🧹 FORCE_RETRAIN active. Evicting stale model caches and processed artifacts..."
@@ -117,12 +123,10 @@ def main():
         if os.path.exists(os.path.join("data", "processed")):
             shutil.rmtree(os.path.join("data", "processed"))
 
-    # --- INFRASTRUCTURE GATES ---
     verify_data_layer()
     logging.info("⚙️  Running entity validation and preparing historical features...")
     saved_path = prepare_historical_features(DATACAMP_TO_KAGGLE, TRAINING_VARIABLES)
 
-    # --- EXPLICIT DATA INGESTION ---
     modern_df = pd.read_parquet(saved_path)
     group_fixtures = pd.read_csv(os.path.join("data", "raw", "group_fixtures.csv"))
 
@@ -133,26 +137,23 @@ def main():
         DATACAMP_TO_KAGGLE
     )
 
-    # Pre-compute venue countries
     group_fixtures["venue_country"] = group_fixtures["venue"].apply(get_venue_country)
 
-    # --- Launch Prediction Pipeline ---
     logging.info(f"🚀 Launching World Cup Prediction Pipeline [Engine: {MODEL_TYPE}]")
 
-    # --- Elo Rating ---
+    # --- MODEL: Continuous Dynamic Elo ---
     logging.info(
         "📈 Synchronizing continuous World Football Elo ratings through time..."
     )
     elo_engine = EloEngine(k_factor=40)
     elo_engine.fit(modern_df)
 
-    # --- Feature Engineering ---
     feature_matrix, feature_columns = compile_master_feature_matrix(
         os.path.join("data", "processed", "clean_historical_matches.parquet"),
         elo_engine,
     )
 
-    # --- Poisson ---
+    # --- MODEL: Poisson Joint MLE (Pure & Dixon-Coles) ---
     logging.info(
         f"🧮 Resolving {'dixon_coles' if (MODEL_TYPE == 'poisson') else 'pure'}-Poisson Joint Maximum Likelihood Estimations..."
     )
@@ -167,7 +168,7 @@ def main():
         cv_folds=TRAINING_VARIABLES["cv_folds"],
     )
 
-    # --- XGBoost ---
+    # --- MODEL: XGBoost Iterative Trees ---
     logging.info("🌲 Training dynamic XGBoost count model...")
     xgb_home, xgb_away, oof_home_preds, oof_away_preds, cv_metrics = (
         train_production_xgboost_models(
@@ -178,7 +179,7 @@ def main():
         )
     )
 
-    # CALIBRATE OPTIMAL CONSENSUS WEIGHTS
+    # --- META-ENSEMBLE OPTIMIZATION ---
     if MODEL_TYPE == "blend":
         blend_weights = find_optimal_blend_weights(
             feature_matrix=feature_matrix,
@@ -205,7 +206,6 @@ def main():
         f"⚖️  Active Execution Weights: Poisson {blend_weights['poisson']:.3f} | Elo {blend_weights['elo']:.3f} | XGBoost {blend_weights['xgb']:.3f}"
     )
 
-    # State tracking setup
     logging.info("📊 Extracting final pre-tournament team form states...")
     raw_teams = set(group_fixtures["home_team"].unique()) | set(
         group_fixtures["away_team"].unique()
@@ -213,7 +213,7 @@ def main():
     participating_teams: list[str] = [str(team) for team in raw_teams]
     latest_team_form = extract_latest_team_form(feature_matrix, participating_teams)
 
-    # --- GROUP STAGE SIMULATION ---
+    # --- GROUP STAGE ROUTING ---
     predicted_fixtures, group_tables, third_place_assignments = (
         simulate_deterministic_group_stage(
             group_fixtures=group_fixtures,
@@ -231,7 +231,7 @@ def main():
         )
     )
 
-    # --- KNOCKOUT WATERFALL SIMULATION ---
+    # --- KNOCKOUT WATERFALL ROUTING ---
     logging.info(
         "🌿 Advancing teams and resolving dynamic knockout bracket tree mappings..."
     )
@@ -251,12 +251,7 @@ def main():
         latest_team_form=latest_team_form,
     )
 
-    # Concatenate Deterministic Run Data
-    master_tournament = pd.concat(
-        [predicted_fixtures, knockout_matrix],
-        ignore_index=True,
-    )
-
+    # Filter and export execution matrices to disk
     master_cols = [
         "match_id",
         "round",
@@ -273,9 +268,10 @@ def main():
         "penalties",
         "winner_name_meta",
     ]
-    master_tournament = master_tournament[master_cols]  # Filter columns
+    master_tournament = pd.concat(
+        [predicted_fixtures, knockout_matrix], ignore_index=True
+    )[master_cols]
 
-    # Save Deterministic Run Data
     master_tournament.to_csv(
         os.path.join(run_dir, "deterministic_tournament.csv"), index=False
     )
@@ -290,13 +286,11 @@ def main():
         os.path.join(run_dir, "deterministic_third_places.csv"), index=False
     )
 
-    # Compile and Save the Master Team Capabilities Lookup Matrix
+    # UI Master Lookup Table compilation
     capability_records = []
     for team in participating_teams:
         p_rat = ratings.get(team, {"attack": 1.0, "defense": 1.0})
         form = latest_team_form.get(team, {})
-
-        # 1. Extract Baseline Metrics
         elo = elo_engine.get_rating(team)
         short_atk = form.get("ewm_adj_gf_5", 1.2)
         short_def = form.get("ewm_adj_ga_5", 1.2)
@@ -306,7 +300,6 @@ def main():
         short_vol_def = form.get("cv_adj_ga_5", 0.0)
         long_vol_atk = form.get("cv_adj_gf_15", 0.0)
         long_vol_def = form.get("cv_adj_ga_15", 0.0)
-
         record = {
             "Country": team,
             "Elo_Rating": elo,
@@ -355,7 +348,7 @@ def main():
         f"🏆 Deterministic path champion detected: {final_match['winner_name_meta'].upper()}"
     )
 
-    # --- PROBABILISTIC SIMULATION LAYER ---
+    # --- MONTE CARLO STOCHASTIC BLOCK ---
     if RUN_MONTE_CARLO:
         logging.info(
             f"🎲 Spawning {MONTE_CARLO_RUNS:,} Monte Carlo parallel universes..."
@@ -363,13 +356,10 @@ def main():
         raw_knockout_template = pd.read_csv(
             os.path.join("data", "raw", "knockout_slots.csv")
         )
-
-        # Pre-compute knockout venue countries before entering the parallel engine
         raw_knockout_template["venue_country"] = raw_knockout_template["venue"].apply(
             get_venue_country
         )
 
-        # 1. Compute Stochastic Simulations
         prob_dashboard, df_xtables = run_monte_carlo_master(
             group_fixtures=group_fixtures,
             raw_knockout_template=raw_knockout_template,
@@ -387,19 +377,13 @@ def main():
             n_simulations=MONTE_CARLO_RUNS,
         )
 
-        # Announce Stochastic Champion
         stochastic_champion_row = prob_dashboard.loc[
             prob_dashboard["Champion %"].idxmax()
         ]
-        stochastic_champion = stochastic_champion_row["Country"].upper()
-        stochastic_prob = stochastic_champion_row["Champion %"]
         logging.info(
-            (
-                f"🔮 Stochastic path champion detected: {stochastic_champion} {stochastic_prob:.1f}%"
-            )
+            f"🔮 Stochastic path champion detected: {stochastic_champion_row['Country'].upper()} {stochastic_champion_row['Champion %']:.1f}%"
         )
 
-        # Save Stochastic Forecast, Group Tables, Tournament
         prob_dashboard.to_csv(
             os.path.join(run_dir, "stochastic_forecast.csv"), index=False
         )

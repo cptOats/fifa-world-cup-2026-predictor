@@ -1,4 +1,9 @@
-"""Match Evaluation Engine."""
+"""
+Match Evaluation Engine.
+
+Provides the core mathematical resolvers for simulating
+deterministic and vectorized stochastic matches.
+"""
 
 import numpy as np
 import pandas as pd
@@ -18,29 +23,32 @@ def simulate_stochastic_match(
 ) -> tuple[np.ndarray, np.ndarray, dict[str, np.ndarray]]:
     """
     Universal vectorized match simulator for Monte Carlo distributions.
-    Features Bivariate Copula Draw Inflation and Phase-of-Victory Masking.
+
+    Implements a Bivariate Copula to slightly inflate the probability of draws,
+    matching realistic low-scoring football dynamics.
     """
+
     et_multiplier = match_rules["et_multiplier"]
     fatigue_factor = match_rules["fatigue_factor"]
 
     # --- THE COPULA: BIVARIATE DRAW INFLATION ---
     if copula_rho > 0.0:
-        # 1. Generate correlated standard normals
+        # 1. Generate correlated standard normal variables
         cov_matrix = [[1.0, copula_rho], [copula_rho, 1.0]]
         z = rng.multivariate_normal([0.0, 0.0], cov_matrix, size=n_runs)
 
         # 2. Convert standard normals to uniform probabilities
         u = norm.cdf(z)
 
-        # 3. Map uniforms to Poisson marginals via Point Percentile Function (Inverse CDF)
+        # 3. Map uniforms to discrete Poisson marginals via Point Percentile Function
         sims_h = poisson.ppf(u[:, 0], lambda_h).astype(int)
         sims_a = poisson.ppf(u[:, 1], lambda_a).astype(int)
     else:
-        # Fallback to independent framework
+        # Fallback to independent Poisson draws
         sims_h = rng.poisson(lambda_h, n_runs)
         sims_a = rng.poisson(lambda_a, n_runs)
 
-    # Initialize empty tracking vectors for all possible outcomes
+    # Initialize tracking vectors for timeline phase analytics
     phase_meta = {
         "win_90_h": np.zeros(n_runs, dtype=bool),
         "win_90_a": np.zeros(n_runs, dtype=bool),
@@ -64,14 +72,14 @@ def simulate_stochastic_match(
     n_shootouts = 0
 
     if n_draws > 0:
-        # 1. Add Extra Time goals with compound fatigue scaling
+        # --- PHASE B: EXTRA TIME (120 MINUTES) ---
+        # Add Extra Time goals applying compound fatigue scaling
         et_h = rng.poisson(lambda_h * et_multiplier * fatigue_factor, n_draws)
         et_a = rng.poisson(lambda_a * et_multiplier * fatigue_factor, n_draws)
 
         sims_h[draw_mask] += et_h
         sims_a[draw_mask] += et_a
 
-        # --- PHASE B: EXTRA TIME (120 MINUTES) ---
         phase_meta["win_120_h"] = draw_mask & (sims_h > sims_a)
         phase_meta["win_120_a"] = draw_mask & (sims_a > sims_h)
 
@@ -79,6 +87,8 @@ def simulate_stochastic_match(
         n_shootouts = int(np.sum(shootout_mask))
 
     if n_shootouts > 0:
+        # --- PHASE C: PENALTY SHOOTOUT ---
+        # Penalty probabilities map directly to base team quality ratios
         prob_h_win = lambda_h / (lambda_h + lambda_a)
 
         pen_h_win = rng.random(n_shootouts) < prob_h_win
@@ -87,7 +97,6 @@ def simulate_stochastic_match(
         sims_h[shootout_mask] += np.where(pen_h_win, 1, 0)
         sims_a[shootout_mask] += np.where(pen_a_win, 1, 0)
 
-        # --- PHASE C: PENALTY SHOOTOUT ---
         phase_meta["win_pen_h"] = shootout_mask & (sims_h > sims_a)
         phase_meta["win_pen_a"] = shootout_mask & (sims_a > sims_h)
 
@@ -104,9 +113,10 @@ def simulate_deterministic_match(
     is_knockout: bool = False,
 ) -> tuple[int, int, str, int, int, int, bool, bool]:
     """
-    Resolves a deterministic match timeline (90m -> 120m -> Penalties).
-    Returns integer goals, discipline metrics, and progression flags.
+    Translates continuous intensities into a deterministic integer timeline.
+    Resolves ties via Extra Time and fractional decimal advantages during knockouts.
     """
+
     pred_home_90 = int(np.round(raw_home))
     pred_away_90 = int(np.round(raw_away))
 
@@ -150,6 +160,7 @@ def simulate_deterministic_match(
     final_home_goals = int(np.round(raw_home_120))
     final_away_goals = int(np.round(raw_away_120))
 
+    # Scale proxy metrics for the extended 120 minutes
     tot_corners = int(
         np.clip(
             np.round(tot_corners_90 * (1 + (et_multiplier * fatigue_factor))), 5, 18
@@ -169,13 +180,9 @@ def simulate_deterministic_match(
     elif final_away_goals > final_home_goals:
         winner_side = "away"
     else:
-        # --- PHASE C: PENALTIES ---
+        # --- PHASE C: PENALTIES (ULTIMATE TIE-BREAKER) ---
         is_penalty = True
-        # Utilize the comprehensive floating-point ensemble blend as the ultimate tie-breaker
-        if raw_home >= raw_away:
-            winner_side = "home"
-        else:
-            winner_side = "away"
+        winner_side = "home" if raw_home >= raw_away else "away"
 
     return (
         final_home_goals,
@@ -202,12 +209,11 @@ def _resolve_consensus_math(
     xgb_h_pred: float,
     xgb_w_pred: float,
 ) -> tuple[float, float, float, float, float]:
-    """Pure mathematical resolver for obtaining model outputs without DataFrame overhead."""
+    """Pure mathematical resolver combining individual model outputs into the final xG vector."""
 
-    # 1. Resolve Dynamic Venue Neutrality
     is_neutral = 0 if (home_team == venue_country or away_team == venue_country) else 1
 
-    # 2. Extract Poisson Intensity and Proxy Metrics
+    # Extract respective model outputs
     lambda_home_poisson, lambda_away_poisson, p_corners, p_yellows, p_reds = (
         predict_poisson_match(
             home_team,
@@ -219,11 +225,9 @@ def _resolve_consensus_math(
             g_neutral_avg,
         )
     )
-
-    # 3. Extract ELO Intensity
     elo_meta = elo_engine.predict_elo_match(home_team, away_team, is_neutral=is_neutral)
 
-    # 4. Compute Consensus Expectations Vector
+    # Compute final weighted Consensus Expectations Vector
     raw_home = (
         (blend_weights["poisson"] * lambda_home_poisson)
         + (blend_weights["elo"] * float(elo_meta["lambda_home"]))
@@ -253,11 +257,13 @@ def evaluate_match_consensus(
     feature_columns: list[str],
     latest_team_form: dict[str, dict[str, float]],
 ) -> tuple[float, float, float, float, float]:
-    """Computes goal intensities for a single match."""
+    """Single-match evaluation pipeline spanning the entire predictive ensemble."""
 
     is_neutral = 0 if (home_team == venue_country or away_team == venue_country) else 1
 
     def _get_xgb_vec(h_t, a_t):
+        """Constructs the exact PiT 22-column feature state required by XGBoost."""
+
         return {
             "home_elo_rating": elo_engine.get_rating(h_t),
             "away_elo_rating": elo_engine.get_rating(a_t),
@@ -291,6 +297,7 @@ def evaluate_match_consensus(
     h_swp = xgb_home.predict(df_swp)[0] if xgb_home else 0.0
     a_swp = xgb_away.predict(df_swp)[0] if xgb_away else 0.0
 
+    # Symmetry resolution for neutral turf matches
     if home_team == venue_country:
         xgb_h_pred, xgb_w_pred = h_fwd, a_fwd
     elif away_team == venue_country:
@@ -328,11 +335,13 @@ def batch_evaluate_consensus(
     feature_columns: list[str],
     latest_team_form: dict[str, dict[str, float]],
 ) -> dict[tuple[str, str, str], tuple[float, float, float, float]]:
-    """Vectorized batch inference for thousands of theoretical matchups."""
+    """Vectorized batch inference optimizing XGBoost matrix operations for millions of Monte Carlo permutations."""
 
     rows_fwd, rows_swp = [], []
 
     def _build_xgb_dict(h, a, is_neut):
+        """Build and return feature dictionary for batch XGBoost ingestion."""
+
         return {
             "home_elo_rating": elo_engine.get_rating(h),
             "away_elo_rating": elo_engine.get_rating(a),
@@ -366,7 +375,7 @@ def batch_evaluate_consensus(
     df_fwd = pd.DataFrame(rows_fwd)[feature_columns]
     df_swp = pd.DataFrame(rows_swp)[feature_columns]
 
-    # Batch execute both perspectives through XGBoost
+    # Batch execute through XGBoost to bypass iterative Pandas overhead
     xgb_h_fwd = xgb_home.predict(df_fwd)
     xgb_a_fwd = xgb_away.predict(df_fwd)
     xgb_h_swp = xgb_home.predict(df_swp)
@@ -374,7 +383,6 @@ def batch_evaluate_consensus(
 
     lambda_cache = {}
 
-    # Iterate through the pre-calculated XGBoost arrays to resolve the final math
     for idx, (h, a, v_country) in enumerate(matchup_keys):
         if h == v_country:
             xgb_h_val, xgb_a_val = xgb_h_fwd[idx], xgb_a_fwd[idx]
@@ -384,7 +392,6 @@ def batch_evaluate_consensus(
             xgb_h_val = (xgb_h_fwd[idx] + xgb_a_swp[idx]) / 2.0
             xgb_a_val = (xgb_a_fwd[idx] + xgb_h_swp[idx]) / 2.0
 
-        # Pass the extracted XGBoost values into the shared pure math resolver
         l_h, l_a, c_exp, y_exp, _ = _resolve_consensus_math(
             h,
             a,

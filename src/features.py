@@ -1,4 +1,11 @@
-"""Historical Feature Engineering and Time-Series Alignment Layer."""
+"""
+Historical Feature Engineering and Time-Series Alignment Layer.
+
+This module is responsible for computing opponent-adjusted performance metrics
+and rigorously managing temporal alignment. It enforces strict Point-in-Time (PiT)
+shifting architectures to guarantee zero data leakage between future target labels
+and historical feature states.
+"""
 
 import logging
 import os
@@ -9,9 +16,19 @@ import pandas as pd
 def build_leakproof_form_features(
     df: pd.DataFrame, alpha: float = 1.5, baseline_elo: float = 1500.0
 ) -> pd.DataFrame:
-    """Transforms match data into an interleaved timeline to compute context-aware vectors."""
+    """
+    Transforms chronologically ordered match data into context-aware performance vectors.
 
-    # 1. Isolate home and away perspectives to create a unified team timeline
+    Args:
+        df (pd.DataFrame): Base match ledger.
+        alpha (float): Exponential scaling factor for opponent difficulty adjustments.
+        baseline_elo (float): Normalization constant for Elo scaling.
+
+    Returns:
+        pd.DataFrame: Match ledger augmented with PiT rolling form features.
+    """
+
+    # 1. Isolate home and away perspectives to create a unified linear team timeline
     home_perspective = df[
         [
             "date",
@@ -52,29 +69,30 @@ def build_leakproof_form_features(
     )
     away_perspective["is_home"] = 0
 
-    # 2. Combine and sort chronologically per team
+    # 2. Combine and sort chronologically per team to ensure proper rolling operations
     timeline = (
         pd.concat([home_perspective, away_perspective])
         .sort_values(by=["team", "date"])
         .reset_index(drop=True)
     )
 
-    # 3. Apply Opponent-Adjusted Elo Scaling (The Core Upgrade)
-    # Offensive: Goals against elite defenses scale up exponentially.
+    # 3. Apply Opponent-Adjusted Elo Scaling
+    # Offensive: Rewards goals scored against elite defenses exponentially.
     timeline["adj_gf"] = timeline["goals_for"] * (
         (timeline["opp_elo"] / baseline_elo) ** alpha
     )
-    # Defensive: Goals conceded against weak attacks scale up (higher penalty).
+    # Defensive: Penalizes goals conceded against weak attacks exponentially.
     timeline["adj_ga"] = timeline["goals_against"] * (
         (baseline_elo / timeline["opp_elo"]) ** alpha
     )
 
-    # 4. Compute Dual-Horizon EWMs and Volatility - strict .shift(1) enforced
+    # 4. Compute Dual-Horizon EWMs and Volatility
     spans = [5, 15]
-    eps = 1e-5  # Epsilon to prevent zero-division in CV calculation
+    eps = 1e-5  # Epsilon prevents zero-division
 
     for s in spans:
-        # Expected Output (Means)
+        # CRITICAL LEAKAGE GUARD: .shift(1) ensures the model only sees the moving average
+        # calculated *prior* to the current match taking place.
         timeline[f"ewm_adj_gf_{s}"] = timeline.groupby("team")["adj_gf"].transform(
             lambda x: x.ewm(span=s, adjust=False, min_periods=1).mean().shift(1)
         )
@@ -82,7 +100,6 @@ def build_leakproof_form_features(
             lambda x: x.ewm(span=s, adjust=False, min_periods=1).mean().shift(1)
         )
 
-        # Output Variance
         var_gf = timeline.groupby("team")["adj_gf"].transform(
             lambda x: x.ewm(span=s, adjust=False, min_periods=2).var().shift(1)
         )
@@ -90,13 +107,12 @@ def build_leakproof_form_features(
             lambda x: x.ewm(span=s, adjust=False, min_periods=2).var().shift(1)
         )
 
-        # The Consistency Index: Coefficient of Variation (Volatility)
+        # Consistency Index: Coefficient of Variation (Volatility)
         timeline[f"cv_adj_gf_{s}"] = (var_gf**0.5) / (timeline[f"ewm_adj_gf_{s}"] + eps)
         timeline[f"cv_adj_ga_{s}"] = (var_ga**0.5) / (timeline[f"ewm_adj_ga_{s}"] + eps)
 
     # 5. Elo Momentum Delta
-    # team_elo is inherently pre-match in this dataframe.
-    # shift(5) strictly extracts the pre-match Elo from exactly 5 games ago.
+    # Extracts the pre-match Elo rating from exactly 5 matches ago.
     timeline["elo_momentum_5"] = timeline.groupby("team")["team_elo"].transform(
         lambda x: x - x.shift(5)
     )
@@ -143,7 +159,7 @@ def build_leakproof_form_features(
         }
     )
 
-    # 8. Merge back onto primary match matrix
+    # 8. Merge isolated perspectives back onto the primary match matrix
     processed_df = df.merge(
         home_features,
         left_on=["date", "home_team"],
@@ -164,17 +180,21 @@ def build_leakproof_form_features(
 def compile_master_feature_matrix(
     matches_parquet_path: str, elo_engine
 ) -> tuple[pd.DataFrame, list[str]]:
-    """Compiles clean matches, opponent-adjusted EWMs, and PiT Elo snapshots into a master matrix."""
+    """
+    Compiles clean match logs, PiT Elo snapshots, and rolling form into a final XGBoost input matrix.
+
+    Returns:
+        tuple[pd.DataFrame, list[str]]: The final matrix and the exact column list used for modeling.
+    """
 
     if not os.path.exists(matches_parquet_path):
         raise FileNotFoundError(f"Missing base match file: {matches_parquet_path}")
 
-    # Read clean base features
     df = pd.read_parquet(matches_parquet_path)
     df["date"] = pd.to_datetime(df["date"])
     df = df.sort_values(by="date").reset_index(drop=True)
 
-    # 1. Rebuild Point-in-Time Elo History Internally (Fixes Global Leakage)
+    # 1. Rebuild Point-in-Time Elo History Internally
     home_elos = []
     away_elos = []
     current_elos = {}
@@ -187,13 +207,13 @@ def compile_master_feature_matrix(
         is_neutral = int(row.get("neutral", 0))
         match_weight = float(row.get("match_weight", 1.0))
 
-        # Capture strictly Pre-Match Elos
+        # Capture strictly Pre-Match Elos for feature generation
         r_home = current_elos.get(h_team, elo_engine.default_elo)
         r_away = current_elos.get(a_team, elo_engine.default_elo)
         home_elos.append(r_home)
         away_elos.append(r_away)
 
-        # Process outcome inline to update dictionary (incorporates friendly weights natively)
+        # Process outcome inline to step the dictionary forward for the next iteration
         w_home, w_away = elo_engine._calculate_expected_score(
             r_home, r_away, is_neutral=is_neutral
         )
@@ -218,10 +238,10 @@ def compile_master_feature_matrix(
     # 2. Append Leak-Proof Moving Form Columns
     df = build_leakproof_form_features(df)
 
-    # 3. Categorical Encoding for Context Controls
+    # 3. Categorical Encoding
     df["is_neutral_venue"] = df["neutral"].astype(int)
 
-    # 4. Filter down to clean ML input features and targets
+    # 4. Final Feature Selection
     feature_columns = [
         "home_elo_rating",
         "away_elo_rating",
@@ -249,7 +269,6 @@ def compile_master_feature_matrix(
 
     targets = ["home_score", "away_score"]
 
-    # 5. Extract matrix and rename 'date' to 'match_date' for direct XGBoost synergy
     final_matrix = (
         df[
             ["date", "home_team", "away_team", "match_weight"]
@@ -265,7 +284,7 @@ def compile_master_feature_matrix(
 
 
 def extract_latest_team_form(feature_matrix, participating_teams):
-    """Extracts the final pre-tournament EWM form states to feed the ML models."""
+    """Extracts the final pre-tournament EWM form states to feed the ML models during forecasting."""
 
     latest_team_form = {}
 
@@ -290,7 +309,7 @@ def extract_latest_team_form(feature_matrix, participating_teams):
                 "cv_adj_ga_15": latest_row[f"{prefix}cv_adj_ga_15"],
             }
         else:
-            # Absolute baseline fallbacks for teams with zero historical data
+            # Fallback for entities with zero historical footprint
             latest_team_form[team] = {
                 "elo_momentum_5": 0.0,
                 "ewm_adj_gf_5": 1.2,
@@ -307,7 +326,7 @@ def extract_latest_team_form(feature_matrix, participating_teams):
 
 
 def test_point_in_time_leakage():
-    """Asserts strict PiT architecture by verifying mathematical shifting."""
+    """Unit test asserting strict PiT architecture by verifying mathematical shifting."""
 
     test_df = pd.DataFrame(
         {
@@ -326,7 +345,8 @@ def test_point_in_time_leakage():
         (processed_df["home_team"] == "A") | (processed_df["away_team"] == "A")
     ]
 
-    # The first match for A shouldn't have EWM > 1.2 (baseline fallback)
+    # The first match for A shouldn't have EWM > 1.2 (baseline fallback).
+    # If it does, future data has leaked backwards into the feature state.
     first_match = team_a_rows.iloc[0]
     assert first_match["home_ewm_adj_gf_5"] == 1.2, (
         "Leakage Alert: Future data influenced the first match vector."
