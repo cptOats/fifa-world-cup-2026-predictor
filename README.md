@@ -1,11 +1,13 @@
 <div align="center">
 
-# ⚽ FIFA World Cup 2026 Prediction Engine 🏆
-
 [![Python](https://img.shields.io/badge/python-3.14%2B-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Framework: Marimo](https://img.shields.io/badge/UI-Marimo-lightgrey.svg)](https://marimo.io/)
+[![Framework: Marimo](https://img.shields.io/badge/UI-Marimo-green.svg)](https://marimo.io/)
 [![Deployment: WASM](https://img.shields.io/badge/WebAssembly-Supported-orange.svg)](https://webassembly.org/)
+
+# ⚽ FIFA World Cup 2026 Prediction Engine 🏆
+
+**End-to-end MLOps pipeline and reactive simulation dashboard designed to forecast the 2026 FIFA World Cup.**
 
 <!-- Hero Image -->
 <img width="98.5%" alt="tournament-progression-5x4" src="https://github.com/user-attachments/assets/a8c1bb1f-8bb6-4263-b929-5d8f00ae036b" />
@@ -17,13 +19,11 @@
   <img width="49%" alt="sandbox-1x1" src="https://github.com/user-attachments/assets/5823e653-bc26-4784-a67d-2348f5052776" />
 </p>
 
-**End-to-end MLOps pipeline and reactive simulation dashboard designed to forecast the 2026 FIFA World Cup.**
-
 </div>
 
 ---
 
-## ℹ️ Overview
+### ℹ️ Overview
 
 This project is a complete predictive architecture built to model, simulate, and visualize the 2026 FIFA World Cup. 
 
