@@ -25,7 +25,7 @@
 
 ## ℹ️ Overview
 
-Welcome! This project is a complete predictive architecture built to model, simulate, and visualize the 2026 FIFA World Cup. 
+This project is a complete predictive architecture built to model, simulate, and visualize the 2026 FIFA World Cup. 
 
 The predictor features a **Meta-Learner** that blends multiple machine learning models into a cohesive expected goals (xG) framework. Trained on decades of historical international match data with rigorous safeguards against target leakage, this engine predicts individual match outcomes to project teams through the Group & Knockout stages via both deterministic and stochastic pathways. The simulation results are displayed on an interactive front-end dashboard built with Marimo.
 
