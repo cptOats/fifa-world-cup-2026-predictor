@@ -1,3 +1,12 @@
+# /// script
+# requires-python = ">=3.12"
+# dependencies = [
+#     "marimo",
+#     "pandas",
+#     "plotly",
+# ]
+# ///
+
 # pyright: reportUnusedExpression=false
 # ruff: noqa: B018
 
