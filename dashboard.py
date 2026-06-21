@@ -273,6 +273,9 @@ def _(glob, mo, os):
 
 @app.cell
 def _(PUBLIC_DIR, json, os, pd, run_dropdown):
+    import io
+    import urllib.request
+
     run_id = run_dropdown.value
 
     # Check local drive boundaries (Evaluates to False in browser sandbox)
@@ -292,8 +295,10 @@ def _(PUBLIC_DIR, json, os, pd, run_dropdown):
         if is_local:
             return pd.read_csv(path)
         else:
-            # 👈 Passing explicit None disables auto-sniffing and double-decompression completely
-            return pd.read_csv(path, compression=None)
+            # Web Mode: Fetch raw string over HTTP to isolate Pandas from CDN headers
+            with urllib.request.urlopen(path) as response:
+                raw_data = response.read().decode("utf-8")
+            return pd.read_csv(io.StringIO(raw_data))
 
     # 1. CORE DETERMINISTIC INGESTION
     try:
@@ -352,10 +357,10 @@ def _(PUBLIC_DIR, json, os, pd, run_dropdown):
             metadata = {}
     else:
         try:
-            # Force compression rules on JSON loader as well
-            metadata = pd.read_json(
-                metadata_path, typ="series", compression=None
-            ).to_dict()
+            # Isolate the JSON stream analyzer from transport headers as well
+            with urllib.request.urlopen(metadata_path) as response:
+                raw_json = response.read().decode("utf-8")
+            metadata = json.loads(raw_json)
         except Exception:
             metadata = {}
 
