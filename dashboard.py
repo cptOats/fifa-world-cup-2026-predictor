@@ -283,7 +283,6 @@ def _(PUBLIC_DIR, json, os, pd, run_dropdown):
         if is_local:
             return os.path.join(local_run_dir, filename)
         else:
-            # Coerce to string to guarantee f-string concatenation works flawlessly
             base_url = str(PUBLIC_DIR).rstrip("/")
             return f"{base_url}/{run_id}/{filename}"
 
@@ -293,8 +292,8 @@ def _(PUBLIC_DIR, json, os, pd, run_dropdown):
         if is_local:
             return pd.read_csv(path)
         else:
-            # Forcing "identity" prevents Pandas from double-unzipping raw browser streams
-            return pd.read_csv(path, compression="identity")
+            # 👈 Passing explicit None disables auto-sniffing and double-decompression completely
+            return pd.read_csv(path, compression=None)
 
     # 1. CORE DETERMINISTIC INGESTION
     try:
@@ -355,7 +354,7 @@ def _(PUBLIC_DIR, json, os, pd, run_dropdown):
         try:
             # Force compression rules on JSON loader as well
             metadata = pd.read_json(
-                metadata_path, typ="series", compression="identity"
+                metadata_path, typ="series", compression=None
             ).to_dict()
         except Exception:
             metadata = {}
