@@ -1,0 +1,105 @@
+match_id,round,venue,venue_country,home_team,away_team,predicted_home_goals,predicted_away_goals,corners,yellow_cards,red_cards,extra_time,penalties,winner_name_meta
+1,Group A,"Estadio Azteca, Mexico City",Mexico,Mexico,South Africa,2,1,8,3,0,False,False,Mexico
+2,Group A,"Estadio Akron, Guadalajara",Mexico,South Korea,Czech Republic,1,1,9,3,0,False,False,Draw
+3,Group B,"BMO Field, Toronto",Canada,Canada,Bosnia and Herzegovina,2,1,8,3,0,False,False,Canada
+4,Group D,"SoFi Stadium, Los Angeles",United States,United States,Paraguay,1,1,9,3,0,False,False,Draw
+5,Group D,"BC Place, Vancouver",Canada,Australia,Turkey,1,1,9,3,0,False,False,Draw
+6,Group B,"Levi's Stadium, Santa Clara",United States,Qatar,Switzerland,1,2,9,3,0,False,False,Switzerland
+7,Group C,"MetLife Stadium, East Rutherford",United States,Brazil,Morocco,1,1,10,4,0,False,False,Draw
+8,Group C,"Gillette Stadium, Boston",United States,Haiti,Scotland,1,2,8,3,0,False,False,Scotland
+9,Group E,"NRG Stadium, Houston",United States,Germany,Curaçao,3,1,9,4,0,False,False,Germany
+10,Group F,"AT&T Stadium, Dallas",United States,Netherlands,Japan,1,1,10,4,0,False,False,Draw
+11,Group E,"Lincoln Financial Field, Philadelphia",United States,Ivory Coast,Ecuador,1,1,9,3,0,False,False,Draw
+12,Group F,"Estadio BBVA, Monterrey",Mexico,Sweden,Tunisia,1,1,9,3,0,False,False,Draw
+13,Group H,"Mercedes-Benz Stadium, Atlanta",United States,Spain,Cape Verde,3,1,10,4,0,False,False,Spain
+14,Group G,"Lumen Field, Seattle",United States,Belgium,Egypt,2,1,10,4,0,False,False,Belgium
+15,Group H,"Hard Rock Stadium, Miami",United States,Saudi Arabia,Uruguay,1,2,9,3,0,False,False,Uruguay
+16,Group G,"SoFi Stadium, Los Angeles",United States,Iran,New Zealand,2,1,8,3,0,False,False,Iran
+17,Group J,"Levi's Stadium, Santa Clara",United States,Austria,Jordan,2,1,9,3,0,False,False,Austria
+18,Group I,"MetLife Stadium, East Rutherford",United States,France,Senegal,2,1,10,4,0,False,False,France
+19,Group I,"Gillette Stadium, Boston",United States,Iraq,Norway,1,2,9,3,0,False,False,Norway
+20,Group J,"GEHA Field at Arrowhead Stadium, Kansas City",United States,Argentina,Algeria,2,1,10,4,0,False,False,Argentina
+21,Group K,"NRG Stadium, Houston",United States,Portugal,DR Congo,2,1,10,4,0,False,False,Portugal
+22,Group L,"AT&T Stadium, Dallas",United States,England,Croatia,1,1,10,4,0,False,False,Draw
+23,Group L,"BMO Field, Toronto",Canada,Ghana,Panama,1,1,8,3,0,False,False,Draw
+24,Group K,"Estadio Azteca, Mexico City",Mexico,Uzbekistan,Colombia,1,2,9,3,0,False,False,Colombia
+25,Group A,"Mercedes-Benz Stadium, Atlanta",United States,Czech Republic,South Africa,1,1,8,3,0,False,False,Draw
+26,Group B,"SoFi Stadium, Los Angeles",United States,Switzerland,Bosnia and Herzegovina,2,1,9,3,0,False,False,Switzerland
+27,Group B,"BC Place, Vancouver",Canada,Canada,Qatar,2,1,8,3,0,False,False,Canada
+28,Group A,"Estadio Akron, Guadalajara",Mexico,Mexico,South Korea,2,1,9,3,0,False,False,Mexico
+29,Group D,"Levi's Stadium, Santa Clara",United States,Turkey,Paraguay,1,1,9,3,0,False,False,Draw
+30,Group D,"Lumen Field, Seattle",United States,United States,Australia,1,1,9,3,0,False,False,Draw
+31,Group C,"Gillette Stadium, Boston",United States,Scotland,Morocco,1,2,9,3,0,False,False,Morocco
+32,Group C,"Lincoln Financial Field, Philadelphia",United States,Brazil,Haiti,3,1,10,4,0,False,False,Brazil
+33,Group F,"Estadio BBVA, Monterrey",Mexico,Tunisia,Japan,1,1,9,3,0,False,False,Draw
+34,Group F,"NRG Stadium, Houston",United States,Netherlands,Sweden,2,1,10,4,0,False,False,Netherlands
+35,Group E,"BMO Field, Toronto",Canada,Germany,Ivory Coast,2,1,10,4,0,False,False,Germany
+36,Group E,"GEHA Field at Arrowhead Stadium, Kansas City",United States,Ecuador,Curaçao,2,1,8,3,0,False,False,Ecuador
+37,Group H,"Mercedes-Benz Stadium, Atlanta",United States,Spain,Saudi Arabia,2,1,10,4,0,False,False,Spain
+38,Group G,"SoFi Stadium, Los Angeles",United States,Belgium,Iran,1,1,10,4,0,False,False,Draw
+39,Group H,"Hard Rock Stadium, Miami",United States,Uruguay,Cape Verde,2,1,8,3,0,False,False,Uruguay
+40,Group G,"BC Place, Vancouver",Canada,New Zealand,Egypt,1,1,8,2,0,False,False,Draw
+41,Group J,"AT&T Stadium, Dallas",United States,Argentina,Austria,2,1,10,4,0,False,False,Argentina
+42,Group I,"Lincoln Financial Field, Philadelphia",United States,France,Iraq,2,1,9,3,0,False,False,France
+43,Group I,"MetLife Stadium, East Rutherford",United States,Norway,Senegal,1,1,9,4,0,False,False,Draw
+44,Group J,"Levi's Stadium, Santa Clara",United States,Jordan,Algeria,1,2,9,3,0,False,False,Algeria
+45,Group K,"NRG Stadium, Houston",United States,Portugal,Uzbekistan,2,1,10,4,0,False,False,Portugal
+46,Group L,"Gillette Stadium, Boston",United States,England,Ghana,2,1,9,4,0,False,False,England
+47,Group L,"BMO Field, Toronto",Canada,Panama,Croatia,1,2,9,3,0,False,False,Croatia
+48,Group K,"Estadio Akron, Guadalajara",Mexico,Colombia,DR Congo,2,1,9,3,0,False,False,Colombia
+49,Group B,"BC Place, Vancouver",Canada,Switzerland,Canada,1,1,9,3,0,False,False,Draw
+50,Group B,"Lumen Field, Seattle",United States,Bosnia and Herzegovina,Qatar,2,1,8,3,0,False,False,Bosnia and Herzegovina
+51,Group C,"Hard Rock Stadium, Miami",United States,Scotland,Brazil,1,2,10,4,0,False,False,Brazil
+52,Group C,"Mercedes-Benz Stadium, Atlanta",United States,Morocco,Haiti,2,1,8,3,0,False,False,Morocco
+53,Group A,"Estadio Azteca, Mexico City",Mexico,Czech Republic,Mexico,1,2,9,3,0,False,False,Mexico
+54,Group A,"Estadio BBVA, Monterrey",Mexico,South Africa,South Korea,1,2,8,3,0,False,False,South Korea
+55,Group E,"Lincoln Financial Field, Philadelphia",United States,Curaçao,Ivory Coast,1,2,8,2,0,False,False,Ivory Coast
+56,Group E,"MetLife Stadium, East Rutherford",United States,Ecuador,Germany,1,1,10,4,0,False,False,Draw
+57,Group F,"AT&T Stadium, Dallas",United States,Japan,Sweden,2,1,10,4,0,False,False,Japan
+58,Group F,"GEHA Field at Arrowhead Stadium, Kansas City",United States,Tunisia,Netherlands,1,2,10,4,0,False,False,Netherlands
+59,Group D,"SoFi Stadium, Los Angeles",United States,United States,Turkey,1,1,9,3,0,False,False,Draw
+60,Group D,"Levi's Stadium, Santa Clara",United States,Paraguay,Australia,1,1,9,3,0,False,False,Draw
+61,Group I,"Gillette Stadium, Boston",United States,Norway,France,1,2,10,4,0,False,False,France
+62,Group I,"BMO Field, Toronto",Canada,Senegal,Iraq,2,1,8,3,0,False,False,Senegal
+63,Group H,"NRG Stadium, Houston",United States,Cape Verde,Saudi Arabia,1,1,7,2,0,False,False,Draw
+64,Group H,"Estadio Akron, Guadalajara",Mexico,Uruguay,Spain,1,2,11,5,0,False,False,Spain
+65,Group G,"Lumen Field, Seattle",United States,Egypt,Iran,1,1,8,3,0,False,False,Draw
+66,Group G,"BC Place, Vancouver",Canada,New Zealand,Belgium,1,2,9,3,0,False,False,Belgium
+67,Group L,"MetLife Stadium, East Rutherford",United States,Panama,England,1,2,9,4,0,False,False,England
+68,Group L,"Lincoln Financial Field, Philadelphia",United States,Croatia,Ghana,2,1,9,3,0,False,False,Croatia
+69,Group K,"Hard Rock Stadium, Miami",United States,Colombia,Portugal,1,1,11,4,0,False,False,Draw
+70,Group K,"Mercedes-Benz Stadium, Atlanta",United States,DR Congo,Uzbekistan,1,1,8,3,0,False,False,Draw
+71,Group J,"GEHA Field at Arrowhead Stadium, Kansas City",United States,Algeria,Austria,1,1,9,4,0,False,False,Draw
+72,Group J,"AT&T Stadium, Dallas",United States,Jordan,Argentina,1,2,9,4,0,False,False,Argentina
+73,Round of 32,"SoFi Stadium, Los Angeles",United States,South Korea,Switzerland,1,2,12,4,0,True,False,Switzerland
+74,Round of 32,"NRG Stadium, Houston",United States,Brazil,Japan,2,1,11,4,0,False,False,Brazil
+75,Round of 32,"Gillette Stadium, Boston",United States,Germany,Czech Republic,2,1,10,4,0,False,False,Germany
+76,Round of 32,"Estadio BBVA, Monterrey",Mexico,Netherlands,Morocco,1,1,13,5,0,True,True,Morocco
+77,Round of 32,"AT&T Stadium, Dallas",United States,Ecuador,Senegal,2,1,11,4,0,True,False,Ecuador
+78,Round of 32,"MetLife Stadium, East Rutherford",United States,France,Scotland,2,1,10,4,0,False,False,France
+79,Round of 32,"Estadio Azteca, Mexico City",Mexico,Mexico,Ivory Coast,2,1,9,3,0,False,False,Mexico
+80,Round of 32,"Mercedes-Benz Stadium, Atlanta",United States,England,Norway,2,1,10,4,0,False,False,England
+81,Round of 32,"Lumen Field, Seattle",United States,Belgium,Algeria,2,1,10,4,0,False,False,Belgium
+82,Round of 32,"Levi's Stadium, Santa Clara",United States,United States,Bosnia and Herzegovina,2,1,8,3,0,False,False,United States
+83,Round of 32,"BMO Field, Toronto",Canada,Colombia,Croatia,2,1,13,5,0,True,False,Colombia
+84,Round of 32,"SoFi Stadium, Los Angeles",United States,Spain,Austria,2,1,11,4,0,False,False,Spain
+85,Round of 32,"BC Place, Vancouver",Canada,Canada,Tunisia,2,1,10,4,0,True,False,Canada
+86,Round of 32,"AT&T Stadium, Dallas",United States,Paraguay,Iran,1,1,11,4,0,True,True,Iran
+87,Round of 32,"Hard Rock Stadium, Miami",United States,Argentina,Uruguay,2,1,13,5,0,True,False,Argentina
+88,Round of 32,"GEHA Field at Arrowhead Stadium, Kansas City",United States,Portugal,Australia,2,1,10,4,0,False,False,Portugal
+89,Round of 16,"NRG Stadium, Houston",United States,Switzerland,Germany,1,2,11,4,0,False,False,Germany
+90,Round of 16,"Lincoln Financial Field, Philadelphia",United States,Brazil,Ecuador,2,1,13,5,0,True,False,Brazil
+91,Round of 16,"MetLife Stadium, East Rutherford",United States,Morocco,France,1,2,13,5,0,True,False,France
+92,Round of 16,"Estadio Azteca, Mexico City",Mexico,Mexico,England,1,2,12,5,0,True,False,England
+93,Round of 16,"AT&T Stadium, Dallas",United States,Colombia,Spain,1,2,11,5,0,False,False,Spain
+94,Round of 16,"Lumen Field, Seattle",United States,Belgium,United States,2,1,10,4,0,False,False,Belgium
+95,Round of 16,"Mercedes-Benz Stadium, Atlanta",United States,Iran,Portugal,1,2,10,4,0,False,False,Portugal
+96,Round of 16,"BC Place, Vancouver",Canada,Canada,Argentina,1,2,12,5,0,True,False,Argentina
+97,Quarter-final,"Gillette Stadium, Boston",United States,Germany,Brazil,1,2,12,5,0,False,False,Brazil
+98,Quarter-final,"SoFi Stadium, Los Angeles",United States,Spain,Belgium,2,1,12,5,0,False,False,Spain
+99,Quarter-final,"Hard Rock Stadium, Miami",United States,France,England,1,1,14,6,0,True,True,England
+100,Quarter-final,"GEHA Field at Arrowhead Stadium, Kansas City",United States,Portugal,Argentina,1,2,14,6,0,True,False,Argentina
+101,Semi-final,"AT&T Stadium, Dallas",United States,Brazil,Spain,1,2,15,7,0,True,False,Spain
+102,Semi-final,"Mercedes-Benz Stadium, Atlanta",United States,England,Argentina,1,2,14,6,0,True,False,Argentina
+103,Third-place playoff,"Hard Rock Stadium, Miami",United States,Brazil,England,1,1,14,6,0,True,True,England
+104,Final,"MetLife Stadium, East Rutherford",United States,Spain,Argentina,1,1,15,6,0,True,True,Spain

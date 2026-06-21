@@ -62,10 +62,17 @@ def _():
     import glob
     import json
     import os
+    import pathlib
 
     import marimo as mo
     import pandas as pd
     import plotly.graph_objects as go
+
+    # 1. Capture the raw notebook location string
+    raw_loc = mo.notebook_location()
+
+    # 2. Fallback to the current working directory "." if None, then wrap in a Path object
+    PUBLIC_DIR = pathlib.Path(raw_loc if raw_loc is not None else ".") / "public"
 
     # Define styling palette
     DARK_THEME = {
@@ -95,7 +102,17 @@ def _():
 
         return fig
 
-    return DARK_THEME, apply_mission_control_layout, glob, go, json, mo, os, pd
+    return (
+        DARK_THEME,
+        PUBLIC_DIR,
+        apply_mission_control_layout,
+        glob,
+        go,
+        json,
+        mo,
+        os,
+        pd,
+    )
 
 
 @app.cell
@@ -207,64 +224,68 @@ def _(DARK_THEME, mo):
 
 
 @app.cell
-def _(glob, mo, os):
-    # 1. Discover all execution folders by true chronological modification time
-    all_runs = sorted(
-        glob.glob(os.path.join("data", "runs", "run_*")), key=os.path.getmtime
-    )
-    if not all_runs:
-        raise FileNotFoundError(
-            "❌ Operational error: No simulation artifacts found in data/runs/."
-        )
+def _(PUBLIC_DIR, glob, mo, os):
+    # 1. Check local disk first
+    local_runs_path = os.path.join("data", "runs", "run_*")
+    all_runs = sorted(glob.glob(local_runs_path), key=os.path.getmtime)
 
-    # 2. Extract clean string folder names (basenames)
-    run_names = [os.path.basename(r) for r in all_runs]
+    if all_runs:
+        # LOCAL PERSPECTIVE: Dynamically scan local drive
+        run_names = [os.path.basename(r) for r in all_runs]
+        run_choices = list(reversed(run_names))
+        latest_run_name = run_names[-1]
+    else:
+        # WASM PERSPECTIVE: Explicitly list the public runs
+        run_choices = [
+            "Ensemble_Blend_Ridge",
+            "Ensemble_Blend_SLSQP",
+            "Poisson_Dixon_Coles",
+            "Dynamic_Elo_Rating",
+            "XGBoost_Regressor",
+        ]
+        latest_run_name = "Ensemble_Blend_Ridge"  # Default choice on web
 
-    # 3. Reverse the array order so the newest runs appear at the top of the dropdown list
-    run_choices = list(reversed(run_names))
-
-    # 4. Target the clean string name of the newest run as the default option
-    latest_run_name = run_names[-1]
-
-    # 5. Instantiate the dropdown using the foolproof string list strategy
     run_dropdown = mo.ui.dropdown(
         options=run_choices,
         value=latest_run_name,
-        label="📂 SELECT SIMULATION",
+        label="📂 SELECT SIMULATION RUN",
     )
+
     return (run_dropdown,)
 
 
 @app.cell
-def _(json, os, pd, run_dropdown):
-    # 1. Get the clean folder name string from the dropdown selection state
+def _(PUBLIC_DIR, json, os, pd, run_dropdown):
     run_id = run_dropdown.value
 
-    # 2. Explicitly reconstruct the accurate path relative to project root
-    active_run_dir = os.path.join("data", "runs", run_id)
+    # 1. Establish an environmental gatekeeper check
+    local_run_dir = os.path.join("data", "runs", run_id)
+    is_local = os.path.exists(local_run_dir)
 
-    # 3. Ingest selected run datasets into active dashboard scope
-    df_tournament = pd.read_csv(
-        os.path.join(active_run_dir, "deterministic_tournament.csv")
-    )
-    df_tables = pd.read_csv(
-        os.path.join(active_run_dir, "deterministic_group_tables.csv")
-    )
-    df_thirds = pd.read_csv(
-        os.path.join(active_run_dir, "deterministic_third_places.csv")
-    )
-    df_capabilities = pd.read_csv(
-        os.path.join(active_run_dir, "pre_tournament_capabilities.csv")
-    )
+    # 2. Dynamic path resolver framework
+    def get_data_path(filename: str) -> str:
+        if is_local:
+            return os.path.join(local_run_dir, filename)
+        else:
+            # WEB MODE: Point directly to the specific subfolder inside public/
+            return str(PUBLIC_DIR / run_id / filename)
 
-    # UN-FLOODABLE DETERMINISTIC DISCIPLINARY IMPUTATION HACK
-    # Selects exactly the top 10 highest-fouling matches in the entire tournament layout
+    def asset_exists(filename: str) -> bool:
+        if is_local:
+            return os.path.exists(os.path.join(local_run_dir, filename))
+        else:
+            # In WASM mode, assume bundled baseline production assets exist
+            return True
+
+    # 3. Stream datasets into active memory
+    df_tournament = pd.read_csv(get_data_path("deterministic_tournament.csv"))
+    df_tables = pd.read_csv(get_data_path("deterministic_group_tables.csv"))
+    df_thirds = pd.read_csv(get_data_path("deterministic_third_places.csv"))
+    df_capabilities = pd.read_csv(get_data_path("pre_tournament_capabilities.csv"))
+
+    # --- UN-FLOODABLE DETERMINISTIC DISCIPLINARY IMPUTATION HACK ---
     if "red_cards" in df_tournament.columns:
-        # 1. Reset all matches to zero
         df_tournament["red_cards"] = 0
-
-        # 2. Sort the tournament by yellow cards descending, using match_id as a tie-breaker
-        # to find the exact 10 most aggressive games
         top_fiery_indices = (
             df_tournament.sort_values(
                 by=["yellow_cards", "match_id"], ascending=[False, True]
@@ -272,14 +293,11 @@ def _(json, os, pd, run_dropdown):
             .head(10)
             .index
         )
-
-        # 3. Inject exactly 1 red card into only those 10 specific rows
         df_tournament.loc[top_fiery_indices, "red_cards"] = 1
 
-    # Defensive infrastructure fallback if auditing older run branches
-    matchups_path = os.path.join(active_run_dir, "stochastic_sandbox_matchups.csv")
-    if os.path.exists(matchups_path):
-        df_matchups = pd.read_csv(matchups_path)
+    # 4. Conditionally unpack optional stochastic models
+    if asset_exists("stochastic_sandbox_matchups.csv"):
+        df_matchups = pd.read_csv(get_data_path("stochastic_sandbox_matchups.csv"))
     else:
         df_matchups = pd.DataFrame(
             columns=[
@@ -291,23 +309,23 @@ def _(json, os, pd, run_dropdown):
             ]
         )
 
-    # Safely unpack optional stochastic Data
-    forecast_path = os.path.join(active_run_dir, "stochastic_forecast.csv")
-    df_forecast = pd.read_csv(forecast_path) if os.path.exists(forecast_path) else None
+    has_stochastic = asset_exists("stochastic_forecast.csv")
 
-    xtables_path = os.path.join(active_run_dir, "stochastic_group_tables.csv")
-    df_xtables = pd.read_csv(xtables_path) if os.path.exists(xtables_path) else None
+    if has_stochastic:
+        df_forecast = pd.read_csv(get_data_path("stochastic_forecast.csv"))
+        df_xtables = pd.read_csv(get_data_path("stochastic_group_tables.csv"))
+        df_tournament_stoch = pd.read_csv(get_data_path("stochastic_tournament.csv"))
+    else:
+        df_forecast, df_xtables, df_tournament_stoch = None, None, None
 
-    stoch_tourn_path = os.path.join(active_run_dir, "stochastic_tournament.csv")
-    df_tournament_stoch = (
-        pd.read_csv(stoch_tourn_path) if os.path.exists(stoch_tourn_path) else None
-    )
-
-    has_stochastic = os.path.exists(forecast_path)
-
-    # 4. Parse running parameters from JSON configuration sheet
-    with open(os.path.join(active_run_dir, "metadata.json"), "r") as f:
-        metadata = json.load(f)
+    # 5. Extract structural pipeline runtime constraints
+    metadata_path = get_data_path("metadata.json")
+    if is_local:
+        with open(metadata_path, "r") as f:
+            metadata = json.load(f)
+    else:
+        # Cross-platform: Pandas network layer reads json from HTTP URLs cleanly without open()
+        metadata = pd.read_json(metadata_path, typ="series").to_dict()
 
     config = metadata["config"]
     weights = metadata["ensemble_weights"]
