@@ -1,16 +1,16 @@
 <div align="center">
 
 [![Python](https://img.shields.io/badge/python-3.14%2B-blue.svg)](https://www.python.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Framework: Marimo](https://img.shields.io/badge/UI-Marimo-green.svg)](https://marimo.io/)
 [![Deployment: WASM](https://img.shields.io/badge/WebAssembly-Supported-orange.svg)](https://webassembly.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 # ⚽ FIFA World Cup 2026 Prediction Engine 🏆
 
 **End-to-end MLOps pipeline and reactive simulation dashboard designed to forecast the 2026 FIFA World Cup.**
 
 <!-- Hero Image -->
-<img width="98.5%" alt="tournament-progression-5x4" src="https://github.com/user-attachments/assets/a8c1bb1f-8bb6-4263-b929-5d8f00ae036b" />
+[<img width="98.5%" alt="tournament-progression-5x4" src="https://github.com/user-attachments/assets/a8c1bb1f-8bb6-4263-b929-5d8f00ae036b" />](https://github.com/cptOats/fifa-world-cup-2026-predictor)
 <br>
 
 <!-- Additional Images -->
@@ -34,8 +34,8 @@ The predictor features a **Meta-Learner** that blends multiple machine learning 
 * **🧠 Multi-Model Ensemble:** Blends Poisson, dynamic Elo ratings, and XGBoost Count Trees using Ridge regression or a Bounded SLSQP solver.
 * **🛡️ Leak-Proof Feature Engineering:** Strict Point-in-Time (PiT) data shifting ensures models only ever see historical form vectors *prior* to a match taking place.
 * **🎲 Stochastic Multiverse:** Executes 10,000+ Monte Carlo parallel simulations using Bivariate Copula draw inflation to accurately capture low-scoring tournament upsets.
-* **⚡ Reactive UI:** A beautiful dashboard built in Marimo - toggle between deterministic and probabilistic logic on the fly to view tournament progression and sandbox matchups.
-* **🌐 WebAssembly Ready:** The entire dashboard can be compiled to WASM and run completely serverless in the browser.
+* **⚡ Reactive UI:** A beautiful dashboard built in Marimo; toggle between deterministic and probabilistic logic on the fly to view tournament progression and sandbox matchups.
+* **🌐 Edge WASM Deployment:** The front end compiles natively to WebAssembly. Dive into the data now ➡️ [Launch Live Dashboard](https://cptOats.github.io/fifa-world-cup-2026-predictor/).
 
 ---
 
