@@ -1,6 +1,6 @@
 {
-    "run_id": "run_elo__20260621_1605",
-    "timestamp": "20260621_1605",
+    "run_id": "run_elo_20260622_1732",
+    "timestamp": "20260622_1732",
     "config": {
         "model_type": "elo",
         "blend_method": null,
@@ -18,7 +18,7 @@
         "et_multiplier": 0.3333333333333333,
         "fatigue_factor": 0.8,
         "card_boost_factor": 1.75,
-        "draw_copula": 0.08
+        "draw_copula": 0.083
     },
     "ensemble_weights": {
         "poisson": 0.0,
