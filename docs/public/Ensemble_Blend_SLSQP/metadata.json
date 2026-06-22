@@ -1,6 +1,6 @@
 {
-    "run_id": "run_blend_scipy_20260621_1807",
-    "timestamp": "20260621_1807",
+    "run_id": "run_blend_scipy_20260622_1827",
+    "timestamp": "20260622_1827",
     "config": {
         "model_type": "blend",
         "blend_method": "scipy",
@@ -18,7 +18,7 @@
         "et_multiplier": 0.3333333333333333,
         "fatigue_factor": 0.8,
         "card_boost_factor": 1.75,
-        "draw_copula": 0.08
+        "draw_copula": 0.083
     },
     "ensemble_weights": {
         "poisson": 0.46602683200083256,

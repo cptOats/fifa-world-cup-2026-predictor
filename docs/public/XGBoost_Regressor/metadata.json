@@ -1,6 +1,6 @@
 {
-    "run_id": "run_xgb__20260621_1624",
-    "timestamp": "20260621_1624",
+    "run_id": "run_xgb_20260622_1810",
+    "timestamp": "20260622_1810",
     "config": {
         "model_type": "xgb",
         "blend_method": null,
@@ -18,7 +18,7 @@
         "et_multiplier": 0.3333333333333333,
         "fatigue_factor": 0.8,
         "card_boost_factor": 1.75,
-        "draw_copula": 0.08
+        "draw_copula": 0.083
     },
     "ensemble_weights": {
         "poisson": 0.0,
