@@ -16,15 +16,16 @@ from src.transform import get_venue_country
 
 # Official tournament wildcard constraints defining which group's 3rd place
 # entity maps to which specific knockout bracket slot.
+# (Keys updated to reflect official FIFA Match IDs via the transform patch)
 THIRD_PLACE_CONSTRAINTS = {
-    75: {"A", "B", "C", "D", "F"},
-    78: {"C", "D", "F", "G", "H"},
-    79: {"C", "E", "F", "H", "I"},
-    80: {"E", "H", "I", "J", "K"},
-    81: {"A", "E", "H", "I", "J"},
-    82: {"B", "E", "F", "I", "J"},
-    85: {"E", "F", "G", "I", "J"},
-    88: {"D", "E", "I", "J", "L"},
+    74: {"A", "B", "C", "D", "F"},  # Was 75
+    77: {"C", "D", "F", "G", "H"},  # Was 78
+    79: {"C", "E", "F", "H", "I"},  # Unchanged
+    80: {"E", "H", "I", "J", "K"},  # Unchanged
+    81: {"B", "E", "F", "I", "J"},  # Was 82
+    82: {"A", "E", "H", "I", "J"},  # Was 81
+    85: {"E", "F", "G", "I", "J"},  # Unchanged
+    87: {"D", "E", "I", "J", "L"},  # Was 88
 }
 
 
@@ -151,8 +152,10 @@ def generate_round_of_32_draw(
     group_tables_df: pd.DataFrame, third_place_mapping: dict[int, str]
 ) -> pd.DataFrame:
     """Reads the template layout and substitutes placeholders with actual country names for the Round of 32."""
-    raw_dir = os.path.join("data", "raw")
-    knockout_template = pd.read_csv(os.path.join(raw_dir, "knockout_slots.csv"))
+    processed_dir = os.path.join("data", "processed")
+    knockout_template = pd.read_csv(
+        os.path.join(processed_dir, "clean_knockout_slots.csv")
+    )
     r32_df = knockout_template[knockout_template["round"] == "Round of 32"].copy()
 
     winners = (
@@ -309,8 +312,10 @@ def simulate_knockout_waterfall(
             "Type Guard: feature_columns list cannot be None inside the routing layer."
         )
 
-    raw_dir = os.path.join("data", "raw")
-    knockout_template = pd.read_csv(os.path.join(raw_dir, "knockout_slots.csv"))
+    processed_dir = os.path.join("data", "processed")
+    knockout_template = pd.read_csv(
+        os.path.join(processed_dir, "clean_knockout_slots.csv")
+    )
     knockout_template["venue_country"] = knockout_template["venue"].apply(
         get_venue_country
     )

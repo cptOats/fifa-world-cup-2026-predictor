@@ -40,6 +40,7 @@ from src.stochastic import (
 from src.transform import (
     DATACAMP_TO_KAGGLE,
     get_venue_country,
+    patch_tournament_structures,
     prepare_historical_features,
 )
 
@@ -66,7 +67,7 @@ class MatchRulesConfig(TypedDict):
 # --- MODEL CONFIGURATION ---
 MODEL_TYPE: str = "blend"  # "blend", "poisson", "elo", "xgb"
 BLEND_METHOD: str = "ridge"  # "ridge", "scipy"
-RUN_MONTE_CARLO: bool = True  # Enable for full predictive power
+RUN_MONTE_CARLO: bool = False  # Enable for full predictive power
 MONTE_CARLO_RUNS: int = 10000  # Recommend 10K+
 FORCE_RETRAIN: bool = False  # Deletes model artifacts and OOF arrays
 
@@ -125,11 +126,19 @@ def main():
             shutil.rmtree(os.path.join("data", "processed"))
 
     verify_data_layer()
+
+    logging.info(
+        "🛠️  Patching structural and chronological anomalies in raw tournament blueprints..."
+    )
+    patch_tournament_structures()
+
     logging.info("⚙️  Running entity validation and preparing historical features...")
     saved_path = prepare_historical_features(DATACAMP_TO_KAGGLE, TRAINING_VARIABLES)
 
     modern_df = pd.read_parquet(saved_path)
-    group_fixtures = pd.read_csv(os.path.join("data", "raw", "group_fixtures.csv"))
+    group_fixtures = pd.read_csv(
+        os.path.join("data", "processed", "clean_group_fixtures.csv")
+    )
 
     group_fixtures["home_team"] = group_fixtures["home_team"].replace(
         DATACAMP_TO_KAGGLE
@@ -358,7 +367,7 @@ def main():
             f"🎲 Spawning {MONTE_CARLO_RUNS:,} Monte Carlo parallel universes..."
         )
         raw_knockout_template = pd.read_csv(
-            os.path.join("data", "raw", "knockout_slots.csv")
+            os.path.join("data", "processed", "clean_knockout_slots.csv")
         )
         raw_knockout_template["venue_country"] = raw_knockout_template["venue"].apply(
             get_venue_country

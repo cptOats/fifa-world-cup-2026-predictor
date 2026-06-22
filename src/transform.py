@@ -109,6 +109,75 @@ def _validate_entity_resolution(translation_dict: dict[str, str]) -> None:
         raise LookupError("Pipeline halted due to unresolved entity names.")
 
 
+def patch_tournament_structures() -> None:
+    """
+    Applies programmatic patches to the raw DataCamp competition CSVs.
+    Fixes chronological cosmetic misalignments in the group stages and
+    resolves a major structural routing bug in the Round of 32 knockout
+    bracket to align with official FIFA World Cup 2026 documentation.
+    """
+    raw_dir = os.path.join("data", "raw")
+    processed_dir = os.path.join("data", "processed")
+    os.makedirs(processed_dir, exist_ok=True)
+
+    # --- 1. PATCH GROUP STAGES (Cosmetic & Chronological Fixes) ---
+    fixtures_path = os.path.join(raw_dir, "group_fixtures.csv")
+    if os.path.exists(fixtures_path):
+        df_groups = pd.read_csv(fixtures_path)
+
+        # Fix the chronological ordering bugs by swapping their IDs
+        group_order_patch = {
+            29: 30,
+            30: 29,  # Group D2
+            33: 34,
+            34: 33,  # Group F2
+            17: 20,
+            20: 17,  # Group J1
+        }
+        df_groups["match_id"] = df_groups["match_id"].replace(group_order_patch)
+        df_groups = df_groups.sort_values(by="match_id").reset_index(drop=True)
+
+        # Fix the home/away assignment for match 59 (USA vs Turkey)
+        idx_59 = df_groups["match_id"] == 59
+        if idx_59.any():
+            home_temp = df_groups.loc[idx_59, "home_team"].copy()
+            df_groups.loc[idx_59, "home_team"] = df_groups.loc[idx_59, "away_team"]
+            df_groups.loc[idx_59, "away_team"] = home_temp
+
+        # Save to processed directory to protect the raw file
+        df_groups.to_csv(
+            os.path.join(processed_dir, "clean_group_fixtures.csv"), index=False
+        )
+
+    # --- 2. PATCH KNOCKOUT SLOTS (Major Bracket Routing Fix) ---
+    knockout_path = os.path.join(raw_dir, "knockout_slots.csv")
+    if os.path.exists(knockout_path):
+        df_knockout = pd.read_csv(knockout_path)
+
+        # Dictionary of incorrect match mappings to their true FIFA counterparts
+        r32_patch = {
+            74: 76,
+            75: 74,
+            76: 75,
+            77: 78,
+            78: 77,
+            81: 82,
+            82: 81,
+            86: 88,
+            87: 86,
+            88: 87,
+        }
+
+        # Simultaneous replacement prevents cascading overwrites
+        df_knockout["match_id"] = df_knockout["match_id"].replace(r32_patch)
+        df_knockout = df_knockout.sort_values(by="match_id").reset_index(drop=True)
+
+        # Save to processed directory
+        df_knockout.to_csv(
+            os.path.join(processed_dir, "clean_knockout_slots.csv"), index=False
+        )
+
+
 def prepare_historical_features(translation_dict, training_variables) -> str:
     """
     Executes base ETL pipeline, resolving names, applying time slicing,
