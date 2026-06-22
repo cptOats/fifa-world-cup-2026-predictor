@@ -67,7 +67,7 @@ class MatchRulesConfig(TypedDict):
 # --- MODEL CONFIGURATION ---
 MODEL_TYPE: str = "blend"  # "blend", "poisson", "elo", "xgb"
 BLEND_METHOD: str = "ridge"  # "ridge", "scipy"
-RUN_MONTE_CARLO: bool = False  # Enable for full predictive power
+RUN_MONTE_CARLO: bool = True  # Enable for full predictive power
 MONTE_CARLO_RUNS: int = 10000  # Recommend 10K+
 FORCE_RETRAIN: bool = False  # Deletes model artifacts and OOF arrays
 
@@ -76,8 +76,8 @@ TRAINING_VARIABLES: TrainingConfig = {
     "friendly_weight": 0.4,
     "time_slice_start": "1998-01-01",
     "start_of_tournament": "2026-06-11",
-    "decay_alpha": 0.00047,
-    "cv_folds": 10,
+    "decay_alpha": 0.00047,  # 4 year half-life = 0.00047
+    "cv_folds": 10,  # 7+ for rigorous training
 }
 
 # --- TOURNAMENT RULES ---
@@ -85,7 +85,7 @@ MATCH_RULES: MatchRulesConfig = {
     "et_multiplier": 1.0 / 3.0,
     "fatigue_factor": 0.80,
     "card_boost_factor": 1.75,
-    "draw_copula": 0.08,
+    "draw_copula": 0.083,  # Calibrate via 'uv run python calibrate.py'
 }
 
 # =====================================================================
