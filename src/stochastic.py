@@ -7,6 +7,7 @@ across 'xTables' (xPts/xGD) and tournament survival metrics.
 """
 
 import json
+import os
 from collections import Counter
 
 import numpy as np
@@ -45,6 +46,24 @@ def run_monte_carlo_master(
         set(group_fixtures["home_team"].unique())
         | set(group_fixtures["away_team"].unique())
     )
+
+    # HASH MAP CONFIGURATION: Pre-build an O(1) shootout winner cache
+    shootout_cache = {}
+    shootouts_path = os.path.join("data", "raw", "shootouts.csv")
+    if os.path.exists(shootouts_path):
+        try:
+            st_df = pd.read_csv(shootouts_path)
+            for _, st_row in st_df.iterrows():
+                st_date = str(st_row["date"]).strip()
+                h_team = str(st_row["home_team"]).strip()
+                a_team = str(st_row["away_team"]).strip()
+                so_winner = str(st_row["winner"]).strip()
+
+                # Cache both permutations anchored to the exact match date
+                shootout_cache[(st_date, h_team, a_team)] = so_winner
+                shootout_cache[(st_date, a_team, h_team)] = so_winner
+        except Exception:
+            pass
 
     metrics = {
         team: {
@@ -102,6 +121,7 @@ def run_monte_carlo_master(
     for _ in range(n_simulations):
         group_results = []
 
+        # --- GROUP STAGE SIMULATIONS ---
         for row in group_fixtures_list:
             m_id, group, home, away = (
                 row["match_id"],
@@ -109,28 +129,45 @@ def run_monte_carlo_master(
                 row["home_team"],
                 row["away_team"],
             )
-            l_h, l_a, c_exp, y_exp = lambda_cache[(home, away, row["venue_country"])]
+            # Try to fetch actual match data
+            act_h = row.get("actual_home_score")
+            act_a = row.get("actual_away_score")
 
-            h_goals, a_goals, _ = simulate_stochastic_match(
-                l_h,
-                l_a,
-                rng,
-                match_rules,
-                is_knockout=False,
-                n_runs=1,
-                copula_rho=rho_val,
-            )
+            if (
+                pd.notna(act_h)
+                and pd.notna(act_a)
+                and str(act_h).strip() != ""
+                and str(act_a).strip() != ""
+            ):
+                # Match is completed: absorb the exact scoreline
+                sim_h_final = int(float(act_h))
+                sim_a_final = int(float(act_a))
+            else:
+                # Match is unplayed: predict with match_engine
+                l_h, l_a, _, _ = lambda_cache[(home, away, row["venue_country"])]
 
-            group_results.append(
-                {
-                    "match_id": m_id,
-                    "group": group,
-                    "home_team": home,
-                    "away_team": away,
-                    "predicted_home_goals": h_goals[0],
-                    "predicted_away_goals": a_goals[0],
-                }
-            )
+                h_goals, a_goals, _ = simulate_stochastic_match(
+                    l_h,
+                    l_a,
+                    rng,
+                    match_rules,
+                    is_knockout=False,
+                    n_runs=1,
+                    copula_rho=rho_val,
+                )
+                sim_h_final = h_goals[0]
+                sim_a_final = a_goals[0]
+
+                group_results.append(
+                    {
+                        "match_id": m_id,
+                        "group": group,
+                        "home_team": home,
+                        "away_team": away,
+                        "predicted_home_goals": sim_h_final,
+                        "predicted_away_goals": sim_a_final,
+                    }
+                )
 
         tables = resolve_group_tables(group_results)
         top_thirds = extract_best_third_places(tables)
@@ -164,6 +201,7 @@ def run_monte_carlo_master(
 
         match_winners, match_losers = {}, {}
 
+        # --- KNOCKOUT STAGE SIMULATIONS ---
         for row in knockout_template_list:
             m_id, r_name, slot_home, slot_away = (
                 row["match_id"],
@@ -189,20 +227,90 @@ def run_monte_carlo_master(
             home = _resolve_team(slot_home)
             away = _resolve_team(slot_away)
 
-            l_h, l_a, _, _ = lambda_cache[(home, away, row["venue_country"])]
+            # Try to fetch actual match data
+            act_h = row.get("actual_home_score")
+            act_a = row.get("actual_away_score")
+            match_date = None
 
-            h_goals_arr, a_goals_arr, _ = simulate_stochastic_match(
-                l_h,
-                l_a,
-                rng,
-                match_rules=match_rules,
-                is_knockout=True,
-                n_runs=1,
-                copula_rho=rho_val,
-            )
+            if pd.isna(act_h) or pd.isna(act_a) or str(act_h).strip() == "":
+                results_path = os.path.join("data", "raw", "results.csv")
+                parquet_path = os.path.join(
+                    "data", "processed", "clean_historical_matches.parquet"
+                )
 
-            winner = home if h_goals_arr[0] > a_goals_arr[0] else away
-            loser = away if winner == home else home
+                if os.path.exists(results_path) and os.path.exists(parquet_path):
+                    max_hist_date = pd.to_datetime(
+                        pd.read_parquet(parquet_path)["date"]
+                    ).max()
+                    actual_tournament_start = pd.to_datetime("2026-06-11")
+                    res_df = pd.read_csv(results_path)
+                    res_df["date"] = pd.to_datetime(res_df["date"])
+
+                    match_lookup = res_df[
+                        (res_df["tournament"] == "FIFA World Cup")
+                        & (res_df["date"] >= actual_tournament_start)
+                        & (res_df["date"] <= max_hist_date)
+                        & (
+                            (
+                                (res_df["home_team"] == home)
+                                & (res_df["away_team"] == away)
+                            )
+                            | (
+                                (res_df["home_team"] == away)
+                                & (res_df["away_team"] == home)
+                            )
+                        )
+                    ]
+
+                    if not match_lookup.empty:
+                        m_row = match_lookup.iloc[0]
+                        match_date = str(m_row["date"].strftime("%Y-%m-%d")).strip()
+                        if m_row["home_team"] == home:
+                            act_h, act_a = m_row["home_score"], m_row["away_score"]
+                        else:
+                            act_h, act_a = m_row["away_score"], m_row["home_score"]
+
+            if (
+                pd.notna(act_h)
+                and pd.notna(act_a)
+                and str(act_h).strip() != ""
+                and str(act_a).strip() != ""
+            ):
+                final_h_sim = int(float(act_h))
+                final_a_sim = int(float(act_a))
+
+                if final_h_sim > final_a_sim:
+                    winner, loser = home, away
+                elif final_a_sim > final_h_sim:
+                    winner, loser = away, home
+                else:
+                    # Query penalties using the exact composite signature
+                    shootout_winner = shootout_cache.get((match_date, home, away))
+                    if shootout_winner == home:
+                        winner, loser = home, away
+                    elif shootout_winner == away:
+                        winner, loser = away, home
+                    else:
+                        if elo_engine.get_rating(home) >= elo_engine.get_rating(away):
+                            winner, loser = home, away
+                        else:
+                            winner, loser = away, home
+            else:
+                # # Match is unplayed: predict with match_engine
+                l_h, l_a, _, _ = lambda_cache[(home, away, row["venue_country"])]
+
+                h_goals_arr, a_goals_arr, _ = simulate_stochastic_match(
+                    l_h,
+                    l_a,
+                    rng,
+                    match_rules=match_rules,
+                    is_knockout=True,
+                    n_runs=1,
+                    copula_rho=rho_val,
+                )
+
+                winner = home if h_goals_arr[0] > a_goals_arr[0] else away
+                loser = away if winner == home else home
 
             match_winners[m_id] = winner
             match_losers[m_id] = loser

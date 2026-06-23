@@ -86,10 +86,18 @@ def _():
         # Web/WASM Mode: Point directly to your live production GitHub Pages URL
         PUBLIC_DIR = "https://cptOats.github.io/fifa-world-cup-2026-predictor/public"
     else:
-        # Local Mode: Safely resolve the absolute path string on your desktop drive
+        # Local Mode: Resolve the project root and look for the active source of truth
         raw_loc = mo.notebook_location()
-        base_path = pathlib.Path(raw_loc if raw_loc is not None else ".").resolve()
-        PUBLIC_DIR = str(base_path / "public")
+        base_path = (
+            pathlib.Path(raw_loc if raw_loc is not None else ".").resolve().parent
+        )
+
+        if (base_path / "docs" / "public").exists():
+            PUBLIC_DIR = str(base_path / "docs" / "public")
+        elif (base_path / "public").exists():
+            PUBLIC_DIR = str(base_path / "public")
+        else:
+            PUBLIC_DIR = str(base_path / "data" / "runs")
 
     # Define styling palette
     DARK_THEME = {
@@ -242,32 +250,48 @@ def _(DARK_THEME, mo):
 
 @app.cell
 def _(glob, mo, os):
-    # 1. Check local disk first
-    local_runs_path = os.path.join("data", "runs", "run_*")
-    all_runs = sorted(glob.glob(local_runs_path), key=os.path.getmtime)
+    # Search all potential directories across the architecture
+    search_patterns = [
+        os.path.join("docs", "public", "*"),
+        os.path.join("public", "*"),
+        os.path.join("data", "runs", "*"),
+    ]
+
+    all_runs = []
+    for pattern in search_patterns:
+        found_paths = glob.glob(pattern)
+        # Isolate directories and discard system hidden items (.gitkeep, etc.)
+        valid_dirs = [
+            p
+            for p in found_paths
+            if os.path.isdir(p) and not os.path.basename(p).startswith(".")
+        ]
+        all_runs.extend(valid_dirs)
 
     if all_runs:
-        # LOCAL PERSPECTIVE: Dynamically scan local drive
+        # LOCAL PERSPECTIVE: Sort by creation/modification timestamp
+        all_runs.sort(key=os.path.getmtime)
         run_names = [os.path.basename(r) for r in all_runs]
         run_choices = list(reversed(run_names))
-        latest_run_name = run_names[-1]
+        latest_run_name = run_choices[0]
     else:
-        # WASM PERSPECTIVE: Explicitly list the public runs
-        run_choices = [
-            "Ensemble_Blend_Ridge",
-            "Ensemble_Blend_SLSQP",
-            "Poisson_Dixon_Coles",
-            "Dynamic_Elo_Rating",
-            "XGBoost_Regressor",
-        ]
-        latest_run_name = "Ensemble_Blend_Ridge"  # Default choice on web
+        # WASM PERSPECTIVE: Fallback production list on the web
+        run_choices = ["1_PreTournament_Ensemble_Blend_Ridge"]
+        latest_run_name = "1_PreTournament_Ensemble_Blend_Ridge"
+
+    def _clean_display_name(folder_name: str) -> str:
+        parts = folder_name.split("_")
+        if len(parts) >= 2:
+            milestone = f"{parts[0]} {parts[1]}"
+            model_info = " ".join(parts[2:]) if len(parts) > 2 else ""
+            return f"{milestone} 🏆 ({model_info})" if model_info else f"{milestone} 🏆"
+        return folder_name
 
     run_dropdown = mo.ui.dropdown(
-        options=run_choices,
-        value=latest_run_name,
-        label="📂 SELECT SIMULATION RUN",
+        options={_clean_display_name(r): r for r in run_choices},
+        value=_clean_display_name(latest_run_name),
+        label="📂 SIMULATION RUN",
     )
-
     return (run_dropdown,)
 
 
@@ -278,9 +302,20 @@ def _(PUBLIC_DIR, json, os, pd, run_dropdown):
 
     run_id = run_dropdown.value
 
-    # Check local drive boundaries (Evaluates to False in browser sandbox)
-    local_run_dir = os.path.join("data", "runs", run_id)
-    is_local = os.path.exists(local_run_dir)
+    # Scan paths to pinpoint exactly where the selected run asset folder lives locally
+    potential_local_paths = [
+        os.path.join("docs", "public", run_id),
+        os.path.join("public", run_id),
+        os.path.join("data", "runs", run_id),
+    ]
+
+    local_run_dir = None
+    for path_opt in potential_local_paths:
+        if os.path.exists(path_opt):
+            local_run_dir = path_opt
+            break
+
+    is_local = local_run_dir is not None
 
     def get_data_path(filename: str):
         if is_local:
@@ -312,19 +347,35 @@ def _(PUBLIC_DIR, json, os, pd, run_dropdown):
             f"Verify your public/ subfolders exactly match the dropdown strings."
         ) from e
 
-    # --- UN-FLOODABLE DETERMINISTIC DISCIPLINARY IMPUTATION HACK ---
+    # --- UN-FLOODABLE DETERMINISTIC DISCIPLINARY IMPUTATION ALLOCATION ---
     if "red_cards" in df_tournament.columns:
-        df_tournament["red_cards"] = 0
-        top_fiery_indices = (
-            df_tournament.sort_values(
-                by=["yellow_cards", "match_id"], ascending=[False, True]
-            )
-            .head(10)
-            .index
-        )
-        df_tournament.loc[top_fiery_indices, "red_cards"] = 1
+        # 1. Isolate only upcoming fixtures (unplayed games have valid corner predictions)
+        is_unplayed = df_tournament["corners"].notna()
+        n_unplayed = is_unplayed.sum()
 
-    # 2. OPTIONAL STOCHASTIC MODELS (Graceful failover guards)
+        if n_unplayed > 0:
+            # 2. Establish baseline unplayed expectations to prevent future warping
+            # (10 expected reds / 104 total matches in 2026 layout ≈ 0.096 per game)
+            baseline_red_rate = 10 / 104
+            allocated_pool_size = int(round(n_unplayed * baseline_red_rate))
+
+            # Ensure all unplayed matches default back to 0 before distribution
+            df_tournament.loc[is_unplayed, "red_cards"] = 0
+
+            if allocated_pool_size > 0:
+                # 3. Target ONLY the highest-volatility unplayed matches
+                top_fiery_unplayed_indices = (
+                    df_tournament[is_unplayed]
+                    .sort_values(
+                        by=["yellow_cards", "match_id"], ascending=[False, True]
+                    )
+                    .head(allocated_pool_size)
+                    .index
+                )
+                # Divvy out the integer red cards
+                df_tournament.loc[top_fiery_unplayed_indices, "red_cards"] = 1
+
+    # OPTIONAL STOCHASTIC MODELS (Graceful failover guards)
     try:
         df_matchups = load_csv("stochastic_sandbox_matchups.csv")
     except Exception:
@@ -371,7 +422,6 @@ def _(PUBLIC_DIR, json, os, pd, run_dropdown):
     match_rules = metadata.get(
         "match_rules", {"et_multiplier": 1.0 / 3.0, "fatigue_factor": 0.80}
     )
-
     return (
         config,
         df_capabilities,
@@ -427,7 +477,7 @@ def _(config, has_stochastic, mo, run_dropdown, run_id, weights):
     profile_card = mo.md(
         f"""
         <div style="background: #1a1a1a; padding: 20px 16px; border-radius: 6px; border: 1px solid #2d2d2d; font-family: monospace; text-align: center; height: 142px; display: flex; flex-direction: column; justify-content: center; margin-top: 0px; box-sizing: border-box;">
-            <span style="color: #00adb5; font-size: 18px; font-weight: bold; word-break: break-all; line-height: 1.3;">📊 {run_id}</span>
+            <span style="color: #00adb5; font-size: 14px; font-weight: bold; word-break: break-all; line-height: 1.3;">📊 {run_id}</span>
         </div>
         """
     )
@@ -1628,40 +1678,55 @@ def _(DARK_THEME, apply_mission_control_layout, df_tournament, go, mo, pd):
         .map({True: "Group Stage", False: "Knockout Stage"})
     )
 
+    # 1. ISOLATE THE UNPLAYED UNIVERSE FOR EXPECTED STATS
+    unplayed_df = stat_df[stat_df["corners"].notna()]
+    u_matches = len(unplayed_df)
+
+    # 2. GLOBAL GOALS (Historical + Future)
     t_matches = len(stat_df)
     t_goals = (
         stat_df["predicted_home_goals"].sum() + stat_df["predicted_away_goals"].sum()
     )
-    t_corners = int(round(stat_df["corners"].sum()))
-    t_yellows = int(round(stat_df["yellow_cards"].sum()))
-    t_reds = int(round(stat_df["red_cards"].sum()))
+    global_avg_goals = t_goals / t_matches if t_matches > 0 else 0
+
+    # 3. GLOBAL DISCIPLINARY (Future / Unplayed Only)
+    # .mean() perfectly ignores NaNs!
+    global_avg_corners = unplayed_df["corners"].mean() if u_matches > 0 else 0
+    global_avg_yellows = unplayed_df["yellow_cards"].mean() if u_matches > 0 else 0
+    global_avg_reds = unplayed_df["red_cards"].mean() if u_matches > 0 else 0
+
+    t_corners_rem = int(round(unplayed_df["corners"].sum()))
+    t_yellows_rem = int(round(unplayed_df["yellow_cards"].sum()))
+    t_reds_rem = int(round(unplayed_df["red_cards"].sum()))
 
     phase_metrics = []
     for phase_name in ["Group Stage", "Knockout Stage"]:
         phase_sub = stat_df[stat_df["phase"] == phase_name]
+        unplayed_sub = unplayed_df[unplayed_df["phase"] == phase_name]
+
         m_count = len(phase_sub)
+        u_count = len(unplayed_sub)
 
         if m_count > 0:
             tot_goals = (
                 phase_sub["predicted_home_goals"].sum()
                 + phase_sub["predicted_away_goals"].sum()
             )
-            tot_corners = phase_sub["corners"].sum()
-            tot_yellows = phase_sub["yellow_cards"].sum()
-            tot_reds = phase_sub["red_cards"].sum()
 
             phase_metrics.append(
                 {
                     "Phase": phase_name,
                     "Matches": m_count,
                     "Avg Goals": tot_goals / m_count,
-                    "Avg Corners": tot_corners / m_count,
-                    "Avg Yellows": tot_yellows / m_count,
-                    "Avg Reds": tot_reds / m_count,
+                    "Avg Corners": unplayed_sub["corners"].mean() if u_count > 0 else 0,
+                    "Avg Yellows": unplayed_sub["yellow_cards"].mean()
+                    if u_count > 0
+                    else 0,
+                    "Avg Reds": unplayed_sub["red_cards"].mean() if u_count > 0 else 0,
                     "Total Goals": tot_goals,
-                    "Total Corners": tot_corners,
-                    "Total Yellows": tot_yellows,
-                    "Total Reds": tot_reds,
+                    "Rem. Corners": unplayed_sub["corners"].sum(),
+                    "Rem. Yellows": unplayed_sub["yellow_cards"].sum(),
+                    "Rem. Reds": unplayed_sub["red_cards"].sum(),
                 }
             )
 
@@ -1669,30 +1734,31 @@ def _(DARK_THEME, apply_mission_control_layout, df_tournament, go, mo, pd):
         {
             "Phase": "Tournament",
             "Matches": t_matches,
-            "Avg Goals": t_goals / t_matches if t_matches > 0 else 0,
-            "Avg Corners": t_corners / t_matches if t_matches > 0 else 0,
-            "Avg Yellows": t_yellows / t_matches if t_matches > 0 else 0,
-            "Avg Reds": t_reds / t_matches if t_matches > 0 else 0,
+            "Avg Goals": global_avg_goals,
+            "Avg Corners": global_avg_corners,
+            "Avg Yellows": global_avg_yellows,
+            "Avg Reds": global_avg_reds,
             "Total Goals": t_goals,
-            "Total Corners": t_corners,
-            "Total Yellows": t_yellows,
-            "Total Reds": t_reds,
+            "Rem. Corners": t_corners_rem,
+            "Rem. Yellows": t_yellows_rem,
+            "Rem. Reds": t_reds_rem,
         }
     )
 
-    df_analytics = pd.DataFrame(phase_metrics)
+    df_analytics = pd.DataFrame(phase_metrics).fillna(0)
     df_table_view = df_analytics.drop(
-        columns=["Avg Reds", "Total Reds"], errors="ignore"
+        columns=["Avg Reds", "Rem. Reds"], errors="ignore"
     )
 
     df_graph = df_analytics[df_analytics["Phase"] != "Tournament"].copy()
 
     fig_analytics = go.Figure()
 
+    # Updated labels to reflect that these are purely expected metrics
     rate_columns = [
         ("Avg Goals", "Goals", "#00adb5"),
         ("Avg Corners", "Corners", "#34A853"),
-        ("Avg Yellows", "Yellow Cards", "#f4b41a"),
+        ("Avg Yellows", "Yellows", "#f4b41a"),
     ]
 
     for col_key, col_label, col_color in rate_columns:
@@ -1709,7 +1775,7 @@ def _(DARK_THEME, apply_mission_control_layout, df_tournament, go, mo, pd):
         )
 
     fig_analytics.update_layout(
-        title="<b>📋 TOURNAMENT ANALYTICS</b>",
+        title="<b>📋 Expected Goals & Remaining Corners and Cards</b>",
         barmode="group",
         xaxis=dict(title=""),
         yaxis=dict(title="Per Game Average Metric", gridcolor="#222222"),
@@ -1724,26 +1790,27 @@ def _(DARK_THEME, apply_mission_control_layout, df_tournament, go, mo, pd):
             <div style="flex: 1; background: {DARK_THEME["paper"]}; padding: 12px; border-radius: 6px; border: 1px solid #333;">
                 <div style="color: {DARK_THEME["muted"]}; font-size: 11px;">MATCHES</div>
                 <div style="font-size: 22px; font-weight: bold; color: #fff;">{t_matches}</div>
+                <div style="font-size: 10px; color: {DARK_THEME["muted"]};">TOTAL</div>
             </div>
             <div style="flex: 1; background: {DARK_THEME["paper"]}; padding: 12px; border-radius: 6px; border: 1px solid #333;">
                 <div style="color: {DARK_THEME["muted"]}; font-size: 11px;">GOALS</div>
-                <div style="font-size: 22px; font-weight: bold; color: #00adb5;">{t_goals}</div>
-                <div style="font-size: 10px; color: {DARK_THEME["muted"]};">{(t_goals / t_matches):.2f} / game</div>
+                <div style="font-size: 22px; font-weight: bold; color: #00adb5;">{int(t_goals)}</div>
+                <div style="font-size: 10px; color: {DARK_THEME["muted"]};">{global_avg_goals:.2f} / game</div>
             </div>
             <div style="flex: 1; background: {DARK_THEME["paper"]}; padding: 12px; border-radius: 6px; border: 1px solid #333;">
                 <div style="color: {DARK_THEME["muted"]}; font-size: 11px;">CORNERS</div>
-                <div style="font-size: 22px; font-weight: bold; color: #34A853;">{t_corners}</div>
-                <div style="font-size: 10px; color: {DARK_THEME["muted"]};">{(t_corners / t_matches):.2f} / game</div>
+                <div style="font-size: 22px; font-weight: bold; color: #34A853;">{t_corners_rem}</div>
+                <div style="font-size: 10px; color: {DARK_THEME["muted"]};">{global_avg_corners:.2f} / rem. game</div>
             </div>
             <div style="flex: 1; background: {DARK_THEME["paper"]}; padding: 12px; border-radius: 6px; border: 1px solid #333;">
-                <div style="color: {DARK_THEME["muted"]}; font-size: 11px;">YELLOW CARDS</div>
-                <div style="font-size: 22px; font-weight: bold; color: #f4b41a;">{t_yellows}</div>
-                <div style="font-size: 10px; color: {DARK_THEME["muted"]};">{(t_yellows / t_matches):.2f} / game</div>
+                <div style="color: {DARK_THEME["muted"]}; font-size: 11px;">YELLOWS</div>
+                <div style="font-size: 22px; font-weight: bold; color: #f4b41a;">{t_yellows_rem}</div>
+                <div style="font-size: 10px; color: {DARK_THEME["muted"]};">{global_avg_yellows:.2f} / rem. game</div>
             </div>
             <div style="flex: 1; background: {DARK_THEME["paper"]}; padding: 12px; border-radius: 6px; border: 1px solid #333;">
-                <div style="color: {DARK_THEME["muted"]}; font-size: 11px;">RED CARDS</div>
-                <div style="font-size: 22px; font-weight: bold; color: #EA4335;">{t_reds}</div>
-                <div style="font-size: 10px; color: {DARK_THEME["muted"]};">{(t_reds / t_matches):.2f} / game</div>
+                <div style="color: {DARK_THEME["muted"]}; font-size: 11px;">REDS</div>
+                <div style="font-size: 22px; font-weight: bold; color: #EA4335;">{t_reds_rem}</div>
+                <div style="font-size: 10px; color: {DARK_THEME["muted"]};">{global_avg_reds:.2f} / rem. game</div>
             </div>
         </div>
         """

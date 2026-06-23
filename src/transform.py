@@ -109,21 +109,44 @@ def _validate_entity_resolution(translation_dict: dict[str, str]) -> None:
         raise LookupError("Pipeline halted due to unresolved entity names.")
 
 
-def patch_tournament_structures() -> None:
+def patch_tournament_structures(training_variables):
     """
     Applies programmatic patches to the raw DataCamp competition CSVs.
-    Fixes chronological cosmetic misalignments in the group stages and
-    resolves a major structural routing bug in the Round of 32 knockout
-    bracket to align with official FIFA World Cup 2026 documentation.
+    Normalizes all country names globally, fixes chronological group bugs,
+    and automatically populates actual scores from results.csv for played matches.
     """
+
     raw_dir = os.path.join("data", "raw")
     processed_dir = os.path.join("data", "processed")
     os.makedirs(processed_dir, exist_ok=True)
+
+    # Load completed World Cup matches from results.csv for automated lookup
+    results_path = os.path.join(raw_dir, "results.csv")
+    completed_matches = pd.DataFrame()
+    if os.path.exists(results_path):
+        res_df = pd.read_csv(results_path)
+        res_df["date"] = pd.to_datetime(res_df["date"])
+
+        # Chronological Bracket: Clip the search space strictly to 2026 World Cup
+        actual_tournament_start = pd.to_datetime("2026-06-11")
+        cutoff_date = pd.to_datetime(training_variables["start_of_tournament"])
+
+        completed_matches = res_df[
+            (res_df["tournament"] == "FIFA World Cup")
+            & (res_df["date"] >= actual_tournament_start)
+            & (res_df["date"] < cutoff_date)
+            & (pd.notna(res_df["home_score"]))
+            & (res_df["home_score"] != "NA")
+        ].copy()
 
     # --- 1. PATCH GROUP STAGES (Cosmetic & Chronological Fixes) ---
     fixtures_path = os.path.join(raw_dir, "group_fixtures.csv")
     if os.path.exists(fixtures_path):
         df_groups = pd.read_csv(fixtures_path)
+
+        # GLOBAL NORMALIZATION: Translate all placeholders and shorthand variants immediately
+        df_groups["home_team"] = df_groups["home_team"].replace(DATACAMP_TO_KAGGLE)
+        df_groups["away_team"] = df_groups["away_team"].replace(DATACAMP_TO_KAGGLE)
 
         # Fix the chronological ordering bugs by swapping their IDs
         group_order_patch = {
@@ -144,17 +167,50 @@ def patch_tournament_structures() -> None:
             df_groups.loc[idx_59, "home_team"] = df_groups.loc[idx_59, "away_team"]
             df_groups.loc[idx_59, "away_team"] = home_temp
 
-        # Save to processed directory to protect the raw file
+        # Initialize score columns
+        df_groups["actual_home_score"] = np.nan
+        df_groups["actual_away_score"] = np.nan
+
+        # Look up completed matches and get scores
+        if not completed_matches.empty:
+            for idx, row in df_groups.iterrows():
+                h_team = row["home_team"]
+                a_team = row["away_team"]
+
+                match = completed_matches[
+                    (
+                        (completed_matches["home_team"] == h_team)
+                        & (completed_matches["away_team"] == a_team)
+                    )
+                    | (
+                        (completed_matches["home_team"] == a_team)
+                        & (completed_matches["away_team"] == h_team)
+                    )
+                ]
+
+                if not match.empty:
+                    match_row = match.iloc[0]
+                    try:
+                        h_score = int(float(match_row["home_score"]))
+                        a_score = int(float(match_row["away_score"]))
+                        if match_row["home_team"] == h_team:
+                            df_groups.at[idx, "actual_home_score"] = h_score
+                            df_groups.at[idx, "actual_away_score"] = a_score
+                        else:
+                            df_groups.at[idx, "actual_home_score"] = a_score
+                            df_groups.at[idx, "actual_away_score"] = h_score
+                    except ValueError, TypeError:
+                        pass
+
         df_groups.to_csv(
             os.path.join(processed_dir, "clean_group_fixtures.csv"), index=False
         )
 
-    # --- 2. PATCH KNOCKOUT SLOTS (Major Bracket Routing Fix) ---
+    # --- 2. PATCH KNOCKOUT SLOTS ---
     knockout_path = os.path.join(raw_dir, "knockout_slots.csv")
     if os.path.exists(knockout_path):
         df_knockout = pd.read_csv(knockout_path)
 
-        # Dictionary of incorrect match mappings to their true FIFA counterparts
         r32_patch = {
             74: 76,
             75: 74,
@@ -167,12 +223,12 @@ def patch_tournament_structures() -> None:
             87: 86,
             88: 87,
         }
-
-        # Simultaneous replacement prevents cascading overwrites
         df_knockout["match_id"] = df_knockout["match_id"].replace(r32_patch)
         df_knockout = df_knockout.sort_values(by="match_id").reset_index(drop=True)
 
-        # Save to processed directory
+        df_knockout["actual_home_score"] = np.nan
+        df_knockout["actual_away_score"] = np.nan
+
         df_knockout.to_csv(
             os.path.join(processed_dir, "clean_knockout_slots.csv"), index=False
         )

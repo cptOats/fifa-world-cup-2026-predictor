@@ -225,33 +225,58 @@ def simulate_deterministic_group_stage(
         venue_country = row["venue_country"]
         venue = row.get("venue", "Neutral")
 
-        raw_home, raw_away, p_corners, p_yellows, p_reds = evaluate_match_consensus(
-            home_team=home,
-            away_team=away,
-            venue_country=venue_country,
-            ratings=ratings,
-            g_home_avg=g_home,
-            g_away_avg=g_away,
-            g_neutral_avg=g_neutral,
-            blend_weights=blend_weights,
-            elo_engine=elo_engine,
-            xgb_home=xgb_home,
-            xgb_away=xgb_away,
-            feature_columns=feature_columns,
-            latest_team_form=latest_team_form,
-        )
+        # Extract real-world overrides if present
+        act_h = row.get("actual_home_score")
+        act_a = row.get("actual_away_score")
 
-        final_home, final_away, winner_side, t_corn, t_yell, t_red, _, _ = (
-            simulate_deterministic_match(
-                raw_home,
-                raw_away,
-                p_corners,
-                p_yellows,
-                p_reds,
-                match_rules,
-                is_knockout=False,
+        if (
+            pd.notna(act_h)
+            and pd.notna(act_a)
+            and str(act_h).strip() != ""
+            and str(act_a).strip() != ""
+        ):
+            # Match is completed: absorb the exact scoreline
+            final_home = int(float(act_h))
+            final_away = int(float(act_a))
+            winner_side = (
+                "home"
+                if final_home > final_away
+                else ("away" if final_away > final_home else "draw")
             )
-        )
+            t_corn, t_yell, t_red = (
+                None,
+                None,
+                None,
+            )  # Explicitly null out proxy metric stats for completed matches
+        else:
+            # Match is unplayed: predict with match_engine
+            raw_home, raw_away, p_corners, p_yellows, p_reds = evaluate_match_consensus(
+                home_team=home,
+                away_team=away,
+                venue_country=venue_country,
+                ratings=ratings,
+                g_home_avg=g_home,
+                g_away_avg=g_away,
+                g_neutral_avg=g_neutral,
+                blend_weights=blend_weights,
+                elo_engine=elo_engine,
+                xgb_home=xgb_home,
+                xgb_away=xgb_away,
+                feature_columns=feature_columns,
+                latest_team_form=latest_team_form,
+            )
+
+            final_home, final_away, winner_side, t_corn, t_yell, t_red, _, _ = (
+                simulate_deterministic_match(
+                    raw_home,
+                    raw_away,
+                    p_corners,
+                    p_yellows,
+                    p_reds,
+                    match_rules,
+                    is_knockout=False,
+                )
+            )
 
         group_results.append(
             {
@@ -305,9 +330,9 @@ def simulate_knockout_waterfall(
     feature_columns: list[str] | None = None,
     latest_team_form: dict[str, dict[str, float]] | None = None,
 ) -> pd.DataFrame:
-    """Simulates the knockout bracket tree sequentially from Round of 32 to the Final."""
+    """Simulates the knockout bracket tree sequentially, seamlessly prioritizing real-world match overrides and shootout resolutions."""
 
-    if feature_columns is None or latest_team_form is None:
+    if feature_columns is None or latest_team_form is None or elo_engine is None:
         raise ValueError(
             "Type Guard: feature_columns list cannot be None inside the routing layer."
         )
@@ -319,6 +344,24 @@ def simulate_knockout_waterfall(
     knockout_template["venue_country"] = knockout_template["venue"].apply(
         get_venue_country
     )
+
+    # HASH MAP CONFIGURATION: Pre-build an O(1) shootout winner cache
+    shootout_cache = {}
+    shootouts_path = os.path.join("data", "raw", "shootouts.csv")
+    if os.path.exists(shootouts_path):
+        try:
+            st_df = pd.read_csv(shootouts_path)
+            for _, st_row in st_df.iterrows():
+                st_date = str(st_row["date"]).strip()
+                h_team = str(st_row["home_team"]).strip()
+                a_team = str(st_row["away_team"]).strip()
+                so_winner = str(st_row["winner"]).strip()
+
+                # Cache both team permutations anchored to the exact match date
+                shootout_cache[(st_date, h_team, a_team)] = so_winner
+                shootout_cache[(st_date, a_team, h_team)] = so_winner
+        except Exception:
+            pass
 
     match_winners, match_losers = {}, {}
     winners = (
@@ -357,33 +400,123 @@ def simulate_knockout_waterfall(
 
         home_team, away_team = _resolve_team(slot_home), _resolve_team(slot_away)
 
-        raw_home, raw_away, p_corners, p_yellows, p_reds = evaluate_match_consensus(
-            home_team=home_team,
-            away_team=away_team,
-            venue_country=venue_country,
-            ratings=ratings,
-            g_home_avg=g_home_avg,
-            g_away_avg=g_away_avg,
-            g_neutral_avg=g_neutral_avg,
-            blend_weights=blend_weights,
-            elo_engine=elo_engine,
-            xgb_home=xgb_home,
-            xgb_away=xgb_away,
-            feature_columns=feature_columns,
-            latest_team_form=latest_team_form,
-        )
+        # Look for real-world overrides from disk template
+        act_h = row.get("actual_home_score")
+        act_a = row.get("actual_away_score")
 
-        f_home, f_away, winner_side, t_corn, t_yell, t_red, is_et, is_pen = (
-            simulate_deterministic_match(
-                raw_home,
-                raw_away,
-                p_corners,
-                p_yellows,
-                p_reds,
-                match_rules,
-                is_knockout=True,
+        # Track the exact date string of the historical match being processed
+        match_date = None
+        if pd.isna(act_h) or pd.isna(act_a) or str(act_h).strip() == "":
+            results_path = os.path.join("data", "raw", "results.csv")
+            parquet_path = os.path.join(
+                "data", "processed", "clean_historical_matches.parquet"
             )
-        )
+
+            if os.path.exists(results_path) and os.path.exists(parquet_path):
+                max_hist_date = pd.to_datetime(
+                    pd.read_parquet(parquet_path)["date"]
+                ).max()
+                actual_tournament_start = pd.to_datetime("2026-06-11")
+                res_df = pd.read_csv(results_path)
+                res_df["date"] = pd.to_datetime(res_df["date"])
+
+                match_lookup = res_df[
+                    (res_df["tournament"] == "FIFA World Cup")
+                    & (res_df["date"] >= actual_tournament_start)
+                    & (res_df["date"] <= max_hist_date)
+                    & (
+                        (
+                            (res_df["home_team"] == home_team)
+                            & (res_df["away_team"] == away_team)
+                        )
+                        | (
+                            (res_df["home_team"] == away_team)
+                            & (res_df["away_team"] == home_team)
+                        )
+                    )
+                ]
+
+                if not match_lookup.empty:
+                    m_row = match_lookup.iloc[0]
+                    # Capture the exact date string from the verified historical row
+                    match_date = str(m_row["date"].strftime("%Y-%m-%d")).strip()
+                    if m_row["home_team"] == home_team:
+                        act_h, act_a = m_row["home_score"], m_row["away_score"]
+                    else:
+                        act_h, act_a = m_row["away_score"], m_row["home_score"]
+
+        if (
+            pd.notna(act_h)
+            and pd.notna(act_a)
+            and str(act_h).strip() != ""
+            and str(act_a).strip() != ""
+        ):
+            # Match is completed: absorb the exact scoreline
+            f_home = int(float(act_h))
+            f_away = int(float(act_a))
+
+            if f_home > f_away:
+                winner_side = "home"
+                is_et, is_pen = False, False
+            elif f_away > f_home:
+                winner_side = "away"
+                is_et, is_pen = False, False
+            else:
+                # TIE RESOLUTION: It's an ET draw, consult the fast shootout cache map
+                is_et, is_pen = True, True
+                shootout_winner = shootout_cache.get((home_team, away_team))
+
+                if shootout_winner == home_team:
+                    winner_side = "home"
+                elif shootout_winner == away_team:
+                    winner_side = "away"
+                else:
+                    # Ultimate fallback safety if shootout row is completely missing from Kaggle
+                    logging.warning(
+                        f"⚠️ Shootout Missing: Draw recorded for {home_team} vs {away_team} on {match_date}, "
+                        "but no shootout entry matched this specific date. Defaulting to Elo advantage."
+                    )
+                    winner_side = (
+                        "home"
+                        if elo_engine.get_rating(home_team)
+                        >= elo_engine.get_rating(away_team)
+                        else "away"
+                    )
+
+            t_corn, t_yell, t_red = (
+                None,
+                None,
+                None,
+            )  # Explicitly null out proxy metric stats for completed matches
+        else:
+            # Match is unplayed: predict with match_engine
+            raw_home, raw_away, p_corners, p_yellows, p_reds = evaluate_match_consensus(
+                home_team=home_team,
+                away_team=away_team,
+                venue_country=venue_country,
+                ratings=ratings,
+                g_home_avg=g_home_avg,
+                g_away_avg=g_away_avg,
+                g_neutral_avg=g_neutral_avg,
+                blend_weights=blend_weights,
+                elo_engine=elo_engine,
+                xgb_home=xgb_home,
+                xgb_away=xgb_away,
+                feature_columns=feature_columns,
+                latest_team_form=latest_team_form,
+            )
+
+            f_home, f_away, winner_side, t_corn, t_yell, t_red, is_et, is_pen = (
+                simulate_deterministic_match(
+                    raw_home,
+                    raw_away,
+                    p_corners,
+                    p_yellows,
+                    p_reds,
+                    match_rules,
+                    is_knockout=True,
+                )
+            )
 
         advance_winner = home_team if winner_side == "home" else away_team
         advance_loser = away_team if winner_side == "home" else home_team
