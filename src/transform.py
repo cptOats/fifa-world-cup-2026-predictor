@@ -199,8 +199,10 @@ def patch_tournament_structures(training_variables):
                         else:
                             df_groups.at[idx, "actual_home_score"] = a_score
                             df_groups.at[idx, "actual_away_score"] = h_score
-                    except ValueError, TypeError:
+                    except Exception:
                         pass
+
+        df_groups["venue_country"] = df_groups["venue"].apply(get_venue_country)
 
         df_groups.to_csv(
             os.path.join(processed_dir, "clean_group_fixtures.csv"), index=False
@@ -229,6 +231,8 @@ def patch_tournament_structures(training_variables):
         df_knockout["actual_home_score"] = np.nan
         df_knockout["actual_away_score"] = np.nan
 
+        df_knockout["venue_country"] = df_knockout["venue"].apply(get_venue_country)
+
         df_knockout.to_csv(
             os.path.join(processed_dir, "clean_knockout_slots.csv"), index=False
         )
@@ -238,6 +242,7 @@ def prepare_historical_features(translation_dict, training_variables) -> str:
     """
     Executes base ETL pipeline, resolving names, applying time slicing,
     and generating the raw un-shifted feature layout structure.
+    Integrates shootout data to create a definitive 'match_outcome' target.
     """
 
     _validate_entity_resolution(translation_dict)
@@ -260,6 +265,46 @@ def prepare_historical_features(translation_dict, training_variables) -> str:
             results_df["country"] = results_df["country"].map(
                 lambda x: name_map.get(str(x).strip(), x)
             )
+
+    # --- SHOOTOUT MERGE & OUTCOME RESOLUTION ---
+    shootouts_path = os.path.join(raw_dir, "shootouts.csv")
+    if os.path.exists(shootouts_path):
+        shootouts_df = pd.read_csv(shootouts_path)
+
+        # Apply the exact same name mapping to shootouts to ensure the join works
+        if name_map:
+            shootouts_df["home_team"] = shootouts_df["home_team"].map(
+                lambda x: name_map.get(str(x).strip(), x)
+            )
+            shootouts_df["away_team"] = shootouts_df["away_team"].map(
+                lambda x: name_map.get(str(x).strip(), x)
+            )
+            shootouts_df["winner"] = shootouts_df["winner"].map(
+                lambda x: name_map.get(str(x).strip(), x)
+            )
+
+        # Left join on date and teams (ignoring score columns in shootouts.csv if any exist)
+        results_df = pd.merge(
+            results_df,
+            shootouts_df[["date", "home_team", "away_team", "winner"]],
+            on=["date", "home_team", "away_team"],
+            how="left",
+        )
+    else:
+        results_df["winner"] = np.nan
+
+    # Create the definitive classification target
+    def resolve_outcome(row):
+        if row["home_score"] > row["away_score"]:
+            return "Home_Win"
+        elif row["away_score"] > row["home_score"]:
+            return "Away_Win"
+        elif pd.notna(row.get("winner")):
+            return "Home_Win" if row["winner"] == row["home_team"] else "Away_Win"
+        else:
+            return "Draw"
+
+    results_df["match_outcome"] = results_df.apply(resolve_outcome, axis=1)
 
     # Slice strictly to target learning horizon
     modern_df = results_df[

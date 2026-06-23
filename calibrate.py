@@ -156,10 +156,10 @@ def calibrate_weighted_copula(simulations_per_rho=100, strip_friendlies=False):
     ) * 100
 
     logging.info(f"📊 Active Validation Ledger: {total_active_matches:,} matches.")
-    logging.info(f"🎯 Empirical Time-Decay Weighted Draw Rate: {actual_draw_pct:.2f}%")
+    logging.info(f"🎯 Empirical Time-Decay Weighted Draw Rate: {actual_draw_pct:.3f}%")
 
     # 7. Sweep the Copula Parameter Grid
-    rho_grid = np.arange(0.00, 0.16, 0.01)
+    rho_grid = np.arange(0.07, 0.10, 0.001)
     results = []
 
     logging.info(
@@ -198,19 +198,19 @@ def calibrate_weighted_copula(simulations_per_rho=100, strip_friendlies=False):
     optimal_rho = optimal_row["rho"]
 
     print("\n--- 📈 WEIGHTED CONSENSUS COPULA CALIBRATION RESULTS ---")
-    print(f"Target Weighted Draw Rate: {actual_draw_pct:.2f}%\n")
+    print(f"Target Weighted Draw Rate: {actual_draw_pct:.3f}%\n")
     print(f"{'Rho (ρ)':<10} | {'Weighted Sim Draw %':<20} | {'Absolute Error':<10}")
     print("-" * 50)
 
     for _, row in results_df.iterrows():
         marker = " <--- OPTIMAL" if row["rho"] == optimal_rho else ""
         print(
-            f"{row['rho']:<10.2f} | {row['sim_draw_pct']:<20.2f} | {row['error']:<10.3f}{marker}"
+            f"{row['rho']:<10.3f} | {row['sim_draw_pct']:<20.3f} | {row['error']:<10.3f}{marker}"
         )
 
     print("-" * 50)
     logging.info(
-        f"✅ Calibration complete. The mathematically optimal draw_copula is: {optimal_rho:.2f}"
+        f"✅ Calibration complete. The mathematically optimal draw_copula is: {optimal_rho:.3f}"
     )
 
 

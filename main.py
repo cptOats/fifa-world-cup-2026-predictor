@@ -39,7 +39,6 @@ from src.stochastic import (
 )
 from src.transform import (
     DATACAMP_TO_KAGGLE,
-    get_venue_country,
     patch_tournament_structures,
     prepare_historical_features,
 )
@@ -67,15 +66,15 @@ class MatchRulesConfig(TypedDict):
 # --- MODEL CONFIGURATION ---
 MODEL_TYPE: str = "blend"  # "blend", "poisson", "elo", "xgb"
 BLEND_METHOD: str = "ridge"  # "ridge", "scipy"
-RUN_MONTE_CARLO: bool = False  # Enable for full predictive power
+RUN_MONTE_CARLO: bool = True  # Enable for full predictive power
 MONTE_CARLO_RUNS: int = 10000  # Recommend 10K+
-FORCE_RETRAIN: bool = True  # Deletes model artifacts and OOF arrays
+FORCE_RETRAIN: bool = False  # Deletes model artifacts and OOF arrays
 
 # --- TRAINING VARIABLES ---
 TRAINING_VARIABLES: TrainingConfig = {
     "friendly_weight": 0.4,
     "time_slice_start": "1998-01-01",
-    "start_of_tournament": "2026-06-18",  # "2026-06-11" full tournament
+    "start_of_tournament": "2026-06-11",  # "2026-06-11" full tournament
     # start_of_tournament": (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")  # live tournament
     "decay_alpha": 0.00047,  # 4 year half-life = 0.00047
     "cv_folds": 10,  # 7+ for rigorous training
@@ -86,7 +85,7 @@ MATCH_RULES: MatchRulesConfig = {
     "et_multiplier": 1.0 / 3.0,
     "fatigue_factor": 0.80,
     "card_boost_factor": 1.75,
-    "draw_copula": 0.083,  # Calibrate via 'uv run python calibrate.py'
+    "draw_copula": 0.086,  # Calibrate via 'uv run python calibrate.py'
 }
 
 # =====================================================================
@@ -121,10 +120,28 @@ def main():
         logging.info(
             "🧹 FORCE_RETRAIN active. Evicting stale model caches and processed artifacts..."
         )
+        # 1. Clean out downstream artifact arrays and models
         if os.path.exists(ARTIFACTS_DIR):
             shutil.rmtree(ARTIFACTS_DIR)
-        if os.path.exists(os.path.join("data", "processed")):
-            shutil.rmtree(os.path.join("data", "processed"))
+            logging.info(f"🗑️ Removed artifacts directory: {ARTIFACTS_DIR}")
+
+        # 2. Clean out processed staging environments
+        processed_dir = os.path.join("data", "processed")
+        if os.path.exists(processed_dir):
+            shutil.rmtree(processed_dir)
+            logging.info(f"🗑️ Removed processed directory: {processed_dir}")
+
+        # 3. Evict stale Kaggle international football match dataset
+        raw_dir = os.path.join("data", "raw")
+        target_raw_evictions = ["former_names.csv", "results.csv", "shootouts.csv"]
+
+        for file_name in target_raw_evictions:
+            file_path = os.path.join(raw_dir, file_name)
+            if os.path.exists(file_path):
+                os.remove(file_path)
+                logging.info(
+                    f"♻️ Evicted raw historical asset to force fresh Kaggle pull: {file_path}"
+                )
 
     verify_data_layer()
 
@@ -140,15 +157,6 @@ def main():
     group_fixtures = pd.read_csv(
         os.path.join("data", "processed", "clean_group_fixtures.csv")
     )
-
-    group_fixtures["home_team"] = group_fixtures["home_team"].replace(
-        DATACAMP_TO_KAGGLE
-    )
-    group_fixtures["away_team"] = group_fixtures["away_team"].replace(
-        DATACAMP_TO_KAGGLE
-    )
-
-    group_fixtures["venue_country"] = group_fixtures["venue"].apply(get_venue_country)
 
     logging.info(
         f"🚀 Launching World Cup Prediction Pipeline [Engine: {MODEL_TYPE}{blend_suffix}]"
@@ -369,9 +377,6 @@ def main():
         )
         raw_knockout_template = pd.read_csv(
             os.path.join("data", "processed", "clean_knockout_slots.csv")
-        )
-        raw_knockout_template["venue_country"] = raw_knockout_template["venue"].apply(
-            get_venue_country
         )
 
         prob_dashboard, df_xtables = run_monte_carlo_master(

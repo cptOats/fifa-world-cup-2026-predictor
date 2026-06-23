@@ -78,6 +78,9 @@ class EloEngine:
             is_neutral = int(row.get("neutral", 0))
             match_weight = float(row.get("match_weight", 1.0))
 
+            # Fetch our newly generated match_outcome
+            outcome = row.get("match_outcome", "Unknown")
+
             # 1. Fetch ratings strictly *before* the match is played
             r_home = self.get_rating(home)
             r_away = self.get_rating(away)
@@ -87,12 +90,19 @@ class EloEngine:
                 r_home, r_away, is_neutral=is_neutral
             )
 
+            # Map actual results using the fractional shootout reality
             if h_goals > a_goals:
                 actual_home, actual_away = 1.0, 0.0
             elif a_goals > h_goals:
                 actual_home, actual_away = 0.0, 1.0
             else:
-                actual_home, actual_away = 0.5, 0.5
+                # The game tied in regulation/ET. How was it resolved?
+                if outcome == "Home_Win":
+                    actual_home, actual_away = 0.75, 0.25
+                elif outcome == "Away_Win":
+                    actual_home, actual_away = 0.25, 0.75
+                else:
+                    actual_home, actual_away = 0.5, 0.5  # A true draw
 
             g_factor = self._get_goal_margin_multiplier(h_goals, a_goals)
 

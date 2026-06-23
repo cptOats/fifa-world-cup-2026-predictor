@@ -206,6 +206,7 @@ def compile_master_feature_matrix(
         a_goals = int(row["away_score"])
         is_neutral = int(row.get("neutral", 0))
         match_weight = float(row.get("match_weight", 1.0))
+        outcome = row.get("match_outcome", "Unknown")
 
         # Capture strictly Pre-Match Elos for feature generation
         r_home = current_elos.get(h_team, elo_engine.default_elo)
@@ -223,7 +224,13 @@ def compile_master_feature_matrix(
         elif a_goals > h_goals:
             act_h, act_a = 0.0, 1.0
         else:
-            act_h, act_a = 0.5, 0.5
+            # Penalty Shootout Result
+            if outcome == "Home_Win":
+                act_h, act_a = 0.75, 0.25
+            elif outcome == "Away_Win":
+                act_h, act_a = 0.25, 0.75
+            else:
+                act_h, act_a = 0.5, 0.5
 
         g_factor = elo_engine._get_goal_margin_multiplier(h_goals, a_goals)
         current_k = elo_engine.k_factor * match_weight

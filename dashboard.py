@@ -84,20 +84,20 @@ def _():
 
     if IS_WASM:
         # Web/WASM Mode: Point directly to your live production GitHub Pages URL
-        PUBLIC_DIR = "https://cptOats.github.io/fifa-world-cup-2026-predictor/public"
+        chosen_path = "https://cptOats.github.io/fifa-world-cup-2026-predictor/public"
     else:
-        # Local Mode: Resolve the project root and look for the active source of truth
-        raw_loc = mo.notebook_location()
-        base_path = (
-            pathlib.Path(raw_loc if raw_loc is not None else ".").resolve().parent
-        )
+        # Anchor directly to the shell execution directory to prevent escaping the repo
+        base_path = pathlib.Path.cwd()
 
         if (base_path / "docs" / "public").exists():
-            PUBLIC_DIR = str(base_path / "docs" / "public")
+            chosen_path = base_path / "docs" / "public"
         elif (base_path / "public").exists():
-            PUBLIC_DIR = str(base_path / "public")
+            chosen_path = base_path / "public"
         else:
-            PUBLIC_DIR = str(base_path / "data" / "runs")
+            chosen_path = base_path / "data" / "runs"
+
+    # Assign to the uppercase module-level constant exactly once
+    PUBLIC_DIR = str(chosen_path)
 
     # Define styling palette
     DARK_THEME = {
@@ -249,7 +249,7 @@ def _(DARK_THEME, mo):
 
 
 @app.cell
-def _(glob, mo, os):
+def _(glob, mo, os, pathlib):
     # Search all potential directories across the architecture
     search_patterns = [
         os.path.join("docs", "public", "*"),
@@ -258,18 +258,20 @@ def _(glob, mo, os):
     ]
 
     all_runs = []
+    # 🎯 NEW: Maintain an absolute path lookup map for local runs
+    local_run_maps = {}
+
     for pattern in search_patterns:
         found_paths = glob.glob(pattern)
-        # Isolate directories and discard system hidden items (.gitkeep, etc.)
-        valid_dirs = [
-            p
-            for p in found_paths
-            if os.path.isdir(p) and not os.path.basename(p).startswith(".")
-        ]
-        all_runs.extend(valid_dirs)
+        for p in found_paths:
+            if os.path.isdir(p) and not os.path.basename(p).startswith("."):
+                run_name = os.path.basename(p)
+                all_runs.append(p)
+                # Map the folder name to its true absolute location on disk
+                local_run_maps[run_name] = str(pathlib.Path(p).resolve())
 
     if all_runs:
-        # LOCAL PERSPECTIVE: Sort by creation/modification timestamp
+        # Sort by creation/modification timestamp
         all_runs.sort(key=os.path.getmtime)
         run_names = [os.path.basename(r) for r in all_runs]
         run_choices = list(reversed(run_names))
@@ -292,34 +294,23 @@ def _(glob, mo, os):
         value=_clean_display_name(latest_run_name),
         label="📂 SIMULATION RUN",
     )
-    return (run_dropdown,)
+
+    # Return the lookup map to the DAG graph
+    return local_run_maps, run_dropdown
 
 
 @app.cell
-def _(PUBLIC_DIR, json, os, pd, run_dropdown):
+def _(PUBLIC_DIR, json, local_run_maps, os, pd, run_dropdown):
     import io
     import urllib.request
 
     run_id = run_dropdown.value
 
-    # Scan paths to pinpoint exactly where the selected run asset folder lives locally
-    potential_local_paths = [
-        os.path.join("docs", "public", run_id),
-        os.path.join("public", run_id),
-        os.path.join("data", "runs", run_id),
-    ]
-
-    local_run_dir = None
-    for path_opt in potential_local_paths:
-        if os.path.exists(path_opt):
-            local_run_dir = path_opt
-            break
-
-    is_local = local_run_dir is not None
+    is_local = not PUBLIC_DIR.startswith("http")
 
     def get_data_path(filename: str):
-        if is_local:
-            return os.path.join(local_run_dir, filename)
+        if is_local and run_id in local_run_maps:
+            return os.path.join(local_run_maps[run_id], filename)
         else:
             base_url = str(PUBLIC_DIR).rstrip("/")
             return f"{base_url}/{run_id}/{filename}"

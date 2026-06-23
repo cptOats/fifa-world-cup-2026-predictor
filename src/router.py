@@ -12,7 +12,6 @@ import os
 import pandas as pd
 
 from src.match_engine import evaluate_match_consensus, simulate_deterministic_match
-from src.transform import get_venue_country
 
 # Official tournament wildcard constraints defining which group's 3rd place
 # entity maps to which specific knockout bracket slot.
@@ -340,9 +339,6 @@ def simulate_knockout_waterfall(
     processed_dir = os.path.join("data", "processed")
     knockout_template = pd.read_csv(
         os.path.join(processed_dir, "clean_knockout_slots.csv")
-    )
-    knockout_template["venue_country"] = knockout_template["venue"].apply(
-        get_venue_country
     )
 
     # HASH MAP CONFIGURATION: Pre-build an O(1) shootout winner cache

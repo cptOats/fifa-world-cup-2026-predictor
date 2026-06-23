@@ -65,6 +65,31 @@ def run_monte_carlo_master(
         except Exception:
             pass
 
+    # HASH MAP CONFIGURATION: Pre-build live knockout results cache
+    live_ko_cache = {}
+    results_path = os.path.join("data", "raw", "results.csv")
+    parquet_path = os.path.join("data", "processed", "clean_historical_matches.parquet")
+
+    if os.path.exists(results_path) and os.path.exists(parquet_path):
+        max_hist_date = pd.to_datetime(pd.read_parquet(parquet_path)["date"]).max()
+        actual_tournament_start = pd.to_datetime("2026-06-11")
+        res_df = pd.read_csv(results_path)
+        res_df["date"] = pd.to_datetime(res_df["date"])
+
+        # Filter strictly to the live 2026 tournament window
+        live_matches = res_df[
+            (res_df["tournament"] == "FIFA World Cup")
+            & (res_df["date"] >= actual_tournament_start)
+            & (res_df["date"] <= max_hist_date)
+            & (pd.notna(res_df["home_score"]))
+        ]
+
+        for _, m_row in live_matches.iterrows():
+            m_date = str(m_row["date"].strftime("%Y-%m-%d")).strip()
+            # Cache both permutations for fast O(1) lookup
+            live_ko_cache[(m_row["home_team"], m_row["away_team"])] = (m_row["home_score"], m_row["away_score"], m_date)
+            live_ko_cache[(m_row["away_team"], m_row["home_team"])] = (m_row["away_score"], m_row["home_score"], m_date)
+
     metrics = {
         team: {
             "Group Stage Exit": 0,
@@ -158,16 +183,16 @@ def run_monte_carlo_master(
                 sim_h_final = h_goals[0]
                 sim_a_final = a_goals[0]
 
-                group_results.append(
-                    {
-                        "match_id": m_id,
-                        "group": group,
-                        "home_team": home,
-                        "away_team": away,
-                        "predicted_home_goals": sim_h_final,
-                        "predicted_away_goals": sim_a_final,
-                    }
-                )
+            group_results.append(
+                {
+                    "match_id": m_id,
+                    "group": group,
+                    "home_team": home,
+                    "away_team": away,
+                    "predicted_home_goals": sim_h_final,
+                    "predicted_away_goals": sim_a_final,
+                }
+            )
 
         tables = resolve_group_tables(group_results)
         top_thirds = extract_best_third_places(tables)
@@ -232,43 +257,10 @@ def run_monte_carlo_master(
             act_a = row.get("actual_away_score")
             match_date = None
 
+            # Instant O(1) hash map lookup
             if pd.isna(act_h) or pd.isna(act_a) or str(act_h).strip() == "":
-                results_path = os.path.join("data", "raw", "results.csv")
-                parquet_path = os.path.join(
-                    "data", "processed", "clean_historical_matches.parquet"
-                )
-
-                if os.path.exists(results_path) and os.path.exists(parquet_path):
-                    max_hist_date = pd.to_datetime(
-                        pd.read_parquet(parquet_path)["date"]
-                    ).max()
-                    actual_tournament_start = pd.to_datetime("2026-06-11")
-                    res_df = pd.read_csv(results_path)
-                    res_df["date"] = pd.to_datetime(res_df["date"])
-
-                    match_lookup = res_df[
-                        (res_df["tournament"] == "FIFA World Cup")
-                        & (res_df["date"] >= actual_tournament_start)
-                        & (res_df["date"] <= max_hist_date)
-                        & (
-                            (
-                                (res_df["home_team"] == home)
-                                & (res_df["away_team"] == away)
-                            )
-                            | (
-                                (res_df["home_team"] == away)
-                                & (res_df["away_team"] == home)
-                            )
-                        )
-                    ]
-
-                    if not match_lookup.empty:
-                        m_row = match_lookup.iloc[0]
-                        match_date = str(m_row["date"].strftime("%Y-%m-%d")).strip()
-                        if m_row["home_team"] == home:
-                            act_h, act_a = m_row["home_score"], m_row["away_score"]
-                        else:
-                            act_h, act_a = m_row["away_score"], m_row["home_score"]
+                if (home, away) in live_ko_cache:
+                    act_h, act_a, match_date = live_ko_cache[(home, away)]
 
             if (
                 pd.notna(act_h)
