@@ -282,18 +282,18 @@ def _(glob, mo, os, pathlib):
     else:
         # WASM PERSPECTIVE: Fallback production list on the web
         run_choices = [
-            "8_PreTournament_Final_Blend_Ridge",
-            "7_PreTournamentSemiFinal_Ensemble_Blend_Ridge",
-            "6_KnockoutQuarterFinal_Ensemble_Blend_Ridge",
-            "5_KnockoutRound16_Ensemble_Blend_Ridge",
-            "4_KnockoutRound32_Ensemble_Blend_Ridge",
-            "3_GroupRound3_Ensemble_Blend_Ridge",
-            "2_GroupRound2_Ensemble_Blend_Ridge",
-            "1_PreTournament_Ensemble_Blend_Ridge",
-            "1_PreTournament_Ensemble_Blend_SLSQP",
-            "1_PreTournament_XGBoost_Regressor",
-            "1_PreTournament_Dynamic_Elo_Rating",
-            "1_PreTournament_Poisson_Dixon_Coles",
+            "8_KnockoutFinal_Ensemble",
+            "7_KnockoutSemiFinal_Ensemble",
+            "6_KnockoutQuarterFinal_Ensemble",
+            "5_KnockoutRound16_Ensemble",
+            "4_KnockoutRound32_Ensemble",
+            "3_GroupRound3_Ensemble",
+            "2_GroupRound2_Ensemble",
+            "1_Tournament_Ensemble_Ridge",
+            "1_Tournament_Ensemble_SLSQP",
+            "1_Tournament_XGBoost_Regressor",
+            "1_Tournament_Dynamic_Elo_Rating",
+            "1_Tournament_Poisson_Dixon_Coles",
         ]
         latest_run_name = "1_PreTournament_Ensemble_Blend_Ridge"
         local_run_maps = {}
