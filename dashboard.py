@@ -258,28 +258,45 @@ def _(glob, mo, os, pathlib):
     ]
 
     all_runs = []
-    # 🎯 NEW: Maintain an absolute path lookup map for local runs
-    local_run_maps = {}
-
     for pattern in search_patterns:
         found_paths = glob.glob(pattern)
-        for p in found_paths:
-            if os.path.isdir(p) and not os.path.basename(p).startswith("."):
-                run_name = os.path.basename(p)
-                all_runs.append(p)
-                # Map the folder name to its true absolute location on disk
-                local_run_maps[run_name] = str(pathlib.Path(p).resolve())
+        valid_dirs = [
+            p
+            for p in found_paths
+            if os.path.isdir(p) and not os.path.basename(p).startswith(".")
+        ]
+        all_runs.extend(valid_dirs)
 
     if all_runs:
-        # Sort by creation/modification timestamp
+        # LOCAL PERSPECTIVE: Sort by creation/modification timestamp
         all_runs.sort(key=os.path.getmtime)
         run_names = [os.path.basename(r) for r in all_runs]
         run_choices = list(reversed(run_names))
         latest_run_name = run_choices[0]
+
+        # Build the local lookup map for absolute paths
+        local_run_maps = {
+            r: str(pathlib.Path(all_runs[run_names.index(r)]).resolve())
+            for r in run_choices
+        }
     else:
         # WASM PERSPECTIVE: Fallback production list on the web
-        run_choices = ["1_PreTournament_Ensemble_Blend_Ridge"]
+        run_choices = [
+            "8_PreTournament_Final_Blend_Ridge",
+            "7_PreTournamentSemiFinal_Ensemble_Blend_Ridge",
+            "6_KnockoutQuarterFinal_Ensemble_Blend_Ridge",
+            "5_KnockoutRound16_Ensemble_Blend_Ridge",
+            "4_KnockoutRound32_Ensemble_Blend_Ridge",
+            "3_GroupRound3_Ensemble_Blend_Ridge",
+            "2_GroupRound2_Ensemble_Blend_Ridge",
+            "1_PreTournament_Ensemble_Blend_Ridge",
+            "1_PreTournament_Ensemble_Blend_SLSQP",
+            "1_PreTournament_XGBoost_Regressor",
+            "1_PreTournament_Dynamic_Elo_Rating",
+            "1_PreTournament_Poisson_Dixon_Coles",
+        ]
         latest_run_name = "1_PreTournament_Ensemble_Blend_Ridge"
+        local_run_maps = {}
 
     def _clean_display_name(folder_name: str) -> str:
         parts = folder_name.split("_")
@@ -300,7 +317,7 @@ def _(glob, mo, os, pathlib):
 
 
 @app.cell
-def _(PUBLIC_DIR, json, local_run_maps, os, pd, run_dropdown):
+def _(PUBLIC_DIR, mo, json, local_run_maps, os, pd, run_dropdown):
     import io
     import urllib.request
 
@@ -333,9 +350,27 @@ def _(PUBLIC_DIR, json, local_run_maps, os, pd, run_dropdown):
         df_thirds = load_csv("deterministic_third_places.csv")
         df_capabilities = load_csv("pre_tournament_capabilities.csv")
     except Exception as e:
+        import urllib.error
+
+        if not is_local and isinstance(e, urllib.error.HTTPError) and e.code == 404:
+            mo.stop(
+                True,
+                mo.md(
+                    f"""
+                    <div style="background: #1a1a1a; padding: 30px; border-radius: 8px; border: 1px solid #f4b41a; text-align: center; font-family: monospace;">
+                        <h3 style="color: #f4b41a; margin-top: 0;">⏳ STAGE LOCKED</h3>
+                        <p style="color: #888; font-size: 13px;">
+                            The run configurations for <b>{run_id}</b> haven't been compiled yet.<br>
+                            Predictions for this node will unlock live as the tournament transitions into this phase!
+                        </p>
+                    </div>
+                    """
+                ),
+            )
+
+        # Fallback for genuine data corruption or missing critical local files
         raise RuntimeError(
-            f"🚨 CRITICAL DATA FETCH ERROR: Unable to load run sequence '{run_id}'. "
-            f"Verify your public/ subfolders exactly match the dropdown strings."
+            f"🚨 CRITICAL DATA FETCH ERROR: Unable to load run sequence '{run_id}'."
         ) from e
 
     # --- UN-FLOODABLE DETERMINISTIC DISCIPLINARY IMPUTATION ALLOCATION ---
