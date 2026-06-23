@@ -7,6 +7,10 @@ __marimo__/
 my_dashboard_dir/
 .ipynb_checkpoints/
 
+# Ignore Windows Zone Identifier metadata streams
+*:Zone.Identifier
+*.Identifier
+
 # Datasets
 data/artifacts
 data/processed/

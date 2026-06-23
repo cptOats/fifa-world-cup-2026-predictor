@@ -9,7 +9,7 @@ match_id,round,venue,venue_country,home_team,away_team,predicted_home_goals,pred
 8,Group C,"Gillette Stadium, Boston",United States,Haiti,Scotland,1,1,8,3,0,False,False,Draw
 9,Group E,"NRG Stadium, Houston",United States,Germany,Curaçao,2,1,9,4,0,False,False,Germany
 10,Group F,"AT&T Stadium, Dallas",United States,Netherlands,Japan,1,1,10,4,0,False,False,Draw
-11,Group E,"Lincoln Financial Field, Philadelphia",United States,Ivory Coast,Ecuador,1,1,9,3,0,False,False,Draw
+11,Group E,"Lincoln Financial Field, Philadelphia",United States,Ivory Coast,Ecuador,1,2,9,3,0,False,False,Ecuador
 12,Group F,"Estadio BBVA, Monterrey",Mexico,Sweden,Tunisia,1,1,9,3,0,False,False,Draw
 13,Group H,"Mercedes-Benz Stadium, Atlanta",United States,Spain,Cape Verde,2,1,10,4,0,False,False,Spain
 14,Group G,"Lumen Field, Seattle",United States,Belgium,Egypt,1,1,10,4,0,False,False,Draw
@@ -20,7 +20,7 @@ match_id,round,venue,venue_country,home_team,away_team,predicted_home_goals,pred
 19,Group I,"Gillette Stadium, Boston",United States,Iraq,Norway,1,2,9,3,0,False,False,Norway
 20,Group J,"Levi's Stadium, Santa Clara",United States,Austria,Jordan,1,1,9,3,0,False,False,Draw
 21,Group K,"NRG Stadium, Houston",United States,Portugal,DR Congo,2,1,10,4,0,False,False,Portugal
-22,Group L,"AT&T Stadium, Dallas",United States,England,Croatia,2,1,10,4,0,False,False,England
+22,Group L,"AT&T Stadium, Dallas",United States,England,Croatia,1,1,10,4,0,False,False,Draw
 23,Group L,"BMO Field, Toronto",Canada,Ghana,Panama,1,2,8,3,0,False,False,Panama
 24,Group K,"Estadio Azteca, Mexico City",Mexico,Uzbekistan,Colombia,1,2,9,3,0,False,False,Colombia
 25,Group A,"Mercedes-Benz Stadium, Atlanta",United States,Czech Republic,South Africa,1,1,8,3,0,False,False,Draw
@@ -71,34 +71,34 @@ match_id,round,venue,venue_country,home_team,away_team,predicted_home_goals,pred
 70,Group K,"Mercedes-Benz Stadium, Atlanta",United States,DR Congo,Uzbekistan,1,1,8,3,0,False,False,Draw
 71,Group J,"GEHA Field at Arrowhead Stadium, Kansas City",United States,Algeria,Austria,1,1,9,4,0,False,False,Draw
 72,Group J,"AT&T Stadium, Dallas",United States,Jordan,Argentina,1,2,9,4,0,False,False,Argentina
-73,Round of 32,"SoFi Stadium, Los Angeles",United States,South Korea,Switzerland,2,2,12,4,0,True,True,Switzerland
-74,Round of 32,"Gillette Stadium, Boston",United States,Germany,Australia,2,1,13,5,0,True,False,Germany
+73,Round of 32,"SoFi Stadium, Los Angeles",United States,South Korea,Switzerland,2,2,12,4,0,True,True,South Korea
+74,Round of 32,"Gillette Stadium, Boston",United States,Germany,Australia,2,2,13,5,0,True,True,Germany
 75,Round of 32,"Estadio BBVA, Monterrey",Mexico,Netherlands,Morocco,1,2,13,5,0,True,False,Morocco
 76,Round of 32,"NRG Stadium, Houston",United States,Brazil,Japan,2,1,13,5,0,True,False,Brazil
 77,Round of 32,"MetLife Stadium, East Rutherford",United States,France,Egypt,2,1,10,4,0,False,False,France
 78,Round of 32,"AT&T Stadium, Dallas",United States,Ecuador,Senegal,2,1,11,4,0,True,False,Ecuador
-79,Round of 32,"Estadio Azteca, Mexico City",Mexico,Mexico,Ivory Coast,2,1,9,3,0,False,False,Mexico
-80,Round of 32,"Mercedes-Benz Stadium, Atlanta",United States,England,Norway,2,1,10,4,0,False,False,England
+79,Round of 32,"Estadio Azteca, Mexico City",Mexico,Mexico,Norway,2,1,12,4,0,True,False,Mexico
+80,Round of 32,"Mercedes-Benz Stadium, Atlanta",United States,England,Ivory Coast,2,1,10,4,0,False,False,England
 81,Round of 32,"Levi's Stadium, Santa Clara",United States,United States,Bosnia and Herzegovina,2,1,8,3,0,False,False,United States
 82,Round of 32,"Lumen Field, Seattle",United States,Belgium,South Africa,2,1,9,4,0,False,False,Belgium
 83,Round of 32,"BMO Field, Toronto",Canada,Colombia,Croatia,2,1,10,4,0,False,False,Colombia
 84,Round of 32,"SoFi Stadium, Los Angeles",United States,Spain,Algeria,2,1,11,4,0,False,False,Spain
-85,Round of 32,"BC Place, Vancouver",Canada,Canada,Austria,2,1,9,3,0,False,False,Canada
+85,Round of 32,"BC Place, Vancouver",Canada,Canada,Austria,2,1,11,4,0,True,False,Canada
 86,Round of 32,"Hard Rock Stadium, Miami",United States,Argentina,Uruguay,2,1,10,4,0,False,False,Argentina
 87,Round of 32,"GEHA Field at Arrowhead Stadium, Kansas City",United States,Portugal,Panama,2,1,10,4,0,False,False,Portugal
 88,Round of 32,"AT&T Stadium, Dallas",United States,Paraguay,Iran,1,2,11,4,0,True,False,Iran
-89,Round of 16,"NRG Stadium, Houston",United States,Switzerland,Morocco,1,2,10,4,0,False,False,Morocco
+89,Round of 16,"NRG Stadium, Houston",United States,South Korea,Morocco,1,2,11,4,0,True,False,Morocco
 90,Round of 16,"Lincoln Financial Field, Philadelphia",United States,Germany,France,1,2,11,5,0,False,False,France
 91,Round of 16,"MetLife Stadium, East Rutherford",United States,Brazil,Ecuador,2,1,13,5,0,True,False,Brazil
 92,Round of 16,"Estadio Azteca, Mexico City",Mexico,Mexico,England,1,1,12,5,0,True,True,England
 93,Round of 16,"AT&T Stadium, Dallas",United States,Colombia,Spain,1,2,11,5,0,False,False,Spain
 94,Round of 16,"Lumen Field, Seattle",United States,United States,Belgium,2,2,12,5,0,True,True,Belgium
 95,Round of 16,"Mercedes-Benz Stadium, Atlanta",United States,Argentina,Iran,2,1,10,4,0,False,False,Argentina
-96,Round of 16,"BC Place, Vancouver",Canada,Canada,Portugal,1,2,12,5,0,True,False,Portugal
+96,Round of 16,"BC Place, Vancouver",Canada,Canada,Portugal,1,1,12,5,0,True,True,Canada
 97,Quarter-final,"Gillette Stadium, Boston",United States,Morocco,France,1,2,13,5,0,True,False,France
 98,Quarter-final,"SoFi Stadium, Los Angeles",United States,Spain,Belgium,2,1,12,5,0,False,False,Spain
 99,Quarter-final,"Hard Rock Stadium, Miami",United States,Brazil,England,1,2,14,6,0,True,False,England
-100,Quarter-final,"GEHA Field at Arrowhead Stadium, Kansas City",United States,Argentina,Portugal,2,1,11,5,0,False,False,Argentina
+100,Quarter-final,"GEHA Field at Arrowhead Stadium, Kansas City",United States,Argentina,Canada,2,1,10,4,0,False,False,Argentina
 101,Semi-final,"AT&T Stadium, Dallas",United States,France,Spain,1,2,12,5,0,False,False,Spain
 102,Semi-final,"Mercedes-Benz Stadium, Atlanta",United States,England,Argentina,1,2,14,6,0,True,False,Argentina
 103,Third-place playoff,"Hard Rock Stadium, Miami",United States,France,England,2,2,14,6,0,True,True,France

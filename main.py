@@ -68,13 +68,13 @@ MODEL_TYPE: str = "blend"  # "blend", "poisson", "elo", "xgb"
 BLEND_METHOD: str = "ridge"  # "ridge", "scipy"
 RUN_MONTE_CARLO: bool = True  # Enable for full predictive power
 MONTE_CARLO_RUNS: int = 10000  # Recommend 10K+
-FORCE_RETRAIN: bool = False  # Deletes model artifacts and OOF arrays
+FORCE_RETRAIN: bool = True  # Deletes model artifacts and OOF arrays
 
 # --- TRAINING VARIABLES ---
 TRAINING_VARIABLES: TrainingConfig = {
     "friendly_weight": 0.4,
     "time_slice_start": "1998-01-01",
-    "start_of_tournament": "2026-06-11",  # "2026-06-11" full tournament
+    "start_of_tournament": "2026-06-18",  # "2026-06-11" full tournament
     # start_of_tournament": (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")  # live tournament
     "decay_alpha": 0.00047,  # 4 year half-life = 0.00047
     "cv_folds": 10,  # 7+ for rigorous training
