@@ -30,4 +30,4 @@ match_id,round,venue,venue_country,home_team,away_team,predicted_home_goals,pred
 101,Semi-final,"AT&T Stadium, Dallas",United States,France,Spain,1,2,False,False,Spain
 102,Semi-final,"Mercedes-Benz Stadium, Atlanta",United States,Brazil,Argentina,1,2,False,False,Argentina
 103,Third-place playoff,"Hard Rock Stadium, Miami",United States,France,Brazil,2,1,False,False,France
-104,Final,"MetLife Stadium, East Rutherford",United States,Spain,Argentina,1,2,False,False,Argentina
+104,Final,"MetLife Stadium, East Rutherford",United States,Spain,Argentina,2,1,False,False,Spain
