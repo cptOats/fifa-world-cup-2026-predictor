@@ -67,7 +67,7 @@ def verify_data_layer():
     missing_kaggle = [f for f in kaggle_files if not os.path.exists(f)]
     if missing_kaggle:
         logging.warning(
-            "⚠️  Missing local historical files. Initializing automated scraper..."
+            "⚠️ Missing local historical files. Initializing automated scraper..."
         )
         _ingest_kaggle_data()
         logging.info("📥 Automated scraper ingestion completed successfully.")

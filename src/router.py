@@ -29,7 +29,7 @@ THIRD_PLACE_CONSTRAINTS = {
 
 
 def resolve_group_tables(predicted_fixtures_list_or_df):
-    """Compiles match timelines natively into structured standing point grids."""
+    """Ultra-fast, native Python implementation of the 2026 Group Stage Resolver."""
 
     is_df = isinstance(predicted_fixtures_list_or_df, pd.DataFrame)
     records = (
@@ -37,48 +37,98 @@ def resolve_group_tables(predicted_fixtures_list_or_df):
         if is_df
         else predicted_fixtures_list_or_df
     )
-    table_records = {}
+
+    # 1. Base table compilation using native high-speed dictionaries
+    teams_data = {}
+    group_matches = {}
 
     for row in records:
-        group = row["group"]
+        grp = row["group"]
         home = row["home_team"]
         away = row["away_team"]
-        home_score = row["predicted_home_goals"]
-        away_score = row["predicted_away_goals"]
+        h_score = row["predicted_home_goals"]
+        a_score = row["predicted_away_goals"]
 
-        for team in [home, away]:
-            if team not in table_records:
-                table_records[team] = {
-                    "group": group,
+        if grp not in group_matches:
+            group_matches[grp] = []
+        group_matches[grp].append(row)
+
+        for team in (home, away):
+            if team not in teams_data:
+                teams_data[team] = {
+                    "group": grp,
                     "team": team,
                     "points": 0,
                     "goals_for": 0,
                     "goals_against": 0,
                     "goals_diff": 0,
+                    "h2h_pts": 0,
+                    "h2h_gd": 0,
+                    "h2h_gf": 0,
                 }
 
-        table_records[home]["goals_for"] += home_score
-        table_records[home]["goals_against"] += away_score
-        table_records[away]["goals_for"] += away_score
-        table_records[away]["goals_against"] += home_score
+        teams_data[home]["goals_for"] += h_score
+        teams_data[home]["goals_against"] += a_score
+        teams_data[away]["goals_for"] += a_score
+        teams_data[away]["goals_against"] += h_score
 
-        if home_score > away_score:
-            table_records[home]["points"] += 3
-        elif away_score > home_score:
-            table_records[away]["points"] += 3
+        teams_data[home]["goals_diff"] += h_score - a_score
+        teams_data[away]["goals_diff"] += a_score - h_score
+
+        if h_score > a_score:
+            teams_data[home]["points"] += 3
+        elif a_score > h_score:
+            teams_data[away]["points"] += 3
         else:
-            table_records[home]["points"] += 1
-            table_records[away]["points"] += 1
+            teams_data[home]["points"] += 1
+            teams_data[away]["points"] += 1
 
-    compiled_list = list(table_records.values())
-    for stats in compiled_list:
-        stats["goals_diff"] = stats["goals_for"] - stats["goals_against"]
+    # 2. Native Head-to-Head processing ONLY for point deadlocks
+    for grp, matches in group_matches.items():
+        pts_map = {}
+        for team, data in teams_data.items():
+            if data["group"] == grp:
+                p = data["points"]
+                if p not in pts_map:
+                    pts_map[p] = []
+                pts_map[p].append(team)
 
-    # Native Multi-key Sort: Group (Asc), Points (Desc), Goal Diff (Desc), Goals For (Desc)
+        for p, tied_teams in pts_map.items():
+            if len(tied_teams) > 1:
+                # If tied, simulate the mini-league between the deadlocked teams
+                for m in matches:
+                    if m["home_team"] in tied_teams and m["away_team"] in tied_teams:
+                        h, a = m["home_team"], m["away_team"]
+                        hg, ag = m["predicted_home_goals"], m["predicted_away_goals"]
+
+                        teams_data[h]["h2h_gf"] += hg
+                        teams_data[a]["h2h_gf"] += ag
+                        teams_data[h]["h2h_gd"] += hg - ag
+                        teams_data[a]["h2h_gd"] += ag - hg
+
+                        if hg > ag:
+                            teams_data[h]["h2h_pts"] += 3
+                        elif ag > hg:
+                            teams_data[a]["h2h_pts"] += 3
+                        else:
+                            teams_data[h]["h2h_pts"] += 1
+                            teams_data[a]["h2h_pts"] += 1
+
+    # 3. Compile and execute the 2026 multi-key tuple sort natively
+    compiled_list = list(teams_data.values())
     compiled_list.sort(
-        key=lambda x: (x["group"], -x["points"], -x["goals_diff"], -x["goals_for"])
+        key=lambda x: (
+            x["group"],
+            -x["points"],
+            -x["h2h_pts"],
+            -x["h2h_gd"],
+            -x["h2h_gf"],
+            -x["goals_diff"],
+            -x["goals_for"],
+        )
     )
 
+    # 4. Assign positions
     current_group = None
     pos = 1
     for row in compiled_list:
@@ -88,6 +138,7 @@ def resolve_group_tables(predicted_fixtures_list_or_df):
         row["position"] = pos
         pos += 1
 
+    # 5. Return as a single DataFrame to maintain downstream stochastic contracts
     return pd.DataFrame(compiled_list)
 
 
@@ -104,7 +155,6 @@ def extract_best_third_places(group_tables_df):
 
 def allocate_third_places(advancing_thirds_df):
     """Maps qualifying third-place teams to knockout slots using recursive backtracking."""
-
     teams = list(zip(advancing_thirds_df["group"], advancing_thirds_df["team"]))
     slot_ids = list(THIRD_PLACE_CONSTRAINTS.keys())
 
@@ -112,7 +162,6 @@ def allocate_third_places(advancing_thirds_df):
         team_idx: int, current_assignment: dict[int, str]
     ) -> dict[int, str] | None:
         """DFS recursive state exploration to satisfy wildcard dependency matrix."""
-
         if team_idx == len(teams):
             return current_assignment
 
@@ -126,7 +175,6 @@ def allocate_third_places(advancing_thirds_df):
                     result = backtrack(team_idx + 1, next_assignment)
                     if result is not None:
                         return result
-
         return None
 
     assignment = backtrack(0, {})

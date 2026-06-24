@@ -68,7 +68,7 @@ MODEL_TYPE: str = "blend"  # "blend", "poisson", "elo", "xgb"
 BLEND_METHOD: str = "ridge"  # "ridge", "scipy"
 RUN_MONTE_CARLO: bool = True  # Enable for full predictive power
 MONTE_CARLO_RUNS: int = 10000  # Recommend 10K+
-FORCE_RETRAIN: bool = False  # Deletes model artifacts and OOF arrays
+FORCE_RETRAIN: bool = False  # Delete model artifacts and OOF arrays
 
 # --- TRAINING VARIABLES ---
 TRAINING_VARIABLES: TrainingConfig = {
@@ -110,7 +110,7 @@ logging.basicConfig(
 def main():
     """Executes the end-to-end World Cup prediction pipeline."""
 
-    logging.info("✈️  Running pre-flight checks...")
+    logging.info("✈️ Running pre-flight checks...")
     test_point_in_time_leakage()
 
     ARTIFACTS_DIR = os.path.join("data", "artifacts")
@@ -123,13 +123,13 @@ def main():
         # 1. Clean out downstream artifact arrays and models
         if os.path.exists(ARTIFACTS_DIR):
             shutil.rmtree(ARTIFACTS_DIR)
-            logging.info(f"🗑️  Removed artifacts directory: {ARTIFACTS_DIR}")
+            logging.info(f"🗑️ Removed artifacts directory: {ARTIFACTS_DIR}")
 
         # 2. Clean out processed staging environments
         processed_dir = os.path.join("data", "processed")
         if os.path.exists(processed_dir):
             shutil.rmtree(processed_dir)
-            logging.info(f"🗑️  Removed processed directory: {processed_dir}")
+            logging.info(f"🗑️ Removed processed directory: {processed_dir}")
 
         # 3. Evict stale Kaggle international football match dataset
         raw_dir = os.path.join("data", "raw")
@@ -140,7 +140,7 @@ def main():
             if os.path.exists(file_path):
                 os.remove(file_path)
                 logging.info(
-                    f"♻️  Evicted raw historical asset to force fresh Kaggle pull: {file_path}"
+                    f"♻️ Evicted raw historical asset to force fresh Kaggle pull: {file_path}"
                 )
 
     verify_data_layer()
@@ -150,7 +150,7 @@ def main():
     )
     patch_tournament_structures(TRAINING_VARIABLES)
 
-    logging.info("⚙️  Running entity validation and preparing historical features...")
+    logging.info("⚙️ Running entity validation and preparing historical features...")
     saved_path = prepare_historical_features(DATACAMP_TO_KAGGLE, TRAINING_VARIABLES)
 
     modern_df = pd.read_parquet(saved_path)
@@ -224,7 +224,7 @@ def main():
         )
 
     logging.info(
-        f"⚖️  Active Execution Weights: Poisson {blend_weights['poisson']:.3f} | Elo {blend_weights['elo']:.3f} | XGBoost {blend_weights['xgb']:.3f}"
+        f"⚖️ Active Execution Weights: Poisson {blend_weights['poisson']:.3f} | Elo {blend_weights['elo']:.3f} | XGBoost {blend_weights['xgb']:.3f}"
     )
 
     logging.info("📊 Extracting final pre-tournament team form states...")
@@ -411,7 +411,7 @@ def main():
         )
 
         # Compute and Save Sandbox Pairwise Matrix
-        logging.info("⚔️  Spinning up Sandbox pairwise matrix computations...")
+        logging.info("⚔️ Spinning up Sandbox pairwise matrix computations...")
         df_sandbox = precompute_sandbox_matchups(
             all_teams=participating_teams,
             ratings=ratings,

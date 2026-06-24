@@ -52,7 +52,7 @@ def get_latest_run_metadata() -> tuple[dict[str, float], float]:
 
     logging.info(f"💾 Loaded Run Configurations from: {os.path.basename(latest_run)}")
     logging.info(
-        f"⚖️  Weights: Poisson {weights['poisson']:.3f} | Elo {weights['elo']:.3f} | XGB {weights['xgb']:.3f}"
+        f"⚖️ Weights: Poisson {weights['poisson']:.3f} | Elo {weights['elo']:.3f} | XGB {weights['xgb']:.3f}"
     )
     logging.info(f"📉 Active Time-Decay Alpha: {decay_alpha}")
 

@@ -32,7 +32,7 @@ def run_isolated_data_sync():
         processed_dir = os.path.join("data", "processed")
         if os.path.exists(processed_dir):
             shutil.rmtree(processed_dir)
-            logging.info(f"🗑️  Removed processed directory: {processed_dir}")
+            logging.info(f"🗑️ Removed processed directory: {processed_dir}")
 
         # 2. Evict stale Kaggle international football match dataset
         raw_dir = os.path.join("data", "raw")
@@ -43,19 +43,19 @@ def run_isolated_data_sync():
             if os.path.exists(file_path):
                 os.remove(file_path)
                 logging.info(
-                    f"♻️  Evicted raw historical asset to force fresh Kaggle pull: {file_path}"
+                    f"♻️ Evicted raw historical asset to force fresh Kaggle pull: {file_path}"
                 )
 
         # 3. Assert data layer integrity before closing the loop 🛡️
-        logging.info("🛡️  Running data layer validation suite...")
+        logging.info("🛡️ Running data layer validation suite...")
         verify_data_layer()
 
         # 4. Patch structures and auto-ingest real scores from results.csv
-        logging.info("⚙️  Parsing results.csv and embedding actual score lines...")
+        logging.info("⚙️ Parsing results.csv and embedding actual score lines...")
         patch_tournament_structures(TRAINING_VARIABLES)
 
         # 5. Re-build the Parquet feature engine for the new date window
-        logging.info("🏗️  Re-compiling parquet historical learning features...")
+        logging.info("🏗️ Re-compiling parquet historical learning features...")
         prepare_historical_features(DATACAMP_TO_KAGGLE, TRAINING_VARIABLES)
 
         logging.info("✅ Data sync and verification complete!")

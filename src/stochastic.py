@@ -9,6 +9,7 @@ across 'xTables' (xPts/xGD) and tournament survival metrics.
 import json
 import os
 from collections import Counter
+from typing import cast
 
 import numpy as np
 import pandas as pd
@@ -87,8 +88,16 @@ def run_monte_carlo_master(
         for _, m_row in live_matches.iterrows():
             m_date = str(m_row["date"].strftime("%Y-%m-%d")).strip()
             # Cache both permutations for fast O(1) lookup
-            live_ko_cache[(m_row["home_team"], m_row["away_team"])] = (m_row["home_score"], m_row["away_score"], m_date)
-            live_ko_cache[(m_row["away_team"], m_row["home_team"])] = (m_row["away_score"], m_row["home_score"], m_date)
+            live_ko_cache[(m_row["home_team"], m_row["away_team"])] = (
+                m_row["home_score"],
+                m_row["away_score"],
+                m_date,
+            )
+            live_ko_cache[(m_row["away_team"], m_row["home_team"])] = (
+                m_row["away_score"],
+                m_row["home_score"],
+                m_date,
+            )
 
     metrics = {
         team: {
@@ -199,10 +208,10 @@ def run_monte_carlo_master(
         third_place_assignments = allocate_third_places(top_thirds)
 
         # Record Expected Points (xPts)
-        for _, row in tables.iterrows():
-            team_val = row["team"]
-            xtable_ledger[team_val]["expected_points"] += row["points"]
-            xtable_ledger[team_val]["expected_gd"] += row["goals_diff"]
+        for row in tables.itertuples():
+            team_val = str(row.team)
+            xtable_ledger[team_val]["expected_points"] += float(cast(float, row.points))
+            xtable_ledger[team_val]["expected_gd"] += float(cast(float, row.goals_diff))
 
         winners = tables[tables["position"] == 1].set_index("group")["team"].to_dict()
         runners = tables[tables["position"] == 2].set_index("group")["team"].to_dict()
@@ -497,20 +506,29 @@ def build_expected_stochastic_bracket(
     df_xt = df_xtables.copy()
     df_xt["group"] = df_xt["team"].map(team_to_group)
     df_xt = df_xt.sort_values(
-        by=["group", "expected_points", "expected_gd"], ascending=[True, False, False]
+        by=[
+            "group",
+            "group_winner_probability_pct",
+            "group_runner_up_probability_pct",
+            "expected_points",
+        ],
+        ascending=[True, False, False, False],
     )
     df_xt["position"] = df_xt.groupby("group").cumcount() + 1
 
     winners = df_xt[df_xt["position"] == 1].set_index("group")["team"].to_dict()
     runners = df_xt[df_xt["position"] == 2].set_index("group")["team"].to_dict()
 
+    # Extract the absolute best 3rd place teams based on their exact wildcard survival rates
     thirds = df_xt[df_xt["position"] == 3].copy()
-    top_thirds = (
-        thirds.rename(
-            columns={"expected_points": "points", "expected_gd": "goals_diff"}
-        )
-        .sort_values(by=["points", "goals_diff"], ascending=[False, False])
-        .head(8)
+    top_thirds = thirds.sort_values(
+        by=["wildcard_probability_pct", "expected_points", "expected_gd"],
+        ascending=[False, False, False],
+    ).head(8)
+
+    # Rename for downstream compatibility with allocate_third_places mapping
+    top_thirds = top_thirds.rename(
+        columns={"expected_points": "points", "expected_gd": "goals_diff"}
     )
     third_place_assignments = allocate_third_places(top_thirds)
 
