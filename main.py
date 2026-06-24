@@ -68,14 +68,14 @@ MODEL_TYPE: str = "blend"  # "blend", "poisson", "elo", "xgb"
 BLEND_METHOD: str = "ridge"  # "ridge", "scipy"
 RUN_MONTE_CARLO: bool = True  # Enable for full predictive power
 MONTE_CARLO_RUNS: int = 10000  # Recommend 10K+
-FORCE_RETRAIN: bool = True  # Deletes model artifacts and OOF arrays
+FORCE_RETRAIN: bool = False  # Deletes model artifacts and OOF arrays
 
 # --- TRAINING VARIABLES ---
 TRAINING_VARIABLES: TrainingConfig = {
     "friendly_weight": 0.4,
     "time_slice_start": "1998-01-01",
-    "start_of_tournament": "2026-06-18",  # "2026-06-11" full tournament
-    # start_of_tournament": (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")  # live tournament
+    "start_of_tournament": "2026-06-11",  # "2026-06-11" full tournament
+    # "start_of_tournament": (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")  # live tournament
     "decay_alpha": 0.00047,  # 4 year half-life = 0.00047
     "cv_folds": 10,  # 7+ for rigorous training
 }
@@ -123,13 +123,13 @@ def main():
         # 1. Clean out downstream artifact arrays and models
         if os.path.exists(ARTIFACTS_DIR):
             shutil.rmtree(ARTIFACTS_DIR)
-            logging.info(f"🗑️ Removed artifacts directory: {ARTIFACTS_DIR}")
+            logging.info(f"🗑️  Removed artifacts directory: {ARTIFACTS_DIR}")
 
         # 2. Clean out processed staging environments
         processed_dir = os.path.join("data", "processed")
         if os.path.exists(processed_dir):
             shutil.rmtree(processed_dir)
-            logging.info(f"🗑️ Removed processed directory: {processed_dir}")
+            logging.info(f"🗑️  Removed processed directory: {processed_dir}")
 
         # 3. Evict stale Kaggle international football match dataset
         raw_dir = os.path.join("data", "raw")
@@ -140,7 +140,7 @@ def main():
             if os.path.exists(file_path):
                 os.remove(file_path)
                 logging.info(
-                    f"♻️ Evicted raw historical asset to force fresh Kaggle pull: {file_path}"
+                    f"♻️  Evicted raw historical asset to force fresh Kaggle pull: {file_path}"
                 )
 
     verify_data_layer()

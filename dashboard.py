@@ -295,7 +295,7 @@ def _(glob, mo, os, pathlib):
             "1_Tournament_Dynamic_Elo_Rating",
             "1_Tournament_Poisson_Dixon_Coles",
         ]
-        latest_run_name = "1_PreTournament_Ensemble_Blend_Ridge"
+        latest_run_name = "1_Tournament_Ensemble_Ridge"
         local_run_maps = {}
 
     def _clean_display_name(folder_name: str) -> str:
@@ -1352,6 +1352,30 @@ def _(
                     d_pct = float(_m_data["grp_draw"])
                     a_pct = float(_m_data["grp_win_away"])
 
+                    # COLLAPSE THE WAVE FUNCTION IF MATCH COMPLETE
+                    _is_completed = pd.isna(grp_match.get("corners"))
+                    if _is_completed:
+                        _winner = grp_match["winner_name_meta"]
+                        _is_draw = str(_winner).lower() in [
+                            "draw",
+                            "none",
+                            "nan",
+                            "draws",
+                        ]
+
+                        # Lock variables to absolute reality
+                        h_pct = (
+                            100.0
+                            if (_winner == grp_home_team and not _is_draw)
+                            else 0.0
+                        )
+                        a_pct = (
+                            100.0
+                            if (_winner == grp_away_team and not _is_draw)
+                            else 0.0
+                        )
+                        d_pct = 100.0 if _is_draw else 0.0
+
                     _match_resolution_html = f"""
                     <div style="display: flex; flex-direction: column; gap: 8px; padding: 4px 0;">
                         <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 15px;">
@@ -1422,12 +1446,29 @@ def _(
                 </div>
                 """
 
-                # Store the deterministic proxy values
+                # NaN-safe integer casting
+                _m_corners = (
+                    f"{int(float(grp_match.get('corners')))}"
+                    if pd.notna(grp_match.get("corners"))
+                    else "-"
+                )
+                _m_yellows = (
+                    f"{int(float(grp_match.get('yellow_cards')))}"
+                    if pd.notna(grp_match.get("yellow_cards"))
+                    else "-"
+                )
+                _m_reds = (
+                    f"{int(float(grp_match.get('red_cards')))}"
+                    if pd.notna(grp_match.get("red_cards"))
+                    else "-"
+                )
+
+                # Store the deterministic proxy values safely
                 _proxy_footer_html = f"""
                 <div style="border-top: 1px solid #2d2d2d; padding-top: 8px; font-size: 11px; display: flex; justify-content: space-between;">
-                    <span>📐 Corners: {int(grp_match["corners"])}</span>
-                    <span>🟨 Yellows: {int(grp_match["yellow_cards"])}</span>
-                    <span>🟥 Reds: {int(grp_match["red_cards"])}</span>
+                    <span>📐 Corners: {_m_corners}</span>
+                    <span>🟨 Yellows: {_m_yellows}</span>
+                    <span>🟥 Reds: {_m_reds}</span>
                 </div>
                 """
 
@@ -1543,6 +1584,31 @@ def _(
                     a120 = float(_m_data["ko_win_120_away_pct"])
                     apen = float(_m_data["ko_win_pen_away_pct"])
 
+                    # COLLAPSE THE WAVE FUNCTION IF MATCH COMPLETE
+                    _det_match = df_tournament[
+                        df_tournament["match_id"] == match["match_id"]
+                    ]
+                    _is_completed = (
+                        pd.isna(_det_match.iloc[0].get("corners"))
+                        if not _det_match.empty
+                        else False
+                    )
+
+                    if _is_completed:
+                        # Pull the real-world winner from the master deterministic schedule
+                        _winner = (
+                            _det_match.iloc[0]["winner_name_meta"]
+                            if not _det_match.empty
+                            else match["winner_name_meta"]
+                        )
+
+                        # Lock the winner to absolute reality
+                        h90 = 100.0 if _winner == _home_team else 0.0
+                        h120, hpen = 0.0, 0.0
+
+                        a90 = 100.0 if _winner == _away_team else 0.0
+                        a120, apen = 0.0, 0.0
+
                     h_tot = h90 + h120 + hpen
                     a_tot = a90 + a120 + apen
                     w90, w120, wpen = h90 + a90, h120 + a120, hpen + apen
@@ -1601,14 +1667,26 @@ def _(
 
             else:
                 _ko_winner = match["winner_name_meta"]
+
                 h_goals = f"{pd.to_numeric(match['predicted_home_goals'], errors='coerce'):.0f}"
                 a_goals = f"{pd.to_numeric(match['predicted_away_goals'], errors='coerce'):.0f}"
 
-                m_corners = f"{pd.to_numeric(match['corners'], errors='coerce'):.0f}"
-                m_yellows = (
-                    f"{pd.to_numeric(match['yellow_cards'], errors='coerce'):.0f}"
+                # NaN-safe integer casting
+                _m_corners = (
+                    f"{int(float(match.get('corners')))}"
+                    if pd.notna(match.get("corners"))
+                    else "-"
                 )
-                m_reds = f"{pd.to_numeric(match['red_cards'], errors='coerce'):.0f}"
+                _m_yellows = (
+                    f"{int(float(match.get('yellow_cards')))}"
+                    if pd.notna(match.get("yellow_cards"))
+                    else "-"
+                )
+                _m_reds = (
+                    f"{int(float(match.get('red_cards')))}"
+                    if pd.notna(match.get("red_cards"))
+                    else "-"
+                )
 
                 went_to_et = match.get("extra_time", False)
                 _has_et = (
@@ -1654,9 +1732,9 @@ def _(
                 # Store the deterministic proxy values
                 _proxy_footer_html = f"""
                 <div style="border-top: 1px solid #2d2d2d; padding-top: 8px; font-size: 11px; display: flex; justify-content: space-between;">
-                    <span>📐 Corners: {m_corners}</span>
-                    <span>🟨 Yellows: {m_yellows}</span>
-                    <span>🟥 Reds: {m_reds}</span>
+                    <span>📐 Corners: {_m_corners}</span>
+                    <span>🟨 Yellows: {_m_yellows}</span>
+                    <span>🟥 Reds: {_m_reds}</span>
                 </div>
                 """
 
