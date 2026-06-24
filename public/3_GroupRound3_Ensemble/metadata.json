@@ -1,0 +1,70 @@
+{
+    "run_id": "run_blend_ridge_20260624_1501",
+    "timestamp": "20260624_1501",
+    "config": {
+        "model_type": "blend",
+        "blend_method": "ridge",
+        "run_monte_carlo": true,
+        "monte_carlo_runs": 10000
+    },
+    "training_variables": {
+        "friendly_weight": 0.4,
+        "time_slice_start": "1998-01-01",
+        "start_of_tournament": "2026-06-24",
+        "decay_alpha": 0.00047,
+        "cv_folds": 10
+    },
+    "match_rules": {
+        "et_multiplier": 0.3333333333333333,
+        "fatigue_factor": 0.8,
+        "card_boost_factor": 1.75,
+        "draw_copula": 0.086
+    },
+    "ensemble_weights": {
+        "poisson": 0.46253168948341034,
+        "elo": 0.0064042536402724335,
+        "xgb": 0.5328549695863584
+    },
+    "cross_validation_metrics": {
+        "fold_1": {
+            "home_deviance_r2": 0.2005817975829196,
+            "away_deviance_r2": 0.13623691771573154
+        },
+        "fold_2": {
+            "home_deviance_r2": 0.20037129569354706,
+            "away_deviance_r2": 0.17203165609084703
+        },
+        "fold_3": {
+            "home_deviance_r2": 0.20188066774166946,
+            "away_deviance_r2": 0.17281963065968642
+        },
+        "fold_4": {
+            "home_deviance_r2": 0.19171104911611092,
+            "away_deviance_r2": 0.15488262655377205
+        },
+        "fold_5": {
+            "home_deviance_r2": 0.22413756037904564,
+            "away_deviance_r2": 0.21413961208131027
+        },
+        "fold_6": {
+            "home_deviance_r2": 0.20357968043176,
+            "away_deviance_r2": 0.19098348677313248
+        },
+        "fold_7": {
+            "home_deviance_r2": 0.21918113784188742,
+            "away_deviance_r2": 0.1805857289166396
+        },
+        "fold_8": {
+            "home_deviance_r2": 0.2704899929726233,
+            "away_deviance_r2": 0.23413524785943973
+        },
+        "fold_9": {
+            "home_deviance_r2": 0.22750434557420107,
+            "away_deviance_r2": 0.19744011214150436
+        },
+        "fold_10": {
+            "home_deviance_r2": 0.21256983376456973,
+            "away_deviance_r2": 0.20712587989327935
+        }
+    }
+}
