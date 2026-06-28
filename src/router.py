@@ -6,26 +6,13 @@ It uses a recursive backtracking search to accurately map the complex logic behi
 the official 8 "Best Third Place" wildcard slots into the Round of 32 constraints.
 """
 
+import json
 import logging
 import os
 
 import pandas as pd
 
 from src.match_engine import evaluate_match_consensus, simulate_deterministic_match
-
-# Official tournament wildcard constraints defining which group's 3rd place
-# entity maps to which specific knockout bracket slot.
-# (Keys updated to reflect official FIFA Match IDs via the transform patch)
-THIRD_PLACE_CONSTRAINTS = {
-    74: {"A", "B", "C", "D", "F"},  # Was 75
-    77: {"C", "D", "F", "G", "H"},  # Was 78
-    79: {"C", "E", "F", "H", "I"},  # Unchanged
-    80: {"E", "H", "I", "J", "K"},  # Unchanged
-    81: {"B", "E", "F", "I", "J"},  # Was 82
-    82: {"A", "E", "H", "I", "J"},  # Was 81
-    85: {"E", "F", "G", "I", "J"},  # Unchanged
-    87: {"D", "E", "I", "J", "L"},  # Was 88
-}
 
 
 def resolve_group_tables(predicted_fixtures_list_or_df):
@@ -154,45 +141,38 @@ def extract_best_third_places(group_tables_df):
 
 
 def allocate_third_places(advancing_thirds_df):
-    """Maps qualifying third-place teams to knockout slots using recursive backtracking."""
-    teams = list(zip(advancing_thirds_df["group"], advancing_thirds_df["team"]))
-    slot_ids = list(THIRD_PLACE_CONSTRAINTS.keys())
+    """Maps qualifying third-place teams using the official 495-row FIFA Annex C table."""
 
-    def backtrack(
-        team_idx: int, current_assignment: dict[int, str]
-    ) -> dict[int, str] | None:
-        """DFS recursive state exploration to satisfy wildcard dependency matrix."""
-        if team_idx == len(teams):
-            return current_assignment
-
-        group, team_name = teams[team_idx]
-
-        for slot in slot_ids:
-            if slot not in current_assignment:
-                if group in THIRD_PLACE_CONSTRAINTS[slot]:
-                    next_assignment = current_assignment.copy()
-                    next_assignment[slot] = team_name
-                    result = backtrack(team_idx + 1, next_assignment)
-                    if result is not None:
-                        return result
-        return None
-
-    assignment = backtrack(0, {})
-
-    # GREEDY FALLBACK: Triggers if a chaotic stochastic distribution breaks matrix viability
-    if assignment is None:
-        logging.debug(
-            "Wildcard constraint broken by stochastic upset. Applying greedy fallback."
+    # Load the file dynamically inside the function
+    annex_c_path = os.path.join("data", "raw", "annex_c_matrix.json")
+    try:
+        with open(annex_c_path, "r") as f:
+            matrix_lookup = json.load(f)
+    except FileNotFoundError:
+        raise FileNotFoundError(
+            "🛑 CRITICAL RUNTIME ERROR: FIFA Annex C matrix file is missing from data/raw/annex_c_matrix.json. "
+            "Ensure your ingestion layer executes completely before routing."
         )
-        assignment = {}
-        available_slots = list(slot_ids)
 
-        # Force assign teams to whatever slots are left
-        for _, team_name in teams:
-            if available_slots:
-                assignment[available_slots.pop(0)] = team_name
+    # Create the sorted 8-character string (e.g., 'BDEFIJKL')
+    teams = list(zip(advancing_thirds_df["group"], advancing_thirds_df["team"]))
+    qualified_groups_key = "".join(sorted([g for g, _ in teams]))
 
-    return assignment
+    # O(1) Hash Map Lookup into the official 495-row table
+    if qualified_groups_key in matrix_lookup:
+        matrix_slots = matrix_lookup[qualified_groups_key]
+        group_to_team = {g: t for g, t in teams}
+
+        # Convert the group letters back to physical country names for the bracket
+        # Cast match JSON keys back to integers for contract alignment
+        return {
+            int(match_id): group_to_team[grp] for match_id, grp in matrix_slots.items()
+        }
+    else:
+        raise ValueError(
+            f"CRITICAL ERROR: Combination {qualified_groups_key} not found in FIFA Annex C! "
+            f"Verify your raw JSON compilation output."
+        )
 
 
 def generate_round_of_32_draw(

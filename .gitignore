@@ -20,4 +20,5 @@ data/runs/*
 # WHITELIST:
 !data/raw/group_fixtures.csv
 !data/raw/knockout_slots.csv
+!data/raw/annex_c_matrix.json
 !data/raw/.gitkeep

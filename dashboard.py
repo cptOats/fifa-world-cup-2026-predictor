@@ -1276,7 +1276,8 @@ def _(
         )[["Country", "xPts", "xGD", "1st %", "2nd %", "Wildcard %", "Qual %"]]
 
         group_display_df = group_display_df.sort_values(
-            by="xPts", ascending=False
+            by=["1st %", "2nd %", "Wildcard %", "Qual %"],
+            ascending=[False, False, False, False],
         ).reset_index(drop=True)
         group_display_df.index += 1
         group_display_df.index.name = "Pos"
@@ -1958,7 +1959,9 @@ def _(df_thirds, df_xtables, mo, view_mode_toggle):
             "🟢 LIKELY" if i < 8 else "🔴 UNLIKELY" for i in range(len(df_display))
         ]
         heading = mo.md("### 🃏 3rd PLACE WILDCARDS")
-        wildcard_table = mo.ui.table(df_display.head(15), pagination=False)
+        wildcard_table = mo.ui.table(
+            df_display[df_display["Wildcard %"] != 0].head(15), pagination=False
+        )
         third_places_panel = mo.vstack([heading, wildcard_table])
 
     elif df_thirds is None or df_thirds.empty:
