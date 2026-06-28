@@ -1276,8 +1276,8 @@ def _(
         )[["Country", "xPts", "xGD", "1st %", "2nd %", "Wildcard %", "Qual %"]]
 
         group_display_df = group_display_df.sort_values(
-            by=["1st %", "2nd %", "Wildcard %", "Qual %"],
-            ascending=[False, False, False, False],
+            by=["1st %", "2nd %", "Wildcard %", "Qual %", "xPts", "xGD"],
+            ascending=[False, False, False, False, False, False],
         ).reset_index(drop=True)
         group_display_df.index += 1
         group_display_df.index.name = "Pos"
