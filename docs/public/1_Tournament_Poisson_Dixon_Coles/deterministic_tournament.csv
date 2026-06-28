@@ -72,12 +72,12 @@ match_id,round,venue,venue_country,home_team,away_team,predicted_home_goals,pred
 71,Group J,"GEHA Field at Arrowhead Stadium, Kansas City",United States,Algeria,Austria,1,1,9,4,0,False,False,Draw
 72,Group J,"AT&T Stadium, Dallas",United States,Jordan,Argentina,0,3,9,4,0,False,False,Argentina
 73,Round of 32,"SoFi Stadium, Los Angeles",United States,South Korea,Canada,1,1,11,4,0,True,True,South Korea
-74,Round of 32,"Gillette Stadium, Boston",United States,Germany,Scotland,2,1,10,4,0,False,False,Germany
+74,Round of 32,"Gillette Stadium, Boston",United States,Germany,Australia,2,1,10,4,0,False,False,Germany
 75,Round of 32,"Estadio BBVA, Monterrey",Mexico,Netherlands,Morocco,1,1,13,5,0,True,True,Netherlands
 76,Round of 32,"NRG Stadium, Houston",United States,Brazil,Japan,2,1,11,4,0,False,False,Brazil
 77,Round of 32,"MetLife Stadium, East Rutherford",United States,France,Sweden,2,1,10,4,0,False,False,France
 78,Round of 32,"AT&T Stadium, Dallas",United States,Ecuador,Norway,1,1,12,5,0,True,True,Ecuador
-79,Round of 32,"Estadio Azteca, Mexico City",Mexico,Mexico,Ivory Coast,2,1,11,4,0,True,False,Mexico
+79,Round of 32,"Estadio Azteca, Mexico City",Mexico,Mexico,Scotland,2,1,11,4,0,True,False,Mexico
 80,Round of 32,"Mercedes-Benz Stadium, Atlanta",United States,England,Austria,2,1,10,4,0,False,False,England
 81,Round of 32,"Levi's Stadium, Santa Clara",United States,United States,Bosnia and Herzegovina,2,1,8,3,0,False,False,United States
 82,Round of 32,"Lumen Field, Seattle",United States,Belgium,Czech Republic,2,1,10,4,0,False,False,Belgium
@@ -85,7 +85,7 @@ match_id,round,venue,venue_country,home_team,away_team,predicted_home_goals,pred
 84,Round of 32,"SoFi Stadium, Los Angeles",United States,Spain,Algeria,2,1,11,4,0,False,False,Spain
 85,Round of 32,"BC Place, Vancouver",Canada,Switzerland,Egypt,2,1,12,4,0,True,False,Switzerland
 86,Round of 32,"Hard Rock Stadium, Miami",United States,Argentina,Uruguay,2,1,13,5,0,True,False,Argentina
-87,Round of 32,"GEHA Field at Arrowhead Stadium, Kansas City",United States,Portugal,Australia,2,1,10,4,0,False,False,Portugal
+87,Round of 32,"GEHA Field at Arrowhead Stadium, Kansas City",United States,Portugal,Ivory Coast,2,1,10,4,0,False,False,Portugal
 88,Round of 32,"AT&T Stadium, Dallas",United States,Paraguay,Iran,1,1,11,4,0,True,True,Iran
 89,Round of 16,"NRG Stadium, Houston",United States,South Korea,Netherlands,1,2,10,4,0,False,False,Netherlands
 90,Round of 16,"Lincoln Financial Field, Philadelphia",United States,Germany,France,1,2,11,5,0,False,False,France

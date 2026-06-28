@@ -1,6 +1,6 @@
 {
-    "run_id": "run_blend_ridge_20260623_2154",
-    "timestamp": "20260623_2154",
+    "run_id": "run_blend_ridge_20260628_1756",
+    "timestamp": "20260628_1756",
     "config": {
         "model_type": "blend",
         "blend_method": "ridge",

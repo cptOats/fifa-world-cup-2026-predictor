@@ -1,14 +1,14 @@
 match_id,round,venue,venue_country,home_team,away_team,predicted_home_goals,predicted_away_goals,extra_time,penalties,winner_name_meta
 73,Round of 32,"SoFi Stadium, Los Angeles",United States,South Korea,Switzerland,2,1,False,False,South Korea
-74,Round of 32,"Gillette Stadium, Boston",United States,Ecuador,United States,2,1,False,False,Ecuador
+74,Round of 32,"Gillette Stadium, Boston",United States,Ecuador,Scotland,2,1,False,False,Ecuador
 75,Round of 32,"Estadio BBVA, Monterrey",Mexico,Japan,Morocco,2,1,False,False,Japan
 76,Round of 32,"NRG Stadium, Houston",United States,Brazil,Netherlands,2,1,False,False,Brazil
-77,Round of 32,"MetLife Stadium, East Rutherford",United States,France,Scotland,2,1,False,False,France
+77,Round of 32,"MetLife Stadium, East Rutherford",United States,France,Tunisia,2,1,False,False,France
 78,Round of 32,"AT&T Stadium, Dallas",United States,Germany,Norway,2,1,False,False,Germany
-79,Round of 32,"Estadio Azteca, Mexico City",Mexico,Mexico,Senegal,2,1,False,False,Mexico
-80,Round of 32,"Mercedes-Benz Stadium, Atlanta",United States,England,Uzbekistan,2,1,False,False,England
-81,Round of 32,"Levi's Stadium, Santa Clara",United States,Australia,Ivory Coast,2,1,False,False,Australia
-82,Round of 32,"Lumen Field, Seattle",United States,Iran,Austria,2,1,False,False,Iran
+79,Round of 32,"Estadio Azteca, Mexico City",Mexico,Mexico,Saudi Arabia,2,1,False,False,Mexico
+80,Round of 32,"Mercedes-Benz Stadium, Atlanta",United States,England,Ivory Coast,2,1,False,False,England
+81,Round of 32,"Levi's Stadium, Santa Clara",United States,Australia,Bosnia and Herzegovina,2,1,False,False,Australia
+82,Round of 32,"Lumen Field, Seattle",United States,Iran,Czech Republic,2,1,False,False,Iran
 83,Round of 32,"BMO Field, Toronto",Canada,Portugal,Croatia,2,1,False,False,Portugal
 84,Round of 32,"SoFi Stadium, Los Angeles",United States,Spain,Algeria,2,1,False,False,Spain
 85,Round of 32,"BC Place, Vancouver",Canada,Canada,Egypt,2,1,False,False,Canada
@@ -30,4 +30,4 @@ match_id,round,venue,venue_country,home_team,away_team,predicted_home_goals,pred
 101,Semi-final,"AT&T Stadium, Dallas",United States,France,Spain,1,2,False,False,Spain
 102,Semi-final,"Mercedes-Benz Stadium, Atlanta",United States,England,Argentina,1,2,False,False,Argentina
 103,Third-place playoff,"Hard Rock Stadium, Miami",United States,France,England,2,1,False,False,France
-104,Final,"MetLife Stadium, East Rutherford",United States,Spain,Argentina,1,2,False,False,Argentina
+104,Final,"MetLife Stadium, East Rutherford",United States,Spain,Argentina,2,1,False,False,Spain

@@ -77,8 +77,8 @@ match_id,round,venue,venue_country,home_team,away_team,predicted_home_goals,pred
 76,Round of 32,"NRG Stadium, Houston",United States,Brazil,Japan,2,1,13,5,0,True,False,Brazil
 77,Round of 32,"MetLife Stadium, East Rutherford",United States,France,Egypt,2,1,10,4,0,False,False,France
 78,Round of 32,"AT&T Stadium, Dallas",United States,Ecuador,Senegal,2,1,11,4,0,True,False,Ecuador
-79,Round of 32,"Estadio Azteca, Mexico City",Mexico,Mexico,Norway,2,1,12,4,0,True,False,Mexico
-80,Round of 32,"Mercedes-Benz Stadium, Atlanta",United States,England,Ivory Coast,2,1,10,4,0,False,False,England
+79,Round of 32,"Estadio Azteca, Mexico City",Mexico,Mexico,Ivory Coast,2,1,9,3,0,False,False,Mexico
+80,Round of 32,"Mercedes-Benz Stadium, Atlanta",United States,England,Norway,2,1,10,4,0,False,False,England
 81,Round of 32,"Levi's Stadium, Santa Clara",United States,United States,Bosnia and Herzegovina,2,1,8,3,0,False,False,United States
 82,Round of 32,"Lumen Field, Seattle",United States,Belgium,South Africa,2,1,9,4,0,False,False,Belgium
 83,Round of 32,"BMO Field, Toronto",Canada,Colombia,Croatia,2,1,10,4,0,False,False,Colombia

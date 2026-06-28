@@ -1,49 +1,49 @@
-group,team,points,goals_for,goals_against,goals_diff,position
-A,Mexico,9,6,3,3,1
-A,South Korea,4,4,4,0,2
-A,Czech Republic,2,3,4,-1,3
-A,South Africa,1,3,5,-2,4
-B,Canada,7,5,3,2,1
-B,Switzerland,7,5,3,2,2
-B,Bosnia and Herzegovina,3,4,5,-1,3
-B,Qatar,0,3,6,-3,4
-C,Brazil,7,6,3,3,1
-C,Morocco,7,5,3,2,2
-C,Scotland,3,4,5,-1,3
-C,Haiti,0,3,7,-4,4
-D,United States,3,3,3,0,1
-D,Paraguay,3,3,3,0,2
-D,Australia,3,3,3,0,3
-D,Turkey,3,3,3,0,4
-E,Germany,7,6,3,3,1
-E,Ecuador,5,4,3,1,2
-E,Ivory Coast,4,4,4,0,3
-E,Curaçao,0,3,7,-4,4
-F,Netherlands,7,5,3,2,1
-F,Japan,5,4,3,1,2
-F,Tunisia,2,3,4,-1,3
-F,Sweden,1,3,5,-2,4
-G,Belgium,7,5,3,2,1
-G,Iran,5,4,3,1,2
-G,Egypt,2,3,4,-1,3
-G,New Zealand,1,3,5,-2,4
-H,Spain,9,7,3,4,1
-H,Uruguay,6,5,4,1,2
-H,Saudi Arabia,1,3,5,-2,3
-H,Cape Verde,1,3,6,-3,4
-I,France,9,6,3,3,1
-I,Norway,4,4,4,0,2
-I,Senegal,2,3,4,-1,3
-I,Iraq,1,3,5,-2,4
-J,Argentina,9,6,3,3,1
-J,Algeria,4,4,4,0,2
-J,Austria,4,4,4,0,3
-J,Jordan,0,3,6,-3,4
-K,Portugal,7,5,3,2,1
-K,Colombia,7,5,3,2,2
-K,DR Congo,1,3,5,-2,3
-K,Uzbekistan,1,3,5,-2,4
-L,England,7,5,3,2,1
-L,Croatia,7,5,3,2,2
-L,Ghana,1,3,5,-2,3
-L,Panama,1,3,5,-2,4
+group,team,points,goals_for,goals_against,goals_diff,h2h_pts,h2h_gd,h2h_gf,position
+A,Mexico,9,6,3,3,0,0,0,1
+A,South Korea,4,4,4,0,0,0,0,2
+A,Czech Republic,2,3,4,-1,0,0,0,3
+A,South Africa,1,3,5,-2,0,0,0,4
+B,Canada,7,5,3,2,1,0,1,1
+B,Switzerland,7,5,3,2,1,0,1,2
+B,Bosnia and Herzegovina,3,4,5,-1,0,0,0,3
+B,Qatar,0,3,6,-3,0,0,0,4
+C,Brazil,7,6,3,3,1,0,1,1
+C,Morocco,7,5,3,2,1,0,1,2
+C,Scotland,3,4,5,-1,0,0,0,3
+C,Haiti,0,3,7,-4,0,0,0,4
+D,United States,3,3,3,0,3,0,3,1
+D,Paraguay,3,3,3,0,3,0,3,2
+D,Australia,3,3,3,0,3,0,3,3
+D,Turkey,3,3,3,0,3,0,3,4
+E,Germany,7,6,3,3,0,0,0,1
+E,Ecuador,5,4,3,1,0,0,0,2
+E,Ivory Coast,4,4,4,0,0,0,0,3
+E,Curaçao,0,3,7,-4,0,0,0,4
+F,Netherlands,7,5,3,2,0,0,0,1
+F,Japan,5,4,3,1,0,0,0,2
+F,Tunisia,2,3,4,-1,0,0,0,3
+F,Sweden,1,3,5,-2,0,0,0,4
+G,Belgium,7,5,3,2,0,0,0,1
+G,Iran,5,4,3,1,0,0,0,2
+G,Egypt,2,3,4,-1,0,0,0,3
+G,New Zealand,1,3,5,-2,0,0,0,4
+H,Spain,9,7,3,4,0,0,0,1
+H,Uruguay,6,5,4,1,0,0,0,2
+H,Saudi Arabia,1,3,5,-2,1,0,1,3
+H,Cape Verde,1,3,6,-3,1,0,1,4
+I,France,9,6,3,3,0,0,0,1
+I,Norway,4,4,4,0,0,0,0,2
+I,Senegal,2,3,4,-1,0,0,0,3
+I,Iraq,1,3,5,-2,0,0,0,4
+J,Argentina,9,6,3,3,0,0,0,1
+J,Algeria,4,4,4,0,1,0,1,2
+J,Austria,4,4,4,0,1,0,1,3
+J,Jordan,0,3,6,-3,0,0,0,4
+K,Portugal,7,5,3,2,1,0,1,1
+K,Colombia,7,5,3,2,1,0,1,2
+K,DR Congo,1,3,5,-2,1,0,1,3
+K,Uzbekistan,1,3,5,-2,1,0,1,4
+L,England,7,5,3,2,1,0,1,1
+L,Croatia,7,5,3,2,1,0,1,2
+L,Ghana,1,3,5,-2,1,0,1,3
+L,Panama,1,3,5,-2,1,0,1,4

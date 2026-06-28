@@ -75,15 +75,15 @@ match_id,round,venue,venue_country,home_team,away_team,predicted_home_goals,pred
 74,Round of 32,"Gillette Stadium, Boston",United States,Germany,Paraguay,2,1,10.0,4.0,0.0,False,False,Germany
 75,Round of 32,"Estadio BBVA, Monterrey",Mexico,Netherlands,Morocco,2,2,13.0,5.0,0.0,True,True,Netherlands
 76,Round of 32,"NRG Stadium, Houston",United States,Brazil,Japan,2,1,11.0,4.0,0.0,False,False,Brazil
-77,Round of 32,"MetLife Stadium, East Rutherford",United States,France,Iran,2,1,10.0,4.0,0.0,False,False,France
+77,Round of 32,"MetLife Stadium, East Rutherford",United States,France,Sweden,2,1,10.0,4.0,0.0,False,False,France
 78,Round of 32,"AT&T Stadium, Dallas",United States,Ivory Coast,Norway,1,2,12.0,4.0,0.0,True,False,Norway
 79,Round of 32,"Estadio Azteca, Mexico City",Mexico,Mexico,Scotland,2,1,9.0,3.0,0.0,False,False,Mexico
-80,Round of 32,"Mercedes-Benz Stadium, Atlanta",United States,England,Algeria,2,1,10.0,4.0,0.0,False,False,England
-81,Round of 32,"Levi's Stadium, Santa Clara",United States,United States,Sweden,2,1,9.0,4.0,0.0,False,False,United States
+80,Round of 32,"Mercedes-Benz Stadium, Atlanta",United States,England,Senegal,2,1,10.0,4.0,0.0,False,False,England
+81,Round of 32,"Levi's Stadium, Santa Clara",United States,United States,Algeria,2,2,11.0,4.0,0.0,True,True,United States
 82,Round of 32,"Lumen Field, Seattle",United States,Egypt,Uruguay,1,2,11.0,4.0,0.0,True,False,Uruguay
 83,Round of 32,"BMO Field, Toronto",Canada,Portugal,Croatia,2,1,11.0,4.0,0.0,False,False,Portugal
 84,Round of 32,"SoFi Stadium, Los Angeles",United States,Spain,Austria,2,1,11.0,4.0,0.0,False,False,Spain
-85,Round of 32,"BC Place, Vancouver",Canada,Canada,Senegal,2,1,11.0,4.0,0.0,True,False,Canada
+85,Round of 32,"BC Place, Vancouver",Canada,Canada,Iran,2,1,11.0,4.0,0.0,True,False,Canada
 86,Round of 32,"Hard Rock Stadium, Miami",United States,Argentina,Cape Verde,2,0,9.0,3.0,0.0,False,False,Argentina
 87,Round of 32,"GEHA Field at Arrowhead Stadium, Kansas City",United States,Colombia,Ghana,2,1,9.0,3.0,0.0,False,False,Colombia
 88,Round of 32,"AT&T Stadium, Dallas",United States,Australia,Belgium,1,2,12.0,5.0,0.0,True,False,Belgium

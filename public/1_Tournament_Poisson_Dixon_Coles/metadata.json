@@ -1,6 +1,6 @@
 {
-    "run_id": "run_poisson_20260623_2004",
-    "timestamp": "20260623_2004",
+    "run_id": "run_poisson_20260628_1850",
+    "timestamp": "20260628_1850",
     "config": {
         "model_type": "poisson",
         "blend_method": null,
@@ -18,7 +18,7 @@
         "et_multiplier": 0.3333333333333333,
         "fatigue_factor": 0.8,
         "card_boost_factor": 1.75,
-        "draw_copula": 0.083
+        "draw_copula": 0.086
     },
     "ensemble_weights": {
         "poisson": 1.0,
