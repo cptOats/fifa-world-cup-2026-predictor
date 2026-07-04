@@ -24,20 +24,9 @@ jobs:
             - name: Checkout Repository
               uses: actions/checkout@v4
 
-            - name: Install uv Environment Layer
-              uses: astral-sh/setup-uv@v5
-              with:
-                  enable-cache: true
-                  python-version: "3.14"
-
-            - name: Recompile Static WASM Dashboard
-              run: |
-                  rm -rf docs
-                  echo "n" | uv run marimo export html-wasm dashboard.py -o docs/index.html
-
             - name: Stage Production Web Artifacts
               run: |
-                  if [ -d "public" ]; then cp -r public docs/; fi
+                  if [ -d "public" ] && [ ! -d "docs/public" ]; then cp -r public docs/; fi
 
                   if [ -d "data/raw" ]; then
                     mkdir -p docs/data/raw
