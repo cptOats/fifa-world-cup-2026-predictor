@@ -55,49 +55,48 @@ def run_monte_carlo_master(
         try:
             st_df = pd.read_csv(shootouts_path)
             for _, st_row in st_df.iterrows():
-                st_date = str(st_row["date"]).strip()
-                h_team = str(st_row["home_team"]).strip()
-                a_team = str(st_row["away_team"]).strip()
-                so_winner = str(st_row["winner"]).strip()
+                h_team = str(st_row["home_team"]).strip().lower()
+                a_team = str(st_row["away_team"]).strip().lower()
+                so_winner = str(st_row["winner"]).strip().lower()
 
-                # Cache both permutations anchored to the exact match date
-                shootout_cache[(st_date, h_team, a_team)] = so_winner
-                shootout_cache[(st_date, a_team, h_team)] = so_winner
+                # Cache both permutations without the brittle date dependency
+                shootout_cache[(h_team, a_team)] = so_winner
+                shootout_cache[(a_team, h_team)] = so_winner
         except Exception:
             pass
 
     # HASH MAP CONFIGURATION: Pre-build live knockout results cache
     live_ko_cache = {}
     results_path = os.path.join("data", "raw", "results.csv")
-    parquet_path = os.path.join("data", "processed", "clean_historical_matches.parquet")
 
-    if os.path.exists(results_path) and os.path.exists(parquet_path):
-        max_hist_date = pd.to_datetime(pd.read_parquet(parquet_path)["date"]).max()
-        actual_tournament_start = pd.to_datetime("2026-06-11")
-        res_df = pd.read_csv(results_path)
-        res_df["date"] = pd.to_datetime(res_df["date"])
+    if os.path.exists(results_path):
+        try:
+            actual_tournament_start = pd.to_datetime("2026-06-11")
+            res_df = pd.read_csv(results_path)
+            res_df["date"] = pd.to_datetime(res_df["date"])
 
-        # Filter strictly to the live 2026 tournament window
-        live_matches = res_df[
-            (res_df["tournament"] == "FIFA World Cup")
-            & (res_df["date"] >= actual_tournament_start)
-            & (res_df["date"] <= max_hist_date)
-            & (pd.notna(res_df["home_score"]))
-        ]
+            # Filter strictly to the active tournament window
+            live_matches = res_df[
+                (res_df["tournament"] == "FIFA World Cup")
+                & (res_df["date"] >= actual_tournament_start)
+                & (pd.notna(res_df["home_score"]))
+            ]
 
-        for _, m_row in live_matches.iterrows():
-            m_date = str(m_row["date"].strftime("%Y-%m-%d")).strip()
-            # Cache both permutations for fast O(1) lookup
-            live_ko_cache[(m_row["home_team"], m_row["away_team"])] = (
-                m_row["home_score"],
-                m_row["away_score"],
-                m_date,
-            )
-            live_ko_cache[(m_row["away_team"], m_row["home_team"])] = (
-                m_row["away_score"],
-                m_row["home_score"],
-                m_date,
-            )
+            for _, m_row in live_matches.iterrows():
+                h_norm = str(m_row["home_team"]).strip().lower()
+                a_norm = str(m_row["away_team"]).strip().lower()
+
+                # Store structural score tuples mapped to normalized team name keys
+                live_ko_cache[(h_norm, a_norm)] = (
+                    int(m_row["home_score"]),
+                    int(m_row["away_score"]),
+                )
+                live_ko_cache[(a_norm, h_norm)] = (
+                    int(m_row["away_score"]),
+                    int(m_row["home_score"]),
+                )
+        except Exception:
+            pass
 
     metrics = {
         team: {
@@ -261,15 +260,19 @@ def run_monte_carlo_master(
             home = _resolve_team(slot_home)
             away = _resolve_team(slot_away)
 
+            # Normalize strings cleanly prior to O(1) cache validation queries
+            norm_home = str(home).strip().lower()
+            norm_away = str(away).strip().lower()
+
             # Try to fetch actual match data
             act_h = row.get("actual_home_score")
             act_a = row.get("actual_away_score")
-            match_date = None
 
-            # Instant O(1) hash map lookup
+            # Query the cache maps using the normalized string tokens
             if pd.isna(act_h) or pd.isna(act_a) or str(act_h).strip() == "":
-                if (home, away) in live_ko_cache:
-                    act_h, act_a, match_date = live_ko_cache[(home, away)]
+                if (norm_home, norm_away) in live_ko_cache:
+                    # Unpack exactly 2 items to match the cache definition
+                    act_h, act_a = live_ko_cache[(norm_home, norm_away)]
 
             if (
                 pd.notna(act_h)
@@ -285,11 +288,11 @@ def run_monte_carlo_master(
                 elif final_a_sim > final_h_sim:
                     winner, loser = away, home
                 else:
-                    # Query penalties using the exact composite signature
-                    shootout_winner = shootout_cache.get((match_date, home, away))
-                    if shootout_winner == home:
+                    # Query the 2-tuple shootout layout without the ghost date parameter
+                    shootout_winner = shootout_cache.get((norm_home, norm_away))
+                    if shootout_winner == norm_home:
                         winner, loser = home, away
-                    elif shootout_winner == away:
+                    elif shootout_winner == norm_away:
                         winner, loser = away, home
                     else:
                         if elo_engine.get_rating(home) >= elo_engine.get_rating(away):
@@ -297,7 +300,7 @@ def run_monte_carlo_master(
                         else:
                             winner, loser = away, home
             else:
-                # # Match is unplayed: predict with match_engine
+                # Match is unplayed: predict with match_engine
                 l_h, l_a, _, _ = lambda_cache[(home, away, row["venue_country"])]
 
                 h_goals_arr, a_goals_arr, _ = simulate_stochastic_match(
@@ -310,8 +313,30 @@ def run_monte_carlo_master(
                     copula_rho=rho_val,
                 )
 
-                winner = home if h_goals_arr[0] > a_goals_arr[0] else away
-                loser = away if winner == home else home
+                h_g = int(h_goals_arr[0])
+                a_g = int(a_goals_arr[0])
+
+                if h_g > a_g:
+                    winner, loser = home, away
+                elif a_g > h_g:
+                    winner, loser = away, home
+                else:
+                    # DRAW DETECTED: Trigger Shrunk Penalty Shootout Model
+                    elo_h = elo_engine.get_rating(home)
+                    elo_a = elo_engine.get_rating(away)
+
+                    # Compute standard Elo win expectation
+                    p_raw = 1.0 / (1.0 + 10.0 ** ((elo_a - elo_h) / 400.0))
+
+                    # Apply an 85% shrinkage coefficient pulling the probability toward 50/50
+                    gamma = 0.85
+                    p_shootout = 0.5 + (1.0 - gamma) * (p_raw - 0.5)
+
+                    # Roll the dice against the shrunk distribution
+                    if rng.random() < p_shootout:
+                        winner, loser = home, away
+                    else:
+                        winner, loser = away, home
 
             match_winners[m_id] = winner
             match_losers[m_id] = loser
@@ -329,7 +354,7 @@ def run_monte_carlo_master(
             elif r_name == "Final":
                 metrics[winner]["Champion"] += 1
 
-    # 3. GENERATE TARGET DATAFRAMES
+    # GENERATE TARGET DATAFRAMES
     xtable_rows = []
     for team, data in xtable_ledger.items():
         xtable_rows.append(
@@ -352,7 +377,6 @@ def run_monte_carlo_master(
             }
         )
 
-    # 3. Compile Fractional Probability Output Matrices
     df_xtables = pd.DataFrame(xtable_rows).sort_values(
         by="expected_points", ascending=False
     )
@@ -409,7 +433,7 @@ def precompute_sandbox_matchups(
         matchup_keys.extend([(host, opp, host) for opp in all_teams if opp != host])
         matchup_keys.extend([(opp, host, host) for opp in all_teams if opp != host])
 
-    matchup_keys = list(dict.fromkeys(matchup_keys))  # Remove accidental overlaps
+    matchup_keys = list(dict.fromkeys(matchup_keys))
 
     lambda_cache = batch_evaluate_consensus(
         matchup_keys=matchup_keys,
@@ -519,21 +543,18 @@ def build_expected_stochastic_bracket(
     winners = df_xt[df_xt["position"] == 1].set_index("group")["team"].to_dict()
     runners = df_xt[df_xt["position"] == 2].set_index("group")["team"].to_dict()
 
-    # Extract the absolute best 3rd place teams based on their exact wildcard survival rates
     thirds = df_xt[df_xt["position"] == 3].copy()
     top_thirds = thirds.sort_values(
         by=["wildcard_probability_pct", "expected_points", "expected_gd"],
         ascending=[False, False, False],
     ).head(8)
 
-    # Rename for downstream compatibility with allocate_third_places mapping
     top_thirds = top_thirds.rename(
         columns={"expected_points": "points", "expected_gd": "goals_diff"}
     )
     third_place_assignments = allocate_third_places(top_thirds)
 
     match_winners, match_losers, bracket_rows = {}, {}, []
-
     knockout_list = raw_knockout_template.to_dict(orient="records")
 
     for row in knockout_list:
@@ -544,7 +565,6 @@ def build_expected_stochastic_bracket(
         slot_away = row["slot_away"]
 
         def _resolve_team(slot):
-            """Parse textual placeholder tags to route physical entities into the node."""
             if "Winner Group" in slot:
                 return winners[slot.replace("Winner Group ", "").strip()]
             if "Runner-up Group" in slot:
@@ -560,7 +580,6 @@ def build_expected_stochastic_bracket(
         home = _resolve_team(slot_home)
         away = _resolve_team(slot_away)
 
-        # If neither team is the host nation, it's structurally neutral turf
         if home != v_country and away != v_country:
             lookup_venue = "Neutral"
         else:
@@ -594,7 +613,6 @@ def build_expected_stochastic_bracket(
                 else float(sb_data["ko_win_away"])
             )
 
-            # Retrieve base xG for UI aesthetics
             l_h = (
                 sb_data["ensemble_lambda_away"]
                 if is_swapped
@@ -615,7 +633,6 @@ def build_expected_stochastic_bracket(
             away if winner == home else home,
         )
 
-        # Format UI cosmetic integers to strictly align with Stochastic win edges
         pred_h_goals, pred_a_goals = int(round(l_h)), int(round(l_a))
         if pred_h_goals == pred_a_goals:
             if winner == home:

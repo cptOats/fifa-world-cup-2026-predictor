@@ -369,23 +369,22 @@ def simulate_knockout_waterfall(
         os.path.join(processed_dir, "clean_knockout_slots.csv")
     )
 
-    # HASH MAP CONFIGURATION: Pre-build an O(1) shootout winner cache
+    # 1. Initialize Shootout Cache Map Natively (Case, Space & Date Insensitive)
     shootout_cache = {}
     shootouts_path = os.path.join("data", "raw", "shootouts.csv")
     if os.path.exists(shootouts_path):
         try:
             st_df = pd.read_csv(shootouts_path)
             for _, st_row in st_df.iterrows():
-                st_date = str(st_row["date"]).strip()
-                h_team = str(st_row["home_team"]).strip()
-                a_team = str(st_row["away_team"]).strip()
-                so_winner = str(st_row["winner"]).strip()
+                h_team = str(st_row["home_team"]).strip().lower()
+                a_team = str(st_row["away_team"]).strip().lower()
+                so_winner = str(st_row["winner"]).strip().lower()
 
-                # Cache both team permutations anchored to the exact match date
-                shootout_cache[(st_date, h_team, a_team)] = so_winner
-                shootout_cache[(st_date, a_team, h_team)] = so_winner
-        except Exception:
-            pass
+                # Cache both permutations to prevent matching asymmetry
+                shootout_cache[(h_team, a_team)] = so_winner
+                shootout_cache[(a_team, h_team)] = so_winner
+        except Exception as e:
+            logging.error(f"Failed to load shootout cache: {e}")
 
     match_winners, match_losers = {}, {}
     winners = (
@@ -428,43 +427,45 @@ def simulate_knockout_waterfall(
         act_h = row.get("actual_home_score")
         act_a = row.get("actual_away_score")
 
-        # Track the exact date string of the historical match being processed
-        match_date = None
+        # 2. Hardened Live Results File Parser Lookups
         if pd.isna(act_h) or pd.isna(act_a) or str(act_h).strip() == "":
             results_path = os.path.join("data", "raw", "results.csv")
-            parquet_path = os.path.join(
-                "data", "processed", "clean_historical_matches.parquet"
-            )
 
-            if os.path.exists(results_path) and os.path.exists(parquet_path):
-                max_hist_date = pd.to_datetime(
-                    pd.read_parquet(parquet_path)["date"]
-                ).max()
+            if os.path.exists(results_path):
                 actual_tournament_start = pd.to_datetime("2026-06-11")
                 res_df = pd.read_csv(results_path)
                 res_df["date"] = pd.to_datetime(res_df["date"])
 
+                # Normalize lookup keys completely to ensure matching stability
+                norm_h_target = str(home_team).strip().lower()
+                norm_a_target = str(away_team).strip().lower()
+
+                res_df["home_norm"] = (
+                    res_df["home_team"].astype(str).str.strip().str.lower()
+                )
+                res_df["away_norm"] = (
+                    res_df["away_team"].astype(str).str.strip().str.lower()
+                )
+
+                # Capping filter at max_hist_date removed to allow live tracking updates
                 match_lookup = res_df[
                     (res_df["tournament"] == "FIFA World Cup")
                     & (res_df["date"] >= actual_tournament_start)
-                    & (res_df["date"] <= max_hist_date)
                     & (
                         (
-                            (res_df["home_team"] == home_team)
-                            & (res_df["away_team"] == away_team)
+                            (res_df["home_norm"] == norm_h_target)
+                            & (res_df["away_norm"] == norm_a_target)
                         )
                         | (
-                            (res_df["home_team"] == away_team)
-                            & (res_df["away_team"] == home_team)
+                            (res_df["home_norm"] == norm_a_target)
+                            & (res_df["away_norm"] == norm_h_target)
                         )
                     )
                 ]
 
                 if not match_lookup.empty:
                     m_row = match_lookup.iloc[0]
-                    # Capture the exact date string from the verified historical row
-                    match_date = str(m_row["date"].strftime("%Y-%m-%d")).strip()
-                    if m_row["home_team"] == home_team:
+                    if m_row["home_norm"] == norm_h_target:
                         act_h, act_a = m_row["home_score"], m_row["away_score"]
                     else:
                         act_h, act_a = m_row["away_score"], m_row["home_score"]
@@ -475,7 +476,6 @@ def simulate_knockout_waterfall(
             and str(act_h).strip() != ""
             and str(act_a).strip() != ""
         ):
-            # Match is completed: absorb the exact scoreline
             f_home = int(float(act_h))
             f_away = int(float(act_a))
 
@@ -486,19 +486,21 @@ def simulate_knockout_waterfall(
                 winner_side = "away"
                 is_et, is_pen = False, False
             else:
-                # TIE RESOLUTION: It's an ET draw, consult the fast shootout cache map
+                # The score is a draw; query our normalized shootout cache map
                 is_et, is_pen = True, True
-                shootout_winner = shootout_cache.get((home_team, away_team))
+                norm_home = str(home_team).strip().lower()
+                norm_away = str(away_team).strip().lower()
 
-                if shootout_winner == home_team:
+                # 3. Normalized clean string tuple lookup matching the cache builder
+                shootout_winner = shootout_cache.get((norm_home, norm_away))
+
+                if shootout_winner == norm_home:
                     winner_side = "home"
-                elif shootout_winner == away_team:
+                elif shootout_winner == norm_away:
                     winner_side = "away"
                 else:
-                    # Ultimate fallback safety if shootout row is completely missing from Kaggle
                     logging.warning(
-                        f"⚠️ Shootout Missing: Draw recorded for {home_team} vs {away_team} on {match_date}, "
-                        "but no shootout entry matched this specific date. Defaulting to Elo advantage."
+                        f"⚠️ Shootout Record Missing for {home_team} vs {away_team}. Defaulting to Elo."
                     )
                     winner_side = (
                         "home"
@@ -507,11 +509,7 @@ def simulate_knockout_waterfall(
                         else "away"
                     )
 
-            t_corn, t_yell, t_red = (
-                None,
-                None,
-                None,
-            )  # Explicitly null out proxy metric stats for completed matches
+            t_corn, t_yell, t_red = None, None, None
         else:
             # Match is unplayed: predict with match_engine
             raw_home, raw_away, p_corners, p_yellows, p_reds = evaluate_match_consensus(
