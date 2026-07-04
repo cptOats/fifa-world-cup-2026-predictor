@@ -5,6 +5,8 @@
 #     "pandas",
 #     "plotly",
 # ]
+# [tool.marimo.display]
+# theme = "dark"
 # ///
 
 # pyright: reportUnusedExpression=false
@@ -78,24 +80,18 @@ def _():
     import pandas as pd
     import plotly.graph_objects as go
 
-    # 1. ENVIRONMENT GATEKEEPER: Detect the WebAssembly sandbox or CI runner flawlessly
+    # 1. ENVIRONMENT GATEKEEPER: Detect the WebAssembly browser sandbox flawlessly
     IS_WASM = sys.platform == "emscripten"
-    IS_CI = "GITHUB_ACTIONS" in os.environ
 
     if IS_WASM:
-        # DYNAMIC WASM LOOKUP: Leverage Pyodide's native JavaScript bridge
+        # Inside the browser sandbox: Leverage Pyodide's native JavaScript bridge
         import js  # type: ignore
 
         _origin = js.window.location.origin
         _pathname = js.window.location.pathname.rsplit("/", 1)[0]
         chosen_path = f"{_origin}{_pathname}/public"
-    elif IS_CI:
-        # Fallback for the automated GitHub headless compilation worker
-        chosen_path = (
-            "https://barlow-dan.github.io/fifa-world-cup-2026-predictor/public"
-        )
     else:
-        # Anchor directly to the shell execution directory to prevent escaping the repo
+        # Read the files straight from the local workspace filesystem to prevent network blocks.
         base_path = pathlib.Path.cwd()
 
         if (base_path / "docs" / "public").exists():
@@ -105,6 +101,7 @@ def _():
         else:
             chosen_path = base_path / "data" / "runs"
 
+    # Assign to the uppercase module-level constant exactly once
     PUBLIC_DIR = str(chosen_path)
 
     # Define styling palette
