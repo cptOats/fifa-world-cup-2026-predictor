@@ -35,6 +35,15 @@ jobs:
                   touch docs/.nojekyll
                   chmod -R a+rX docs/
 
+            - name: Debug Payload Size & Structure
+              run: |
+                  echo "=== ROOT FILES ==="
+                  ls -la docs/
+                  echo "=== TOTAL FOLDER SIZE ==="
+                  du -sh docs/
+                  echo "=== TOTAL FILE COUNT ==="
+                  find docs/ -type f | wc -l
+
             - name: Upload Clean Web Bundle
               uses: actions/upload-pages-artifact@v3
               with:
