@@ -15,7 +15,7 @@ concurrency:
     cancel-in-progress: true
 
 jobs:
-    build-and-deploy:
+    deploy:
         environment:
             name: github-pages
             url: ${{ steps.deployment.outputs.page_url }}
@@ -24,17 +24,16 @@ jobs:
             - name: Checkout Repository
               uses: actions/checkout@v4
 
-            - name: Stage Production Web Artifacts
+            - name: Prepare Clean Artifact & Fix Permissions
               run: |
-                  if [ -d "public" ] && [ ! -d "docs/public" ]; then cp -r public docs/; fi
+                  mkdir -p docs
 
-                  if [ -d "data/raw" ]; then
-                    mkdir -p docs/data/raw
-                    cp data/raw/results.csv docs/data/raw/ || true
-                    cp data/raw/shootouts.csv docs/data/raw/ || true
-                    cp data/raw/annex_c_matrix.json docs/data/raw/ || true
+                  if [ -d "public" ] && [ ! -d "docs/public" ]; then
+                    cp -rL public docs/
                   fi
+
                   touch docs/.nojekyll
+                  chmod -R a+rX docs/
 
             - name: Upload Clean Web Bundle
               uses: actions/upload-pages-artifact@v3
