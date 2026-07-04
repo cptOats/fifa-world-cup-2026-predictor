@@ -1,8 +1,9 @@
 name: Deploy WASM Tournament Dashboard
 
-on:
+"on":
     push:
-        branches: [main]
+        branches:
+            - main
 
 permissions:
     contents: read
@@ -31,19 +32,25 @@ jobs:
 
             - name: Recompile Static WASM Dashboard
               run: |
-                  uv run marimo export html-wasm dashboard.py --output index.html
+                  rm -rf docs
+                  echo "n" | uv run marimo export html-wasm dashboard.py -o docs/index.html
 
             - name: Stage Production Web Artifacts
               run: |
-                  mkdir dist
-                  cp index.html dist/
-                  if [ -d "public" ]; then cp -r public dist/; fi
-                  touch dist/.nojekyll
+                  if [ -d "public" ]; then cp -r public docs/; fi
+
+                  if [ -d "data/raw" ]; then
+                    mkdir -p docs/data/raw
+                    cp data/raw/results.csv docs/data/raw/ || true
+                    cp data/raw/shootouts.csv docs/data/raw/ || true
+                    cp data/raw/annex_c_matrix.json docs/data/raw/ || true
+                  fi
+                  touch docs/.nojekyll
 
             - name: Upload Clean Web Bundle
               uses: actions/upload-pages-artifact@v3
               with:
-                  path: ./dist
+                  path: ./docs
 
             - name: Deploy Isolated Payload to Pages API
               id: deployment
