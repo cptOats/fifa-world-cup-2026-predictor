@@ -87,11 +87,13 @@ def _():
         # Inside the browser sandbox: Leverage Pyodide's native JavaScript bridge
         import js  # type: ignore
 
-        _origin = js.window.location.origin
-        _pathname = js.window.location.pathname.rsplit("/", 1)[0]
+        # Marimo runs Pyodide inside an isolated Web Worker, which lacks a 'window' DOM object.
+        _origin = js.location.origin
+        _pathname = js.location.pathname.rsplit("/", 1)[0]
+
         chosen_path = f"{_origin}{_pathname}/public"
     else:
-        # Read the files straight from the local workspace filesystem to prevent network blocks.
+        # Read files straight from the local workspace
         base_path = pathlib.Path.cwd()
 
         if (base_path / "docs" / "public").exists():
