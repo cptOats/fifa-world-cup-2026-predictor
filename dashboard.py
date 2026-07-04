@@ -81,8 +81,9 @@ def _():
     # 1. ENVIRONMENT GATEKEEPER: Detect the WebAssembly sandbox flawlessly
     # Inside a browser WASM engine, sys.platform evaluates explicitly to "emscripten"
     IS_WASM = sys.platform == "emscripten"
+    IS_CI = "GITHUB_ACTIONS" in os.environ
 
-    if IS_WASM:
+    if IS_WASM or IS_CI:
         # Web/WASM Mode: Point directly to your live production GitHub Pages URL
         chosen_path = "https://cptOats.github.io/fifa-world-cup-2026-predictor/public"
     else:
@@ -1259,7 +1260,6 @@ def _(
 
     # 2. Render either the Deterministic Table or Expected Stochastic Table (xTables)
     if _is_stoch_mode and df_xtables is not None:
-        # Map out exactly the teams in this group
         grp_teams = group_filtered_df["team"].tolist()
         group_display_df = df_xtables[df_xtables["team"].isin(grp_teams)].copy()
 
@@ -1319,9 +1319,15 @@ def _(
     # 4. Loop through the 3 matchdays and pre-render the visual templates
     group_tabs_content = {}
 
+    # 🎯 TARGET TRACKING POINTER: Pre-initialize the group focus index hook
+    default_group_tab = None
+
     for grp_day in [1, 2, 3]:
         day_matches = group_fixtures_df[group_fixtures_df["matchday"] == grp_day]
         day_cards_html = []
+
+        # Assume the matchday is fully complete until an unplayed fixture proves otherwise
+        day_is_completed = True
 
         for _, grp_match in day_matches.iterrows():
             grp_home_team = grp_match["home_team"]
@@ -1364,7 +1370,6 @@ def _(
                             "draws",
                         ]
 
-                        # Lock variables to absolute reality
                         h_pct = (
                             100.0
                             if (_winner == grp_home_team and not _is_draw)
@@ -1376,32 +1381,53 @@ def _(
                             else 0.0
                         )
                         d_pct = 100.0 if _is_draw else 0.0
+                    else:
+                        # 🎯 Matchday contains an unplayed fixture: flag the round as incomplete
+                        day_is_completed = False
 
-                    _match_resolution_html = f"""
-                    <div style="display: flex; flex-direction: column; gap: 8px; padding: 4px 0;">
-                        <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 15px;">
-                            <span style="color: {DARK_THEME["accent"]};">{grp_home_team}</span>
-                            <span style="color: #666; font-size: 11px;">vs</span>
-                            <span style="color: #e6739f;">{grp_away_team}</span>
+                    # OPTIMIZED VIEW VECTOR: Clean out 3-tier text metrics when wave function collapses
+                    if h_pct == 100.0 or a_pct == 100.0 or d_pct == 100.0:
+                        _match_resolution_html = f"""
+                        <div style="display: flex; flex-direction: column; gap: 8px; padding: 4px 0;">
+                            <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 15px;">
+                                <span style="color: {DARK_THEME["accent"] if h_pct == 100.0 else ("#ccc" if d_pct == 100.0 else "#888")};">{"👑 " if h_pct == 100.0 else ""}{grp_home_team}</span>
+                                <span style="color: #666; font-size: 11px;">vs</span>
+                                <span style="color: {"#e6739f" if a_pct == 100.0 else ("#ccc" if d_pct == 100.0 else "#888")};">{grp_away_team}{" 👑" if a_pct == 100.0 else ""}</span>
+                            </div>
+                            <div style="display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: #262626;">
+                                <div style="width: {h_pct}%; background: {DARK_THEME["accent"]};"></div>
+                                <div style="width: {d_pct}%; background: {DARK_THEME["muted"]};"></div>
+                                <div style="width: {a_pct}%; background: #e6739f;"></div>
+                            </div>
                         </div>
-                        <div style="display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: #262626;">
-                            <div style="width: {h_pct}%; background: {DARK_THEME["accent"]};"></div>
-                            <div style="width: {d_pct}%; background: {DARK_THEME["muted"]};"></div>
-                            <div style="width: {a_pct}%; background: #e6739f;"></div>
+                        """
+                    else:
+                        _match_resolution_html = f"""
+                        <div style="display: flex; flex-direction: column; gap: 8px; padding: 4px 0;">
+                            <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 15px;">
+                                <span style="color: {DARK_THEME["accent"]};">{grp_home_team}</span>
+                                <span style="color: #666; font-size: 11px;">vs</span>
+                                <span style="color: #e6739f;">{grp_away_team}</span>
+                            </div>
+                            <div style="display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: #262626;">
+                                <div style="width: {h_pct}%; background: {DARK_THEME["accent"]};"></div>
+                                <div style="width: {d_pct}%; background: {DARK_THEME["muted"]};"></div>
+                                <div style="width: {a_pct}%; background: #e6739f;"></div>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; font-size: 10px; color: #ccc;">
+                                <span>{h_pct:.1f}%</span>
+                                <span style="color: #888;">DRAW {d_pct:.1f}%</span>
+                                <span>{a_pct:.1f}%</span>
+                            </div>
                         </div>
-                        <div style="display: flex; justify-content: space-between; font-size: 10px; color: #ccc;">
-                            <span>{h_pct:.1f}%</span>
-                            <span style="color: #888;">DRAW {d_pct:.1f}%</span>
-                            <span>{a_pct:.1f}%</span>
-                        </div>
-                    </div>
-                    """
+                        """
                 else:
                     _match_resolution_html = "<div>Matchup Artifact Missing</div>"
+                    day_is_completed = False
 
-                # Clear out the proxy footer for Stochastic lookups
                 _proxy_footer_html = ""
             else:
+                # --- DETERMINISTIC BLOCK ---
                 grp_h_goals = int(grp_match["predicted_home_goals"])
                 grp_a_goals = int(grp_match["predicted_away_goals"])
                 grp_winner = grp_match["winner_name_meta"]
@@ -1411,6 +1437,10 @@ def _(
                     "nan",
                     "draws",
                 ]
+
+                _is_completed = pd.isna(grp_match.get("corners"))
+                if not _is_completed:
+                    day_is_completed = False
 
                 grp_home_bold = (
                     "bold"
@@ -1447,7 +1477,6 @@ def _(
                 </div>
                 """
 
-                # NaN-safe integer casting
                 _m_corners = (
                     f"{int(float(grp_match.get('corners')))}"
                     if pd.notna(grp_match.get("corners"))
@@ -1464,7 +1493,6 @@ def _(
                     else "-"
                 )
 
-                # Store the deterministic proxy values safely
                 _proxy_footer_html = f"""
                 <div style="border-top: 1px solid #2d2d2d; padding-top: 8px; font-size: 11px; display: flex; justify-content: space-between;">
                     <span>📐 Corners: {_m_corners}</span>
@@ -1491,14 +1519,24 @@ def _(
 
         group_tabs_content[f"ROUND {grp_day}"] = mo.Html("".join(day_cards_html))
 
-    group_match_timeline = mo.ui.tabs(group_tabs_content)
+        # CAPTURE FOCUS TARGET: Anchors selection pointer on the first incomplete group round
+        if not day_is_completed and default_group_tab is None:
+            default_group_tab = f"ROUND {grp_day}"
+
+    # Fallback default directly to Round 3 if all matches are finalized
+    if default_group_tab is None:
+        default_group_tab = "ROUND 3"
+
+    # APPLY TO UI LAYER: Bind the group tracking token string state to the tab initializer
+    group_match_timeline = mo.ui.tabs(group_tabs_content, value=default_group_tab)
 
     group_panel = mo.md(
         f"""
+        &nbsp;
         🏟️ {group_dropdown}
         {mo.ui.table(group_display_df, pagination=False)}
 
-        ### ⚽ GROUP {selected_group} MATCHES
+        ### ⚽ {group_label.upper()} MATCHES
         {group_match_timeline}
         """
     )
@@ -1548,9 +1586,15 @@ def _(
     available_rounds = sorted(available_rounds, key=sort_key)
     tabs_content = {}
 
+    # TARGET TRACKING POINTER: Pre-initialize the focus index hook
+    default_knockout_tab = None
+
     for r in available_rounds:
         round_matches = active_bracket_df[active_bracket_df["round"] == r].copy()
         match_cards_html = []
+
+        # Assume the round is complete until proven otherwise
+        round_is_completed = True
 
         for _, match in round_matches.iterrows():
             _home_team = match["home_team"]
@@ -1558,7 +1602,6 @@ def _(
             venue_tag = f"📍 {match['venue']}" if pd.notna(match.get("venue")) else ""
 
             if _is_stoch_mode and df_matchups is not None:
-                # Fetch actual venue, fallback to Neutral if not a host nation
                 _actual_venue = match.get("venue_country", "Neutral")
 
                 if _home_team != _actual_venue and _away_team != _actual_venue:
@@ -1596,83 +1639,112 @@ def _(
                     )
 
                     if _is_completed:
-                        # Pull the real-world winner from the master deterministic schedule
                         _winner = (
                             _det_match.iloc[0]["winner_name_meta"]
                             if not _det_match.empty
                             else match["winner_name_meta"]
                         )
 
-                        # Lock the winner to absolute reality
                         h90 = 100.0 if _winner == _home_team else 0.0
                         h120, hpen = 0.0, 0.0
 
                         a90 = 100.0 if _winner == _away_team else 0.0
                         a120, apen = 0.0, 0.0
+                    else:
+                        # 🎯 The game is active/unplayed: Flag the entire phase as incomplete
+                        round_is_completed = False
 
                     h_tot = h90 + h120 + hpen
                     a_tot = a90 + a120 + apen
                     w90, w120, wpen = h90 + a90, h120 + a120, hpen + apen
 
-                    _match_resolution_html = f"""
-                    <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 15px; padding-bottom: 12px; border-bottom: 1px solid #2d2d2d;">
-                        <span style="color: {DARK_THEME["accent"]};">{_home_team} ({h_tot:.1f}%)</span>
-                        <span style="color: #666; font-size: 12px;">vs</span>
-                        <span style="color: #e6739f;">({a_tot:.1f}%) {_away_team}</span>
-                    </div>
+                    # 🎯 OPTIMIZED VIEW VECTOR: Clean out 3-tier tracking bars for definite results
+                    if h_tot == 100.0 or a_tot == 100.0:
+                        _match_resolution_html = f"""
+                        <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 15px; padding-bottom: 12px; border-bottom: 1px solid #2d2d2d;">
+                            <span style="color: {DARK_THEME["accent"] if h_tot == 100.0 else "#888"};">{"👑 " if h_tot == 100.0 else ""}{_home_team} ({h_tot:.0f}%)</span>
+                            <span style="color: #666; font-size: 12px;">vs</span>
+                            <span style="color: {"#e6739f" if a_tot == 100.0 else "#888"};">({a_tot:.0f}%) {_away_team}{" 👑" if a_tot == 100.0 else ""}</span>
+                        </div>
 
-                    <div style="margin-top: 12px; margin-bottom: 6px;">
-                        <div style="display: flex; justify-content: space-between; font-size: 9px; margin-bottom: 2px;">
-                            <span style="color: {DARK_THEME["accent"]}">{h90:.1f}%</span>
-                            <span style="color: #888; font-weight: bold;">90 MIN ({w90:.1f}%)</span>
-                            <span style="color: #e6739f;">{a90:.1f}%</span>
+                        <div style="margin-top: 12px; margin-bottom: 4px;">
+                            <div style="display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: #262626;">
+                                <div style="width: {h_tot}%; background: {DARK_THEME["accent"]};"></div>
+                                <div style="width: {a_tot}%; background: #e6739f;"></div>
+                            </div>
                         </div>
-                        <div style="display: flex; height: 5px; border-radius: 3px; overflow: hidden; background: #262626;">
-                            <div style="width: {(h90 / w90 * 100) if w90 > 0 else 0}%; background: {DARK_THEME["accent"]};"></div>
-                            <div style="width: {(a90 / w90 * 100) if w90 > 0 else 0}%; background: #e6739f;"></div>
+                        """
+                    else:
+                        _match_resolution_html = f"""
+                        <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 15px; padding-bottom: 12px; border-bottom: 1px solid #2d2d2d;">
+                            <span style="color: {DARK_THEME["accent"]};">{_home_team} ({h_tot:.1f}%)</span>
+                            <span style="color: #666; font-size: 12px;">vs</span>
+                            <span style="color: #e6739f;">({a_tot:.1f}%) {_away_team}</span>
                         </div>
-                    </div>
 
-                    <div style="margin-bottom: 6px;">
-                        <div style="display: flex; justify-content: space-between; font-size: 9px; margin-bottom: 2px;">
-                            <span style="color: {DARK_THEME["accent"]}">{h120:.1f}%</span>
-                            <span style="color: #888; font-weight: bold;">⏱️ ET ({w120:.1f}%)</span>
-                            <span style="color: #e6739f;">{a120:.1f}%</span>
+                        <div style="margin-top: 12px; margin-bottom: 6px;">
+                            <div style="display: flex; justify-content: space-between; font-size: 9px; margin-bottom: 2px;">
+                                <span style="color: {DARK_THEME["accent"]}">{h90:.1f}%</span>
+                                <span style="color: #888; font-weight: bold;">90 MIN ({w90:.1f}%)</span>
+                                <span style="color: #e6739f;">{a90:.1f}%</span>
+                            </div>
+                            <div style="display: flex; height: 5px; border-radius: 3px; overflow: hidden; background: #262626;">
+                                <div style="width: {(h90 / w90 * 100) if w90 > 0 else 0}%; background: {DARK_THEME["accent"]};"></div>
+                                <div style="width: {(a90 / w90 * 100) if w90 > 0 else 0}%; background: #e6739f;"></div>
+                            </div>
                         </div>
-                        <div style="display: flex; height: 5px; border-radius: 3px; overflow: hidden; background: #262626;">
-                            <div style="width: {(h120 / w120 * 100) if w120 > 0 else 0}%; background: {DARK_THEME["accent"]};"></div>
-                            <div style="width: {(a120 / w120 * 100) if w120 > 0 else 0}%; background: #e6739f;"></div>
-                        </div>
-                    </div>
 
-                    <div style="margin-bottom: 8px;">
-                        <div style="display: flex; justify-content: space-between; font-size: 9px; margin-bottom: 2px;">
-                            <span style="color: {DARK_THEME["accent"]}">{hpen:.1f}%</span>
-                            <span style="color: #888; font-weight: bold;">🥅 PENS ({wpen:.1f}%)</span>
-                            <span style="color: #e6739f;">{apen:.1f}%</span>
+                        <div style="margin-bottom: 6px;">
+                            <div style="display: flex; justify-content: space-between; font-size: 9px; margin-bottom: 2px;">
+                                <span style="color: {DARK_THEME["accent"]}">{h120:.1f}%</span>
+                                <span style="color: #888; font-weight: bold;">⏱️ ET ({w120:.1f}%)</span>
+                                <span style="color: #e6739f;">{a120:.1f}%</span>
+                            </div>
+                            <div style="display: flex; height: 5px; border-radius: 3px; overflow: hidden; background: #262626;">
+                                <div style="width: {(h120 / w120 * 100) if w120 > 0 else 0}%; background: {DARK_THEME["accent"]};"></div>
+                                <div style="width: {(a120 / w120 * 100) if w120 > 0 else 0}%; background: #e6739f;"></div>
+                            </div>
                         </div>
-                        <div style="display: flex; height: 5px; border-radius: 3px; overflow: hidden; background: #262626;">
-                            <div style="width: {(hpen / wpen * 100) if wpen > 0 else 0}%; background: {DARK_THEME["accent"]};"></div>
-                            <div style="width: {(apen / wpen * 100) if wpen > 0 else 0}%; background: #e6739f;"></div>
+
+                        <div style="margin-bottom: 8px;">
+                            <div style="display: flex; justify-content: space-between; font-size: 9px; margin-bottom: 2px;">
+                                <span style="color: {DARK_THEME["accent"]}">{hpen:.1f}%</span>
+                                <span style="color: #888; font-weight: bold;">🥅 PENS ({wpen:.1f}%)</span>
+                                <span style="color: #e6739f;">{apen:.1f}%</span>
+                            </div>
+                            <div style="display: flex; height: 5px; border-radius: 3px; overflow: hidden; background: #262626;">
+                                <div style="width: {(hpen / wpen * 100) if wpen > 0 else 0}%; background: {DARK_THEME["accent"]};"></div>
+                                <div style="width: {(apen / wpen * 100) if wpen > 0 else 0}%; background: #e6739f;"></div>
+                            </div>
                         </div>
-                    </div>
-                    """
+                        """
                 else:
                     _match_resolution_html = "<div>Matchup Artifact Missing</div>"
+                    round_is_completed = False
 
                 _et_badge = ""
                 _pens_badge = ""
-
-                # Clear out the proxy footer for Stochastic lookups
                 _proxy_footer_html = ""
 
             else:
+                # --- DETERMINISTIC BLOCK ---
                 _ko_winner = match["winner_name_meta"]
 
                 h_goals = f"{pd.to_numeric(match['predicted_home_goals'], errors='coerce'):.0f}"
                 a_goals = f"{pd.to_numeric(match['predicted_away_goals'], errors='coerce'):.0f}"
 
-                # NaN-safe integer casting
+                # Calculate deterministic completeness via proxy parameters
+                _det_match = df_tournament[
+                    df_tournament["match_id"] == match["match_id"]
+                ]
+                _is_completed = (
+                    pd.isna(_det_match.iloc[0].get("corners"))
+                    if not _det_match.empty
+                    else False
+                )
+                if not _is_completed:
+                    round_is_completed = False
+
                 _m_corners = (
                     f"{int(float(match.get('corners')))}"
                     if pd.notna(match.get("corners"))
@@ -1730,7 +1802,6 @@ def _(
                 </div>
                 """
 
-                # Store the deterministic proxy values
                 _proxy_footer_html = f"""
                 <div style="border-top: 1px solid #2d2d2d; padding-top: 8px; font-size: 11px; display: flex; justify-content: space-between;">
                     <span>📐 Corners: {_m_corners}</span>
@@ -1759,7 +1830,16 @@ def _(
 
         tabs_content[str(r).upper()] = mo.Html("".join(match_cards_html))
 
-    knockout_tabs = mo.ui.tabs(tabs_content)
+        # 🎯 CAPTURE FOCUS TARGET: Anchors selection pointer on the first un-collapsed round branch
+        if not round_is_completed and default_knockout_tab is None:
+            default_knockout_tab = str(r).upper()
+
+    # Fallback to the absolute tournament end nodes if the entire graph is resolved
+    if default_knockout_tab is None and available_rounds:
+        default_knockout_tab = str(available_rounds[-1]).upper()
+
+    # APPLY TO UI LAYER: Bind the tracking token string state to the tab initializer
+    knockout_tabs = mo.ui.tabs(tabs_content, value=default_knockout_tab)
 
     knockout_panel = mo.md(
         f"""
