@@ -87,13 +87,18 @@ def _():
         # Inside the browser sandbox: Leverage Pyodide's native JavaScript bridge
         import js  # type: ignore
 
-        # Marimo runs Pyodide inside an isolated Web Worker, which lacks a 'window' DOM object.
         _origin = js.location.origin
         _pathname = js.location.pathname.rsplit("/", 1)[0]
+
+        # If the isolated worker path contains the compiled framework assets subfolder, strip it out to point back to the true repository root.
+        if _pathname.endswith("/assets"):
+            _pathname = _pathname.rsplit("/assets", 1)[0]
 
         chosen_path = f"{_origin}{_pathname}/public"
     else:
         # Read files straight from the local workspace
+        import pathlib
+
         base_path = pathlib.Path.cwd()
 
         if (base_path / "docs" / "public").exists():
