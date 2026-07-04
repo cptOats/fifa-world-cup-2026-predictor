@@ -78,14 +78,22 @@ def _():
     import pandas as pd
     import plotly.graph_objects as go
 
-    # 1. ENVIRONMENT GATEKEEPER: Detect the WebAssembly sandbox flawlessly
-    # Inside a browser WASM engine, sys.platform evaluates explicitly to "emscripten"
+    # 1. ENVIRONMENT GATEKEEPER: Detect the WebAssembly sandbox or CI runner flawlessly
     IS_WASM = sys.platform == "emscripten"
     IS_CI = "GITHUB_ACTIONS" in os.environ
 
-    if IS_WASM or IS_CI:
-        # Web/WASM Mode: Point directly to your live production GitHub Pages URL
-        chosen_path = "https://cptOats.github.io/fifa-world-cup-2026-predictor/public"
+    if IS_WASM:
+        # DYNAMIC WASM LOOKUP: Leverage Pyodide's native JavaScript bridge
+        import js  # type: ignore
+
+        _origin = js.window.location.origin
+        _pathname = js.window.location.pathname.rsplit("/", 1)[0]
+        chosen_path = f"{_origin}{_pathname}/public"
+    elif IS_CI:
+        # Fallback for the automated GitHub headless compilation worker
+        chosen_path = (
+            "https://barlow-dan.github.io/fifa-world-cup-2026-predictor/public"
+        )
     else:
         # Anchor directly to the shell execution directory to prevent escaping the repo
         base_path = pathlib.Path.cwd()
@@ -97,7 +105,6 @@ def _():
         else:
             chosen_path = base_path / "data" / "runs"
 
-    # Assign to the uppercase module-level constant exactly once
     PUBLIC_DIR = str(chosen_path)
 
     # Define styling palette
