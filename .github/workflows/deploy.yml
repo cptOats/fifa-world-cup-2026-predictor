@@ -1,0 +1,50 @@
+name: Deploy WASM Tournament Dashboard
+
+on:
+    push:
+        branches: [main]
+
+permissions:
+    contents: read
+    pages: write
+    id-token: write
+
+concurrency:
+    group: "pages"
+    cancel-in-progress: true
+
+jobs:
+    build-and-deploy:
+        environment:
+            name: github-pages
+            url: ${{ steps.deployment.outputs.page_url }}
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout Repository
+              uses: actions/checkout@v4
+
+            - name: Install uv Environment Layer
+              uses: astral-sh/setup-uv@v5
+              with:
+                  enable-cache: true
+                  python-version: "3.14"
+
+            - name: Recompile Static WASM Dashboard
+              run: |
+                  uv run marimo export html-wasm dashboard.py --output index.html
+
+            - name: Stage Production Web Artifacts
+              run: |
+                  mkdir dist
+                  cp index.html dist/
+                  if [ -d "public" ]; then cp -r public dist/; fi
+                  touch dist/.nojekyll
+
+            - name: Upload Clean Web Bundle
+              uses: actions/upload-pages-artifact@v3
+              with:
+                  path: ./dist
+
+            - name: Deploy Isolated Payload to Pages API
+              id: deployment
+              uses: actions/deploy-pages@v4
