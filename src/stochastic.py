@@ -520,7 +520,10 @@ def precompute_sandbox_matchups(
 def build_expected_stochastic_bracket(
     df_xtables, df_sandbox, raw_knockout_template, group_fixtures
 ):
-    """Builds a 'Most Likely' UI probabilistic bracket mapping directly from xPts logic."""
+    """Builds a 'Most Likely' UI probabilistic bracket mapping directly from xPts logic.
+
+    Hardened to seamlessly integrate real-world match outcomes and shootout caches.
+    """
 
     team_to_group = {}
     for _, row in group_fixtures.iterrows():
@@ -554,6 +557,49 @@ def build_expected_stochastic_bracket(
     )
     third_place_assignments = allocate_third_places(top_thirds)
 
+    # FACTUAL CAPTURE LAYER: Ingest historical knockout data templates
+    shootout_cache = {}
+    shootouts_path = os.path.join("data", "raw", "shootouts.csv")
+    if os.path.exists(shootouts_path):
+        try:
+            st_df = pd.read_csv(shootouts_path)
+            for _, st_row in st_df.iterrows():
+                h_team = str(st_row["home_team"]).strip().lower()
+                a_team = str(st_row["away_team"]).strip().lower()
+                so_winner = str(st_row["winner"]).strip().lower()
+                shootout_cache[(h_team, a_team)] = so_winner
+                shootout_cache[(a_team, h_team)] = so_winner
+        except Exception:
+            pass
+
+    live_ko_cache = {}
+    results_path = os.path.join("data", "raw", "results.csv")
+    if os.path.exists(results_path):
+        try:
+            actual_tournament_start = pd.to_datetime("2026-06-11")
+            res_df = pd.read_csv(results_path)
+            res_df["date"] = pd.to_datetime(res_df["date"])
+
+            live_matches = res_df[
+                (res_df["tournament"] == "FIFA World Cup")
+                & (res_df["date"] >= actual_tournament_start)
+                & (pd.notna(res_df["home_score"]))
+            ]
+
+            for _, m_row in live_matches.iterrows():
+                h_norm = str(m_row["home_team"]).strip().lower()
+                a_norm = str(m_row["away_team"]).strip().lower()
+                live_ko_cache[(h_norm, a_norm)] = (
+                    int(m_row["home_score"]),
+                    int(m_row["away_score"]),
+                )
+                live_ko_cache[(a_norm, h_norm)] = (
+                    int(m_row["away_score"]),
+                    int(m_row["home_score"]),
+                )
+        except Exception:
+            pass
+
     match_winners, match_losers, bracket_rows = {}, {}, []
     knockout_list = raw_knockout_template.to_dict(orient="records")
 
@@ -580,69 +626,110 @@ def build_expected_stochastic_bracket(
         home = _resolve_team(slot_home)
         away = _resolve_team(slot_away)
 
-        if home != v_country and away != v_country:
-            lookup_venue = "Neutral"
+        norm_home = str(home).strip().lower()
+        norm_away = str(away).strip().lower()
+
+        # Check for real-world score overrides
+        act_h = row.get("actual_home_score")
+        act_a = row.get("actual_away_score")
+
+        if pd.isna(act_h) or pd.isna(act_a) or str(act_h).strip() == "":
+            if (norm_home, norm_away) in live_ko_cache:
+                act_h, act_a = live_ko_cache[(norm_home, norm_away)]
+
+        if (
+            pd.notna(act_h)
+            and pd.notna(act_a)
+            and str(act_h).strip() != ""
+            and str(act_a).strip() != ""
+        ):
+            # Match is historical reality: Pull true data values
+            pred_h_goals = int(float(act_h))
+            pred_a_goals = int(float(act_a))
+
+            if pred_h_goals > pred_a_goals:
+                winner = home
+                is_et, is_pen = False, False
+            elif pred_a_goals > pred_h_goals:
+                winner = away
+                is_et, is_pen = False, False
+            else:
+                # Tie detected: extract penalty shootout record
+                is_et, is_pen = True, True
+                shootout_winner = shootout_cache.get((norm_home, norm_away))
+                if shootout_winner == norm_home:
+                    winner = home
+                elif shootout_winner == norm_away:
+                    winner = away
+                else:
+                    winner = home  # Safe fallback
         else:
-            lookup_venue = v_country
+            # Match is unplayed: fallback to sandbox probabilistic lookups
+            is_et, is_pen = False, False
+            if home != v_country and away != v_country:
+                lookup_venue = "Neutral"
+            else:
+                lookup_venue = v_country
 
-        sb_row = df_sandbox[
-            (df_sandbox["home_team"] == home)
-            & (df_sandbox["away_team"] == away)
-            & (df_sandbox["venue_country"] == lookup_venue)
-        ]
-        is_swapped = False
-
-        if sb_row.empty:
             sb_row = df_sandbox[
-                (df_sandbox["home_team"] == away)
-                & (df_sandbox["away_team"] == home)
+                (df_sandbox["home_team"] == home)
+                & (df_sandbox["away_team"] == away)
                 & (df_sandbox["venue_country"] == lookup_venue)
             ]
-            is_swapped = True
+            is_swapped = False
 
-        if not sb_row.empty:
-            sb_data = sb_row.iloc[0]
-            prob_h = (
-                float(sb_data["ko_win_away"])
-                if is_swapped
-                else float(sb_data["ko_win_home"])
-            )
-            prob_a = (
-                float(sb_data["ko_win_home"])
-                if is_swapped
-                else float(sb_data["ko_win_away"])
-            )
+            if sb_row.empty:
+                sb_row = df_sandbox[
+                    (df_sandbox["home_team"] == away)
+                    & (df_sandbox["away_team"] == home)
+                    & (df_sandbox["venue_country"] == lookup_venue)
+                ]
+                is_swapped = True
 
-            l_h = (
-                sb_data["ensemble_lambda_away"]
-                if is_swapped
-                else sb_data["ensemble_lambda_home"]
-            )
-            l_a = (
-                sb_data["ensemble_lambda_home"]
-                if is_swapped
-                else sb_data["ensemble_lambda_away"]
-            )
-        else:
-            prob_h, prob_a = 50.0, 50.0
-            l_h, l_a = 1.0, 1.0
+            if not sb_row.empty:
+                sb_data = sb_row.iloc[0]
+                prob_h = (
+                    float(sb_data["ko_win_away"])
+                    if is_swapped
+                    else float(sb_data["ko_win_home"])
+                )
+                prob_a = (
+                    float(sb_data["ko_win_home"])
+                    if is_swapped
+                    else float(sb_data["ko_win_away"])
+                )
 
-        winner = home if prob_h >= prob_a else away
+                l_h = (
+                    sb_data["ensemble_lambda_away"]
+                    if is_swapped
+                    else sb_data["ensemble_lambda_home"]
+                )
+                l_a = (
+                    sb_data["ensemble_lambda_home"]
+                    if is_swapped
+                    else sb_data["ensemble_lambda_away"]
+                )
+            else:
+                prob_h, prob_a = 50.0, 50.0
+                l_h, l_a = 1.0, 1.0
+
+            winner = home if prob_h >= prob_a else away
+
+            pred_h_goals, pred_a_goals = int(round(l_h)), int(round(l_a))
+            if pred_h_goals == pred_a_goals:
+                if winner == home:
+                    pred_h_goals += 1
+                else:
+                    pred_a_goals += 1
+            elif pred_h_goals > pred_a_goals and winner == away:
+                pred_a_goals = pred_h_goals + 1
+            elif pred_a_goals > pred_h_goals and winner == home:
+                pred_h_goals = pred_a_goals + 1
+
         match_winners[m_id], match_losers[m_id] = (
             winner,
             away if winner == home else home,
         )
-
-        pred_h_goals, pred_a_goals = int(round(l_h)), int(round(l_a))
-        if pred_h_goals == pred_a_goals:
-            if winner == home:
-                pred_h_goals += 1
-            else:
-                pred_a_goals += 1
-        elif pred_h_goals > pred_a_goals and winner == away:
-            pred_a_goals = pred_h_goals + 1
-        elif pred_a_goals > pred_h_goals and winner == home:
-            pred_h_goals = pred_a_goals + 1
 
         bracket_rows.append(
             {
@@ -654,8 +741,8 @@ def build_expected_stochastic_bracket(
                 "away_team": away,
                 "predicted_home_goals": pred_h_goals,
                 "predicted_away_goals": pred_a_goals,
-                "extra_time": False,
-                "penalties": False,
+                "extra_time": is_et,
+                "penalties": is_pen,
                 "winner_name_meta": winner,
             }
         )

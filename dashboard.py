@@ -64,7 +64,7 @@ Design Considerations:
 
 import marimo
 
-__generated_with = "0.23.10"
+__generated_with = "0.23.13"
 app = marimo.App(width="medium", app_title="fifa-world-cup-2026-predictor")
 
 
@@ -148,6 +148,7 @@ def _():
         json,
         mo,
         os,
+        pathlib,
         pd,
     )
 
@@ -329,7 +330,7 @@ def _(glob, mo, os, pathlib):
 
 
 @app.cell
-def _(PUBLIC_DIR, mo, json, local_run_maps, os, pd, run_dropdown):
+def _(PUBLIC_DIR, json, local_run_maps, mo, os, pd, run_dropdown):
     import io
     import urllib.request
 
@@ -740,10 +741,10 @@ def _(
                 </div>
 
                 <div style="margin-top: 12px; margin-bottom: 8px;">
-                    <div style="display: flex; justify-content: space-between; font-size: 10px; margin-bottom: 2px;">
-                        <span style="color: {DARK_THEME["accent"]}>{_h90:.1f}%</span>
-                        <span style="color: #888; font-weight: bold; letter-spacing: 0.5px;">90 MIN ({_w90:.1f}%)</span>
-                        <span style="color: #e6739f;">{_a90:.1f}%</span>
+                    <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; margin-bottom: 4px;">
+                        <span style="color: {DARK_THEME["accent"]}; width: 25%; text-align: left; font-weight: bold;">{_h90:.1f}%</span>
+                        <span style="color: #888; font-weight: bold; letter-spacing: 0.5px; width: 50%; text-align: center;">90 MIN ({_w90:.1f}%)</span>
+                        <span style="color: #e6739f; width: 25%; text-align: right; font-weight: bold;">{_a90:.1f}%</span>
                     </div>
                     <div style="display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: #262626;">
                         <div style="width: {(_h90 / _w90 * 100) if _w90 > 0 else 0}%; background: {DARK_THEME["accent"]};"></div>
@@ -752,10 +753,10 @@ def _(
                 </div>
 
                 <div style="margin-bottom: 8px;">
-                    <div style="display: flex; justify-content: space-between; font-size: 10px; margin-bottom: 2px;">
-                        <span style="color: {DARK_THEME["accent"]}>{_h120:.1f}%</span>
-                        <span style="color: #888; font-weight: bold; letter-spacing: 0.5px;">⏱️ EXTRA TIME ({_w120:.1f}%)</span>
-                        <span style="color: #e6739f;">{_a120:.1f}%</span>
+                    <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; margin-bottom: 4px;">
+                        <span style="color: {DARK_THEME["accent"]}; width: 25%; text-align: left; font-weight: bold;">{_h120:.1f}%</span>
+                        <span style="color: #888; font-weight: bold; letter-spacing: 0.5px; width: 50%; text-align: center;">⏱️ EXTRA TIME ({_w120:.1f}%)</span>
+                        <span style="color: #e6739f; width: 25%; text-align: right; font-weight: bold;">{_a120:.1f}%</span>
                     </div>
                     <div style="display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: #262626;">
                         <div style="width: {(_h120 / _w120 * 100) if _w120 > 0 else 0}%; background: {DARK_THEME["accent"]};"></div>
@@ -764,10 +765,10 @@ def _(
                 </div>
 
                 <div style="margin-bottom: 4px;">
-                    <div style="display: flex; justify-content: space-between; font-size: 10px; margin-bottom: 2px;">
-                        <span style="color: {DARK_THEME["accent"]}>{_hpen:.1f}%</span>
-                        <span style="color: #888; font-weight: bold; letter-spacing: 0.5px;">🥅 PENALTIES ({_wpen:.1f}%)</span>
-                        <span style="color: #e6739f;">{_apen:.1f}%</span>
+                    <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; margin-bottom: 4px;">
+                        <span style="color: {DARK_THEME["accent"]}; width: 25%; text-align: left; font-weight: bold;">{_hpen:.1f}%</span>
+                        <span style="color: #888; font-weight: bold; letter-spacing: 0.5px; width: 50%; text-align: center;">🥅 PENALTIES ({_wpen:.1f}%)</span>
+                        <span style="color: #e6739f; width: 25%; text-align: right; font-weight: bold;">{_apen:.1f}%</span>
                     </div>
                     <div style="display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: #262626;">
                         <div style="width: {(_hpen / _wpen * 100) if _wpen > 0 else 0}%; background: {DARK_THEME["accent"]};"></div>
@@ -1330,7 +1331,7 @@ def _(
     # 4. Loop through the 3 matchdays and pre-render the visual templates
     group_tabs_content = {}
 
-    # 🎯 TARGET TRACKING POINTER: Pre-initialize the group focus index hook
+    # TARGET TRACKING POINTER: Pre-initialize the group focus index hook
     default_group_tab = None
 
     for grp_day in [1, 2, 3]:
@@ -1393,7 +1394,7 @@ def _(
                         )
                         d_pct = 100.0 if _is_draw else 0.0
                     else:
-                        # 🎯 Matchday contains an unplayed fixture: flag the round as incomplete
+                        # Matchday contains an unplayed fixture: flag the round as incomplete
                         day_is_completed = False
 
                     # OPTIMIZED VIEW VECTOR: Clean out 3-tier text metrics when wave function collapses
@@ -1401,9 +1402,13 @@ def _(
                         _match_resolution_html = f"""
                         <div style="display: flex; flex-direction: column; gap: 8px; padding: 4px 0;">
                             <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 15px;">
-                                <span style="color: {DARK_THEME["accent"] if h_pct == 100.0 else ("#ccc" if d_pct == 100.0 else "#888")};">{"👑 " if h_pct == 100.0 else ""}{grp_home_team}</span>
+                                <span style="color: {DARK_THEME["accent"] if h_pct == 100.0 else ("#ccc" if d_pct == 100.0 else "#888")};">
+                                    {"👑 " if h_pct == 100.0 else ""}{grp_home_team}
+                                </span>
                                 <span style="color: #666; font-size: 11px;">vs</span>
-                                <span style="color: {"#e6739f" if a_pct == 100.0 else ("#ccc" if d_pct == 100.0 else "#888")};">{grp_away_team}{" 👑" if a_pct == 100.0 else ""}</span>
+                                <span style="color: {"#e6739f" if a_pct == 100.0 else ("#ccc" if d_pct == 100.0 else "#888")};">
+                                    {grp_away_team}{" 👑" if a_pct == 100.0 else ""}
+                                </span>
                             </div>
                             <div style="display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: #262626;">
                                 <div style="width: {h_pct}%; background: {DARK_THEME["accent"]};"></div>
@@ -1413,21 +1418,22 @@ def _(
                         </div>
                         """
                     else:
+                        # Fallback layout with text metrics/percentages for unplayed stochastic matches
                         _match_resolution_html = f"""
                         <div style="display: flex; flex-direction: column; gap: 8px; padding: 4px 0;">
                             <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 15px;">
-                                <span style="color: {DARK_THEME["accent"]};">{grp_home_team}</span>
+                                <span style="color: #ccc;">{grp_home_team}</span>
                                 <span style="color: #666; font-size: 11px;">vs</span>
-                                <span style="color: #e6739f;">{grp_away_team}</span>
+                                <span style="color: #ccc;">{grp_away_team}</span>
                             </div>
-                            <div style="display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: #262626;">
+                            <div style="display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: #262626;">
                                 <div style="width: {h_pct}%; background: {DARK_THEME["accent"]};"></div>
                                 <div style="width: {d_pct}%; background: {DARK_THEME["muted"]};"></div>
                                 <div style="width: {a_pct}%; background: #e6739f;"></div>
                             </div>
-                            <div style="display: flex; justify-content: space-between; font-size: 10px; color: #ccc;">
+                            <div style="display: flex; justify-content: space-between; font-size: 11px; color: #888;">
                                 <span>{h_pct:.1f}%</span>
-                                <span style="color: #888;">DRAW {d_pct:.1f}%</span>
+                                <span>{d_pct:.1f}%</span>
                                 <span>{a_pct:.1f}%</span>
                             </div>
                         </div>
@@ -1662,20 +1668,20 @@ def _(
                         a90 = 100.0 if _winner == _away_team else 0.0
                         a120, apen = 0.0, 0.0
                     else:
-                        # 🎯 The game is active/unplayed: Flag the entire phase as incomplete
+                        # The game is active/unplayed: Flag the entire phase as incomplete
                         round_is_completed = False
 
                     h_tot = h90 + h120 + hpen
                     a_tot = a90 + a120 + apen
                     w90, w120, wpen = h90 + a90, h120 + a120, hpen + apen
 
-                    # 🎯 OPTIMIZED VIEW VECTOR: Clean out 3-tier tracking bars for definite results
+                    # OPTIMIZED VIEW VECTOR: Clean out 3-tier tracking bars for definite results
                     if h_tot == 100.0 or a_tot == 100.0:
                         _match_resolution_html = f"""
                         <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 15px; padding-bottom: 12px; border-bottom: 1px solid #2d2d2d;">
-                            <span style="color: {DARK_THEME["accent"] if h_tot == 100.0 else "#888"};">{"👑 " if h_tot == 100.0 else ""}{_home_team} ({h_tot:.0f}%)</span>
+                            <span style="color: {DARK_THEME["accent"] if h_tot == 100.0 else "#888"};">{"👑 " if h_tot == 100.0 else ""}{_home_team}</span>
                             <span style="color: #666; font-size: 12px;">vs</span>
-                            <span style="color: {"#e6739f" if a_tot == 100.0 else "#888"};">({a_tot:.0f}%) {_away_team}{" 👑" if a_tot == 100.0 else ""}</span>
+                            <span style="color: {"#e6739f" if a_tot == 100.0 else "#888"};">{_away_team}{" 👑" if a_tot == 100.0 else ""}</span>
                         </div>
 
                         <div style="margin-top: 12px; margin-bottom: 4px;">
