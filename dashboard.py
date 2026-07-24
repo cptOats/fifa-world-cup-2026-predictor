@@ -1118,6 +1118,7 @@ def _(
     DARK_THEME,
     df_capabilities,
     df_forecast,
+    df_tournament,
     has_stochastic,
     mo,
     view_mode_toggle,
@@ -1134,10 +1135,51 @@ def _(
         "Champion %": ("Champion %", "Champion", "#00adb5"),
     }
 
+    # 2. Dynamic stage & squad count defaults based on tournament progression
+    r16_done = False
+    qf_done = False
+    sf_done = False
+
+    if (
+        df_tournament is not None
+        and not df_tournament.empty
+        and "corners" in df_tournament.columns
+    ):
+        def _is_round_finished(keyword):
+            rnd_matches = df_tournament[
+                df_tournament["round"]
+                .astype(str)
+                .str.contains(keyword, case=False, na=False)
+            ]
+            if rnd_matches.empty:
+                return False
+            return rnd_matches["corners"].isna().all()
+
+        r16_done = _is_round_finished("Round of 16")
+        qf_done = _is_round_finished("Quarter")
+        sf_done = _is_round_finished("Semi")
+
+    if sf_done:
+        # Final Stage
+        default_included_keys = ["Champion %"]
+        default_squad_count = 2
+    elif qf_done:
+        # Semi-final Stage
+        default_included_keys = ["Final %", "Champion %"]
+        default_squad_count = 4
+    elif r16_done:
+        # Quarter-final Stage
+        default_included_keys = ["SF %", "Final %", "Champion %"]
+        default_squad_count = 8
+    else:
+        # Default / Early Stage
+        default_included_keys = ["QF %", "SF %", "Final %", "Champion %"]
+        default_squad_count = 8
+
     available_column_stages = {}
     default_stages = []
 
-    # 2. Flexible schema parser to adapt to structural refactors
+    # 3. Flexible schema parser to adapt to structural refactors
     if has_stochastic and df_forecast is not None:
         for k, v in ALL_POSSIBLE_STAGES.items():
             clean_k = k.replace(" %", "").strip()
@@ -1152,7 +1194,7 @@ def _(
 
             if matched_col:
                 available_column_stages[v[1]] = matched_col
-                if k in ["QF %", "SF %", "Final %", "Champion %"]:
+                if k in default_included_keys:
                     default_stages.append(v[1])
 
         max_teams = len(df_capabilities)
@@ -1161,7 +1203,7 @@ def _(
         default_stages = []
         max_teams = 10
 
-    # 3. Re-instantiate widgets with updated safe values
+    # 4. Re-instantiate widgets with updated safe values
     stage_selector = mo.ui.multiselect(
         options=available_column_stages,
         value=default_stages,
@@ -1169,7 +1211,11 @@ def _(
     )
 
     team_count_slider = mo.ui.slider(
-        start=4, stop=max_teams, step=1, value=min(8, max_teams), label="🏃 SQUAD DEPTH"
+        start=2,
+        stop=max_teams,
+        step=1,
+        value=min(default_squad_count, max_teams),
+        label="🏃 SQUAD DEPTH",
     )
 
     if has_stochastic and df_forecast is not None and _is_stoch_mode:
