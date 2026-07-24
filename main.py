@@ -75,7 +75,6 @@ TRAINING_VARIABLES: TrainingConfig = {
     "friendly_weight": 0.4,
     "time_slice_start": "1998-01-01",
     "start_of_tournament": "2026-06-11",  # "2026-06-11" full tournament
-    # "start_of_tournament": (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")  # live tournament
     "decay_alpha": 0.00047,  # 4 year half-life = 0.00047
     "cv_folds": 10,  # 7+ for rigorous training
 }
@@ -90,7 +89,7 @@ MATCH_RULES: MatchRulesConfig = {
 
 # =====================================================================
 
-timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M")
+timestamp = datetime.datetime.now(tz=datetime.UTC).strftime("%Y%m%d_%H%M")
 blend_suffix = f"_{BLEND_METHOD}" if MODEL_TYPE == "blend" else ""
 run_name = f"run_{MODEL_TYPE}{blend_suffix}_{timestamp}"
 run_dir = os.path.join("data", "runs", run_name)
@@ -270,6 +269,7 @@ def main():
         xgb_away=xgb_away,
         feature_columns=feature_columns,
         latest_team_form=latest_team_form,
+        start_of_tournament=TRAINING_VARIABLES["start_of_tournament"],
     )
 
     # Filter and export execution matrices to disk
@@ -394,6 +394,7 @@ def main():
             blend_weights=blend_weights,
             match_rules=MATCH_RULES,
             n_simulations=MONTE_CARLO_RUNS,
+            start_of_tournament=TRAINING_VARIABLES["start_of_tournament"],
         )
 
         stochastic_champion_row = prob_dashboard.loc[
@@ -440,6 +441,7 @@ def main():
             df_sandbox=df_sandbox,
             raw_knockout_template=raw_knockout_template,
             group_fixtures=group_fixtures,
+            start_of_tournament=TRAINING_VARIABLES["start_of_tournament"],
         )
         df_stoch_bracket.to_csv(
             os.path.join(run_dir, "stochastic_tournament.csv"), index=False

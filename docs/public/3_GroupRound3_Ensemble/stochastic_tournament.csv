@@ -25,9 +25,9 @@ match_id,round,venue,venue_country,home_team,away_team,predicted_home_goals,pred
 96,Round of 16,"BC Place, Vancouver",Canada,Canada,Colombia,1,2,False,False,Colombia
 97,Quarter-final,"Gillette Stadium, Boston",United States,Netherlands,France,1,2,False,False,France
 98,Quarter-final,"SoFi Stadium, Los Angeles",United States,Spain,United States,2,1,False,False,Spain
-99,Quarter-final,"Hard Rock Stadium, Miami",United States,Brazil,England,2,1,False,False,Brazil
+99,Quarter-final,"Hard Rock Stadium, Miami",United States,Brazil,England,1,2,False,False,England
 100,Quarter-final,"GEHA Field at Arrowhead Stadium, Kansas City",United States,Argentina,Colombia,2,1,False,False,Argentina
 101,Semi-final,"AT&T Stadium, Dallas",United States,France,Spain,1,2,False,False,Spain
-102,Semi-final,"Mercedes-Benz Stadium, Atlanta",United States,Brazil,Argentina,1,2,False,False,Argentina
-103,Third-place playoff,"Hard Rock Stadium, Miami",United States,France,Brazil,1,2,False,False,Brazil
+102,Semi-final,"Mercedes-Benz Stadium, Atlanta",United States,England,Argentina,1,2,False,False,Argentina
+103,Third-place playoff,"Hard Rock Stadium, Miami",United States,France,England,2,1,False,False,France
 104,Final,"MetLife Stadium, East Rutherford",United States,Spain,Argentina,1,2,False,False,Argentina

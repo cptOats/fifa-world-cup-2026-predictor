@@ -1,6 +1,6 @@
 [project]
 name = "fifa-world-cup-2026-predictor"
-version = "0.1.0"
+version = "1.2.0"
 description = "Ensemble modelling, tournament routing and visualization for FIFA World Cup 2026 predictions."
 readme = "README.md"
 requires-python = ">=3.14"
@@ -53,6 +53,9 @@ reportMissingTypeStubs = false
 
 [tool.ruff.lint]
 extend-select = ["I"]
+ignore = [
+    "LOG015", # Allow calling logging methods directly on root logger
+]
 
 [tool.ruff.lint.isort]
 combine-as-imports = true

@@ -204,7 +204,7 @@ def generate_round_of_32_draw(
         slot_home = row["slot_home"]
         slot_away = row["slot_away"]
 
-        def _resolve_team(slot):
+        def _resolve_team(slot, match_id):
             """Parse textual placeholder tags to route the physical entities into the node."""
 
             if "Winner Group" in slot:
@@ -215,8 +215,8 @@ def generate_round_of_32_draw(
                 return third_place_mapping[match_id]
             return slot
 
-        home_teams.append(_resolve_team(slot_home))
-        away_teams.append(_resolve_team(slot_away))
+        home_teams.append(_resolve_team(slot_home, match_id))
+        away_teams.append(_resolve_team(slot_away, match_id))
 
     r32_df["home_team"] = home_teams
     r32_df["away_team"] = away_teams
@@ -356,6 +356,7 @@ def simulate_knockout_waterfall(
     xgb_away=None,
     feature_columns: list[str] | None = None,
     latest_team_form: dict[str, dict[str, float]] | None = None,
+    start_of_tournament: str | None = None,
 ) -> pd.DataFrame:
     """Simulates the knockout bracket tree sequentially, seamlessly prioritizing real-world match overrides and shootout resolutions."""
 
@@ -383,8 +384,15 @@ def simulate_knockout_waterfall(
                 # Cache both permutations to prevent matching asymmetry
                 shootout_cache[(h_team, a_team)] = so_winner
                 shootout_cache[(a_team, h_team)] = so_winner
-        except Exception as e:
-            logging.error(f"Failed to load shootout cache: {e}")
+        except (
+                    OSError,
+                    ValueError,
+                    KeyError,
+                    AttributeError,
+                    pd.errors.EmptyDataError,
+                    pd.errors.ParserError,
+                ) as e:
+                    logging.error("Failed to load shootout cache: %s", e)
 
     match_winners, match_losers = {}, {}
     winners = (
@@ -407,7 +415,7 @@ def simulate_knockout_waterfall(
         slot_away = row["slot_away"]
         venue_country = row["venue_country"]
 
-        def _resolve_team(slot):
+        def _resolve_team(slot, match_id):
             """Parse textual placeholder tags to route the physical entities into the node."""
             if "Winner Group" in slot:
                 return winners[slot.replace("Winner Group ", "").strip()]
@@ -421,7 +429,7 @@ def simulate_knockout_waterfall(
                 return match_losers[int(slot.replace("Loser Match ", "").strip())]
             return slot
 
-        home_team, away_team = _resolve_team(slot_home), _resolve_team(slot_away)
+        home_team, away_team = _resolve_team(slot_home, match_id), _resolve_team(slot_away, match_id)
 
         # Look for real-world overrides from disk template
         act_h = row.get("actual_home_score")
@@ -447,21 +455,22 @@ def simulate_knockout_waterfall(
                     res_df["away_team"].astype(str).str.strip().str.lower()
                 )
 
-                # Capping filter at max_hist_date removed to allow live tracking updates
-                match_lookup = res_df[
+
+                cutoff_date = pd.to_datetime(start_of_tournament) if start_of_tournament else None
+
+                match_lookup_mask = (
                     (res_df["tournament"] == "FIFA World Cup")
                     & (res_df["date"] >= actual_tournament_start)
                     & (
-                        (
-                            (res_df["home_norm"] == norm_h_target)
-                            & (res_df["away_norm"] == norm_a_target)
-                        )
-                        | (
-                            (res_df["home_norm"] == norm_a_target)
-                            & (res_df["away_norm"] == norm_h_target)
-                        )
+                        ((res_df["home_norm"] == norm_h_target) & (res_df["away_norm"] == norm_a_target))
+                        | ((res_df["home_norm"] == norm_a_target) & (res_df["away_norm"] == norm_h_target))
                     )
-                ]
+                )
+
+                if cutoff_date is not None:
+                    match_lookup_mask &= (res_df["date"] < cutoff_date)
+
+                match_lookup = res_df[match_lookup_mask]
 
                 if not match_lookup.empty:
                     m_row = match_lookup.iloc[0]

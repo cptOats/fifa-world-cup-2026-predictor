@@ -1,6 +1,6 @@
 {
-    "run_id": "run_blend_ridge_20260705_0126",
-    "timestamp": "20260705_0126",
+    "run_id": "run_blend_ridge_20260724_1329",
+    "timestamp": "20260724_1329",
     "config": {
         "model_type": "blend",
         "blend_method": "ridge",
@@ -21,50 +21,50 @@
         "draw_copula": 0.086
     },
     "ensemble_weights": {
-        "poisson": 0.46318609653070947,
-        "elo": 0.0049486169256632555,
-        "xgb": 0.5335815461003245
+        "poisson": 0.43826503500296277,
+        "elo": 0.0026092322075958133,
+        "xgb": 0.5620808637743769
     },
     "cross_validation_metrics": {
         "fold_1": {
-            "home_deviance_r2": 0.20021053350685925,
-            "away_deviance_r2": 0.1369765883261922
+            "home_deviance_r2": 0.2048027030413324,
+            "away_deviance_r2": 0.13873235176983045
         },
         "fold_2": {
-            "home_deviance_r2": 0.20461184342940764,
-            "away_deviance_r2": 0.1709480135920428
+            "home_deviance_r2": 0.204466028607732,
+            "away_deviance_r2": 0.17071599759325673
         },
         "fold_3": {
-            "home_deviance_r2": 0.20341797341952805,
-            "away_deviance_r2": 0.17294034416390014
+            "home_deviance_r2": 0.20080728964437433,
+            "away_deviance_r2": 0.17254164394062343
         },
         "fold_4": {
-            "home_deviance_r2": 0.1919605374839759,
-            "away_deviance_r2": 0.15434801953469557
+            "home_deviance_r2": 0.19290653961740345,
+            "away_deviance_r2": 0.15460986856611092
         },
         "fold_5": {
-            "home_deviance_r2": 0.2260384190737149,
-            "away_deviance_r2": 0.21038134907291972
+            "home_deviance_r2": 0.22709475413201063,
+            "away_deviance_r2": 0.2108730534450033
         },
         "fold_6": {
-            "home_deviance_r2": 0.1982728244726255,
-            "away_deviance_r2": 0.19052335626532046
+            "home_deviance_r2": 0.19892464497923867,
+            "away_deviance_r2": 0.19090561125982364
         },
         "fold_7": {
-            "home_deviance_r2": 0.21963082934942146,
-            "away_deviance_r2": 0.18184376442846217
+            "home_deviance_r2": 0.21915148014461017,
+            "away_deviance_r2": 0.18170901281794638
         },
         "fold_8": {
-            "home_deviance_r2": 0.2743144996544278,
-            "away_deviance_r2": 0.2371896611128278
+            "home_deviance_r2": 0.2726453462756634,
+            "away_deviance_r2": 0.23779757213265984
         },
         "fold_9": {
-            "home_deviance_r2": 0.22743194638012032,
-            "away_deviance_r2": 0.19838949104922587
+            "home_deviance_r2": 0.2282998961340117,
+            "away_deviance_r2": 0.19723817438468305
         },
         "fold_10": {
-            "home_deviance_r2": 0.21166611523543433,
-            "away_deviance_r2": 0.20480968135687883
+            "home_deviance_r2": 0.21348609849238342,
+            "away_deviance_r2": 0.20661334120190455
         }
     }
 }

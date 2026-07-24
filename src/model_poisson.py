@@ -149,7 +149,7 @@ def train_poisson_ratings(
         else 1.35
     )
 
-    teams = sorted(list(set(train_df["home_team"]).union(set(train_df["away_team"]))))
+    teams = sorted(set(train_df["home_team"]) | set(train_df["away_team"]))
     N = len(teams)
     team_to_idx = {team: idx for idx, team in enumerate(teams)}
 
@@ -286,9 +286,7 @@ def train_poisson_oof_predictions(
             else 1.35
         )
 
-        teams = sorted(
-            list(set(train_df["home_team"]).union(set(train_df["away_team"])))
-        )
+        teams = sorted(set(train_df["home_team"]) | set(train_df["away_team"]))
         N = len(teams)
         team_to_idx = {team: idx for idx, team in enumerate(teams)}
 

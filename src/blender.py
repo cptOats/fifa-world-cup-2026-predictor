@@ -105,9 +105,10 @@ def find_optimal_blend_weights(
                 "xgb": float(raw_weights[2]),
             }
 
-        except Exception as e:
+        except (ValueError, AttributeError, IndexError, np.linalg.LinAlgError) as e:
             logging.warning(
-                f"⚠️ Meta-Learner failed to fit! Reason: {e}. Falling back to default uniform balance."
+                "⚠️ Meta-Learner failed to fit! Reason: %s. Falling back to default uniform balance.",
+                e,
             )
             optimized_weights = {"poisson": 0.3333, "elo": 0.3333, "xgb": 0.3334}
 

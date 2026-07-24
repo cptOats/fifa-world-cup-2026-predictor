@@ -126,15 +126,9 @@ def _():
             template="plotly_dark",
             paper_bgcolor=DARK_THEME["paper"],
             plot_bgcolor=DARK_THEME["background"],
-            font=dict(color=DARK_THEME["text"], family="JetBrains Mono, monospace"),
-            title=dict(
-                font=dict(
-                    family="'Inter', 'Segoe UI', system-ui, sans-serif",
-                    size=16,
-                    weight="bold",
-                )
-            ),
-            margin=dict(l=40, r=40, t=50, b=40),
+            font={"color": DARK_THEME["text"],"family": "JetBrains Mono, monospace",},
+            title={"font": {"family": "'Inter', 'Segoe UI', system-ui, sans-serif", "size": 16, "weight": "bold", } },
+            margin={"l": 40, "r": 40, "t": 50, "b": 40},
         )
 
         return fig
@@ -159,8 +153,36 @@ def _(DARK_THEME, mo):
     global_styles = mo.Html(
         f"""
         <style>
-            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+            @import url('https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@700;800&family=Inter:wght@400;600;800&display=swap');
 
+            /* --- CUSTOM DEDICATED TITLE BANNER --- */
+            .dashboard-title-container {{
+                text-align: center !important;
+                margin: 10px 0 20px 0 !important;
+                padding: 16px 24px !important;
+                background: linear-gradient(180deg, #1d1d1d 0%, #141414 100%) !important;
+                border: 1px solid #2d2d2d !important;
+                border-radius: 8px !important;
+                box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35) !important;
+            }}
+
+            .dashboard-title {{
+                font-family: 'Chakra Petch', sans-serif !important;
+                font-weight: 800 !important;
+                font-size: 30px !important;
+                letter-spacing: 2px !important;
+                text-transform: uppercase !important;
+                color: #ffffff !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                display: flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                gap: 16px !important;
+                text-shadow: 0 0 20px rgba(255, 255, 255, 0.12) !important;
+            }}
+
+            /* --- GENERAL TYPOGRAPHY OVERRIDES --- */
             .marimo-output h1, h1 {{
                 font-family: 'Inter', 'Segoe UI', system-ui, sans-serif !important;
                 font-weight: 800 !important;
@@ -191,7 +213,7 @@ def _(DARK_THEME, mo):
                 line-height: 1.6 !important;
             }}
 
-            /* LAYER A: STANDARD MARKDOWN TABLES - CHANGED TO 100% MAX-WIDTH */
+            /* LAYER A: STANDARD MARKDOWN TABLES */
             .marimo-output table:not([class*="marimo"]) {{
                 width: 100% !important;
                 max-width: 100% !important;
@@ -256,9 +278,8 @@ def _(DARK_THEME, mo):
         </style>
         """
     )
-
     global_styles
-    return
+    return (global_styles,)
 
 
 @app.cell
@@ -396,7 +417,7 @@ def _(PUBLIC_DIR, json, local_run_maps, mo, os, pd, run_dropdown):
             # 2. Establish baseline unplayed expectations to prevent future warping
             # (10 expected reds / 104 total matches in 2026 layout ≈ 0.096 per game)
             baseline_red_rate = 10 / 104
-            allocated_pool_size = int(round(n_unplayed * baseline_red_rate))
+            allocated_pool_size = round(n_unplayed * baseline_red_rate)
 
             # Ensure all unplayed matches default back to 0 before distribution
             df_tournament.loc[is_unplayed, "red_cards"] = 0
@@ -417,7 +438,7 @@ def _(PUBLIC_DIR, json, local_run_maps, mo, os, pd, run_dropdown):
     # OPTIONAL STOCHASTIC MODELS (Graceful failover guards)
     try:
         df_matchups = load_csv("stochastic_sandbox_matchups.csv")
-    except Exception:
+    except (FileNotFoundError, pd.errors.EmptyDataError, pd.errors.ParserError):
         df_matchups = pd.DataFrame(
             columns=[
                 "home_team",
@@ -433,7 +454,7 @@ def _(PUBLIC_DIR, json, local_run_maps, mo, os, pd, run_dropdown):
         df_xtables = load_csv("stochastic_group_tables.csv")
         df_tournament_stoch = load_csv("stochastic_tournament.csv")
         has_stochastic = True
-    except Exception:
+    except (FileNotFoundError, pd.errors.EmptyDataError, pd.errors.ParserError):
         df_forecast, df_xtables, df_tournament_stoch = None, None, None
         has_stochastic = False
 
@@ -443,7 +464,7 @@ def _(PUBLIC_DIR, json, local_run_maps, mo, os, pd, run_dropdown):
         try:
             with open(metadata_path, "r") as f:
                 metadata = json.load(f)
-        except Exception:
+        except (urllib.error.URLError, OSError, json.JSONDecodeError, ValueError):
             metadata = {}
     else:
         try:
@@ -451,7 +472,7 @@ def _(PUBLIC_DIR, json, local_run_maps, mo, os, pd, run_dropdown):
             with urllib.request.urlopen(metadata_path) as response:
                 raw_json = response.read().decode("utf-8")
             metadata = json.loads(raw_json)
-        except Exception:
+        except (OSError, json.JSONDecodeError):
             metadata = {}
 
     config = metadata.get("config", {"model_type": "blend"})
@@ -500,7 +521,17 @@ def _(config, has_stochastic, mo, run_dropdown, run_id, weights):
     )
 
     # 3. Render the top-level app header title
-    title_panel = mo.md("# 🚀 FIFA WORLD CUP 2026 PREDICTOR")
+    title_panel = mo.Html(
+            """
+            <div class="dashboard-title-container">
+                <h1 class="dashboard-title">
+                    <span style="font-size: 28px;">⚽</span>
+                    <span>FIFA WORLD CUP 2026 PREDICTOR</span>
+                    <span style="font-size: 28px;">🏆</span>
+                </h1>
+            </div>
+            """
+        )
 
     # 4. Render the control bar (Dropdown + Render Mode switch)
     controls_panel = mo.md(
@@ -831,8 +862,8 @@ def _(
             """
         else:
             # --- DETERMINISTIC OUTCOME RENDER ---
-            pred_a_goals = int(round(lambda_a))
-            pred_b_goals = int(round(lambda_b))
+            pred_a_goals = round(lambda_a)
+            pred_b_goals = round(lambda_b)
             sim_winner = "Draw"
             if pred_a_goals > pred_b_goals:
                 sim_winner = sim_team_a
@@ -844,8 +875,8 @@ def _(
                 fatigue_factor = match_rules.get("fatigue_factor", 0.80)
                 raw_a_120 = lambda_a * (1.0 + (et_multiplier * fatigue_factor))
                 raw_b_120 = lambda_b * (1.0 + (et_multiplier * fatigue_factor))
-                pred_a_goals = int(round(raw_a_120))
-                pred_b_goals = int(round(raw_b_120))
+                pred_a_goals = round(raw_a_120)
+                pred_b_goals = round(raw_b_120)
 
                 if pred_a_goals > pred_b_goals:
                     sim_winner = sim_team_a
@@ -896,7 +927,7 @@ def _(
 
     simulation_output = mo.Html(card_html)
     simulation_output
-    return
+    return (simulation_output,)
 
 
 @app.cell
@@ -1032,7 +1063,7 @@ def _(
                 theta=labels_closed,
                 fill="toself",
                 name=team_a,
-                marker=dict(color=DARK_THEME["accent"]),
+                marker={"color": DARK_THEME["accent"]},
                 text=raw_a_closed,
                 hovertemplate=f"<b>{team_a}</b><br>%{{theta}}: <b>%{{text}}</b><extra></extra>",
             )
@@ -1045,7 +1076,7 @@ def _(
                 theta=labels_closed,
                 fill="toself",
                 name=team_b,
-                marker=dict(color="#e6739f"),
+                marker={"color": "#e6739f"},
                 text=raw_b_closed,
                 hovertemplate=f"<b>{team_b}</b><br>%{{theta}}: <b>%{{text}}</b><extra></extra>",
             )
@@ -1053,29 +1084,33 @@ def _(
 
         fig_sandbox.update_layout(
             title="<b>🔥 TEAM CAPABILITIES</b>",
-            polar=dict(
-                radialaxis=dict(
-                    visible=True,
-                    range=[0, 105],
-                    showticklabels=False,
-                    gridcolor="#2d2d2d",
-                ),
-                angularaxis=dict(
-                    gridcolor="#2d2d2d",
-                    linecolor="#2d2d2d",
-                    ticks="",
-                ),
-                bgcolor=DARK_THEME["paper"],
-            ),
-            legend=dict(
-                orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
-            ),
+            polar={
+                "radialaxis": {
+                    "visible": True,
+                    "range": [0, 105],
+                    "showticklabels": False,
+                    "gridcolor": "#2d2d2d",
+                },
+                "angularaxis": {
+                    "gridcolor": "#2d2d2d",
+                    "linecolor": "#2d2d2d",
+                    "ticks": "",
+                },
+                "bgcolor": DARK_THEME["paper"],
+            },
+            legend={
+                "orientation": "h",
+                "yanchor": "bottom",
+                "y": 1.02,
+                "xanchor": "right",
+                "x": 1,
+            },
         )
 
         sandbox_output = apply_mission_control_layout(fig_sandbox)
 
     sandbox_output
-    return
+    return (sandbox_output,)
 
 
 @app.cell
@@ -1215,7 +1250,7 @@ def _(
                             x=top_contenders[_stoch_key],
                             name=_col_info[1],
                             orientation="h",
-                            marker=dict(color=_col_info[2]),
+                            marker={"color": _col_info[2]},
                             hovertemplate="%{y} "
                             + _col_info[1]
                             + ": <b>%{x:.2f}%</b><extra></extra>",
@@ -1225,19 +1260,25 @@ def _(
             fig_survival.update_layout(
                 title="<b>🎲 TOURNAMENT PROGRESSION</b>",
                 barmode="group",
-                xaxis=dict(
-                    title="Probability / %", gridcolor="#222222", range=[0, x_max_bound]
-                ),
-                yaxis=dict(title="", autorange="reversed"),
-                legend=dict(
-                    orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
-                ),
+                xaxis={
+                    "title": "Probability / %",
+                    "gridcolor": "#222222",
+                    "range": [0, x_max_bound],
+                },
+                yaxis={"title": "", "autorange": "reversed"},
+                legend={
+                    "orientation": "h",
+                    "yanchor": "bottom",
+                    "y": 1.02,
+                    "xanchor": "right",
+                    "x": 1,
+                },
             )
 
             stochastic_visual = apply_mission_control_layout(fig_survival)
 
     stochastic_visual
-    return
+    return (stochastic_visual,)
 
 
 @app.cell
@@ -1559,7 +1600,7 @@ def _(
     )
 
     group_panel
-    return
+    return (group_panel,)
 
 
 @app.cell
@@ -1868,7 +1909,7 @@ def _(
     )
 
     knockout_panel
-    return
+    return (knockout_panel,)
 
 
 @app.cell
@@ -1897,9 +1938,9 @@ def _(DARK_THEME, apply_mission_control_layout, df_tournament, go, mo, pd):
     global_avg_yellows = unplayed_df["yellow_cards"].mean() if u_matches > 0 else 0
     global_avg_reds = unplayed_df["red_cards"].mean() if u_matches > 0 else 0
 
-    t_corners_rem = int(round(unplayed_df["corners"].sum()))
-    t_yellows_rem = int(round(unplayed_df["yellow_cards"].sum()))
-    t_reds_rem = int(round(unplayed_df["red_cards"].sum()))
+    t_corners_rem = round(unplayed_df["corners"].sum())
+    t_yellows_rem = round(unplayed_df["yellow_cards"].sum())
+    t_reds_rem = round(unplayed_df["red_cards"].sum())
 
     phase_metrics = []
     for phase_name in ["Group Stage", "Knockout Stage"]:
@@ -1971,7 +2012,7 @@ def _(DARK_THEME, apply_mission_control_layout, df_tournament, go, mo, pd):
                 name=col_label,
                 text=df_graph[col_key].round(2),
                 textposition="auto",
-                marker=dict(color=col_color),
+                marker={"color": col_color},
                 hovertemplate="%{x} " + col_label + ": <b>%{y:.2f}</b><extra></extra>",
             )
         )
@@ -1979,10 +2020,16 @@ def _(DARK_THEME, apply_mission_control_layout, df_tournament, go, mo, pd):
     fig_analytics.update_layout(
         title="<b>📋 Expected Goals & Remaining Corners and Cards</b>",
         barmode="group",
-        xaxis=dict(title=""),
-        yaxis=dict(title="Per Game Average Metric", gridcolor="#222222"),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-    )
+        xaxis={"title": ""},
+                yaxis={"title": "Per Game Average Metric", "gridcolor": "#222222"},
+                legend={
+                    "orientation": "h",
+                    "yanchor": "bottom",
+                    "y": 1.02,
+                    "xanchor": "right",
+                    "x": 1,
+                },
+            )
     fig_analytics = apply_mission_control_layout(fig_analytics)
 
     kpi_banner = mo.Html(
@@ -2029,7 +2076,7 @@ def _(DARK_THEME, apply_mission_control_layout, df_tournament, go, mo, pd):
     )
 
     dashboard_output
-    return
+    return (dashboard_output,)
 
 
 @app.cell
@@ -2092,7 +2139,7 @@ def _(df_thirds, df_xtables, mo, view_mode_toggle):
         third_places_panel = mo.vstack([heading, wildcard_table])
 
     third_places_panel
-    return
+    return (third_places_panel,)
 
 
 @app.cell
@@ -2137,7 +2184,7 @@ def _(df_forecast, has_stochastic, mo, pd, view_mode_toggle):
         table_panel = mo.md("")
 
     table_panel
-    return
+    return (table_panel,)
 
 
 if __name__ == "__main__":

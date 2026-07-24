@@ -111,7 +111,7 @@ def _ingest_fifa_annex_c_matrix():
 
             slot_mapping = {}
             for wiki_col, match_id in column_to_match_id.items():
-                actual_col = [c for c in df_matrix.columns if wiki_col in c][0]
+                actual_col = next(c for c in df_matrix.columns if wiki_col in c)
                 # Wikipedia cells will say "3E", "3F", etc. Strip out the '3'
                 opponent_val = str(row[actual_col]).replace("3", "").strip()
                 slot_mapping[match_id] = opponent_val

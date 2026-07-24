@@ -1,7 +1,7 @@
 match_id,round,venue,venue_country,home_team,away_team,predicted_home_goals,predicted_away_goals,extra_time,penalties,winner_name_meta
 73,Round of 32,"SoFi Stadium, Los Angeles",United States,South Africa,Canada,1,2,False,False,Canada
 74,Round of 32,"Gillette Stadium, Boston",United States,Germany,Paraguay,2,1,False,False,Germany
-75,Round of 32,"Estadio BBVA, Monterrey",Mexico,Netherlands,Morocco,2,1,False,False,Netherlands
+75,Round of 32,"Estadio BBVA, Monterrey",Mexico,Netherlands,Morocco,1,2,False,False,Morocco
 76,Round of 32,"NRG Stadium, Houston",United States,Brazil,Japan,2,1,False,False,Brazil
 77,Round of 32,"MetLife Stadium, East Rutherford",United States,France,Sweden,2,1,False,False,France
 78,Round of 32,"AT&T Stadium, Dallas",United States,Ivory Coast,Norway,1,2,False,False,Norway
@@ -15,7 +15,7 @@ match_id,round,venue,venue_country,home_team,away_team,predicted_home_goals,pred
 86,Round of 32,"Hard Rock Stadium, Miami",United States,Argentina,Cape Verde,2,0,False,False,Argentina
 87,Round of 32,"GEHA Field at Arrowhead Stadium, Kansas City",United States,Colombia,Ghana,2,1,False,False,Colombia
 88,Round of 32,"AT&T Stadium, Dallas",United States,Australia,Egypt,2,1,False,False,Australia
-89,Round of 16,"NRG Stadium, Houston",United States,Canada,Netherlands,1,2,False,False,Netherlands
+89,Round of 16,"NRG Stadium, Houston",United States,Canada,Morocco,1,2,False,False,Morocco
 90,Round of 16,"Lincoln Financial Field, Philadelphia",United States,Germany,France,1,2,False,False,France
 91,Round of 16,"MetLife Stadium, East Rutherford",United States,Brazil,Norway,2,1,False,False,Brazil
 92,Round of 16,"Estadio Azteca, Mexico City",Mexico,Mexico,England,1,2,False,False,England
@@ -23,11 +23,11 @@ match_id,round,venue,venue_country,home_team,away_team,predicted_home_goals,pred
 94,Round of 16,"Lumen Field, Seattle",United States,United States,Belgium,1,2,False,False,Belgium
 95,Round of 16,"Mercedes-Benz Stadium, Atlanta",United States,Argentina,Australia,2,1,False,False,Argentina
 96,Round of 16,"BC Place, Vancouver",Canada,Switzerland,Colombia,1,2,False,False,Colombia
-97,Quarter-final,"Gillette Stadium, Boston",United States,Netherlands,France,1,2,False,False,France
+97,Quarter-final,"Gillette Stadium, Boston",United States,Morocco,France,1,2,False,False,France
 98,Quarter-final,"SoFi Stadium, Los Angeles",United States,Spain,Belgium,2,1,False,False,Spain
 99,Quarter-final,"Hard Rock Stadium, Miami",United States,Brazil,England,2,1,False,False,Brazil
 100,Quarter-final,"GEHA Field at Arrowhead Stadium, Kansas City",United States,Argentina,Colombia,2,1,False,False,Argentina
 101,Semi-final,"AT&T Stadium, Dallas",United States,France,Spain,1,2,False,False,Spain
 102,Semi-final,"Mercedes-Benz Stadium, Atlanta",United States,Brazil,Argentina,1,2,False,False,Argentina
 103,Third-place playoff,"Hard Rock Stadium, Miami",United States,France,Brazil,1,2,False,False,Brazil
-104,Final,"MetLife Stadium, East Rutherford",United States,Spain,Argentina,2,1,False,False,Spain
+104,Final,"MetLife Stadium, East Rutherford",United States,Spain,Argentina,1,2,False,False,Argentina

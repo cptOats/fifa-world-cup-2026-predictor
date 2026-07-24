@@ -1,6 +1,6 @@
 {
-    "run_id": "run_blend_ridge_20260708_0033",
-    "timestamp": "20260708_0033",
+    "run_id": "run_blend_ridge_20260724_1400",
+    "timestamp": "20260724_1400",
     "config": {
         "model_type": "blend",
         "blend_method": "ridge",
@@ -10,7 +10,7 @@
     "training_variables": {
         "friendly_weight": 0.4,
         "time_slice_start": "1998-01-01",
-        "start_of_tournament": "2026-07-08",
+        "start_of_tournament": "2026-07-09",
         "decay_alpha": 0.00047,
         "cv_folds": 10
     },
@@ -21,50 +21,50 @@
         "draw_copula": 0.086
     },
     "ensemble_weights": {
-        "poisson": 0.4637411614326067,
-        "elo": 0.005875843941629085,
-        "xgb": 0.5321609063196325
+        "poisson": 0.43827713955207964,
+        "elo": 0.0023592029227331255,
+        "xgb": 0.5627761878717584
     },
     "cross_validation_metrics": {
         "fold_1": {
-            "home_deviance_r2": 0.19994340726369597,
-            "away_deviance_r2": 0.13618708292447168
+            "home_deviance_r2": 0.20172444267670198,
+            "away_deviance_r2": 0.1386761619657243
         },
         "fold_2": {
-            "home_deviance_r2": 0.20503001545585442,
-            "away_deviance_r2": 0.1704019969022903
+            "home_deviance_r2": 0.20355261960109727,
+            "away_deviance_r2": 0.1694998100960161
         },
         "fold_3": {
-            "home_deviance_r2": 0.20343046177732715,
-            "away_deviance_r2": 0.17279184982077367
+            "home_deviance_r2": 0.20219269388315453,
+            "away_deviance_r2": 0.1733696991961421
         },
         "fold_4": {
-            "home_deviance_r2": 0.19157096408540975,
-            "away_deviance_r2": 0.15422839202468086
+            "home_deviance_r2": 0.19229304371345368,
+            "away_deviance_r2": 0.15442592136763433
         },
         "fold_5": {
-            "home_deviance_r2": 0.2280448333450258,
-            "away_deviance_r2": 0.21019422033281487
+            "home_deviance_r2": 0.22970765928765868,
+            "away_deviance_r2": 0.21168341423162995
         },
         "fold_6": {
-            "home_deviance_r2": 0.19827457093699952,
-            "away_deviance_r2": 0.18977323868194906
+            "home_deviance_r2": 0.1992829971365162,
+            "away_deviance_r2": 0.1908120432647903
         },
         "fold_7": {
-            "home_deviance_r2": 0.2193099972330974,
-            "away_deviance_r2": 0.1826833089452713
+            "home_deviance_r2": 0.21972592948336145,
+            "away_deviance_r2": 0.1815789163168161
         },
         "fold_8": {
-            "home_deviance_r2": 0.27400204025947095,
-            "away_deviance_r2": 0.23665633124002372
+            "home_deviance_r2": 0.2737682190682508,
+            "away_deviance_r2": 0.23690613795347304
         },
         "fold_9": {
-            "home_deviance_r2": 0.22729075103320662,
-            "away_deviance_r2": 0.19799484871223694
+            "home_deviance_r2": 0.22761399304618568,
+            "away_deviance_r2": 0.19804921199321301
         },
         "fold_10": {
-            "home_deviance_r2": 0.2120597040090928,
-            "away_deviance_r2": 0.20425130909551303
+            "home_deviance_r2": 0.21385587141311413,
+            "away_deviance_r2": 0.20512236574348386
         }
     }
 }

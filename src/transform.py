@@ -199,8 +199,12 @@ def patch_tournament_structures(training_variables):
                         else:
                             df_groups.at[idx, "actual_home_score"] = a_score
                             df_groups.at[idx, "actual_away_score"] = h_score
-                    except Exception:
-                        pass
+                    except (ValueError, TypeError, KeyError) as e:
+                        logging.debug(
+                            "Failed to parse actual group scores for index %s: %s",
+                            idx,
+                            e,
+                        )
 
         df_groups["venue_country"] = df_groups["venue"].apply(get_venue_country)
 

@@ -7,6 +7,7 @@ across 'xTables' (xPts/xGD) and tournament survival metrics.
 """
 
 import json
+import logging
 import os
 from collections import Counter
 from typing import cast
@@ -37,6 +38,7 @@ def run_monte_carlo_master(
     blend_weights,
     match_rules,
     n_simulations=10000,
+    start_of_tournament: str | None = None,
 ):
     """Executes randomized tournament simulations caching multi-dimensional pairwise keys natively."""
 
@@ -62,8 +64,18 @@ def run_monte_carlo_master(
                 # Cache both permutations without the brittle date dependency
                 shootout_cache[(h_team, a_team)] = so_winner
                 shootout_cache[(a_team, h_team)] = so_winner
-        except Exception:
-            pass
+        except (
+                    OSError,
+                    pd.errors.EmptyDataError,
+                    pd.errors.ParserError,
+                    KeyError,
+                    AttributeError,
+                ) as e:
+                    logging.debug(
+                        "Failed to process shootout cache file '%s': %s",
+                        shootouts_path,
+                        e,
+                    )
 
     # HASH MAP CONFIGURATION: Pre-build live knockout results cache
     live_ko_cache = {}
@@ -76,11 +88,18 @@ def run_monte_carlo_master(
             res_df["date"] = pd.to_datetime(res_df["date"])
 
             # Filter strictly to the active tournament window
-            live_matches = res_df[
+            cutoff_date = pd.to_datetime(start_of_tournament) if start_of_tournament else None
+
+            mask = (
                 (res_df["tournament"] == "FIFA World Cup")
                 & (res_df["date"] >= actual_tournament_start)
                 & (pd.notna(res_df["home_score"]))
-            ]
+            )
+
+            if cutoff_date is not None:
+                mask &= (res_df["date"] < cutoff_date)
+
+            live_matches = res_df[mask]
 
             for _, m_row in live_matches.iterrows():
                 h_norm = str(m_row["home_team"]).strip().lower()
@@ -95,8 +114,8 @@ def run_monte_carlo_master(
                     int(m_row["away_score"]),
                     int(m_row["home_score"]),
                 )
-        except Exception:
-            pass
+        except (ValueError, TypeError, KeyError, AttributeError) as e:
+            logging.debug("Failed to populate live knockout cache: %s", e)
 
     metrics = {
         team: {
@@ -243,7 +262,15 @@ def run_monte_carlo_master(
                 row["slot_away"],
             )
 
-            def _resolve_team(slot):
+            def _resolve_team(
+                slot,
+                m_id=m_id,
+                winners=winners,
+                runners=runners,
+                third_place_assignments=third_place_assignments,
+                match_winners=match_winners,
+                match_losers=match_losers,
+            ):
                 """Parse textual placeholder tags to route physical entities into the node."""
                 if "Winner Group" in slot:
                     return winners[slot.replace("Winner Group ", "").strip()]
@@ -269,10 +296,11 @@ def run_monte_carlo_master(
             act_a = row.get("actual_away_score")
 
             # Query the cache maps using the normalized string tokens
-            if pd.isna(act_h) or pd.isna(act_a) or str(act_h).strip() == "":
-                if (norm_home, norm_away) in live_ko_cache:
-                    # Unpack exactly 2 items to match the cache definition
-                    act_h, act_a = live_ko_cache[(norm_home, norm_away)]
+            if (
+                pd.isna(act_h) or pd.isna(act_a) or str(act_h).strip() == ""
+            ) and (norm_home, norm_away) in live_ko_cache:
+                # Unpack exactly 2 items to match the cache definition
+                act_h, act_a = live_ko_cache[(norm_home, norm_away)]
 
             if (
                 pd.notna(act_h)
@@ -518,7 +546,7 @@ def precompute_sandbox_matchups(
 
 
 def build_expected_stochastic_bracket(
-    df_xtables, df_sandbox, raw_knockout_template, group_fixtures
+    df_xtables, df_sandbox, raw_knockout_template, group_fixtures, start_of_tournament: str | None = None
 ):
     """Builds a 'Most Likely' UI probabilistic bracket mapping directly from xPts logic.
 
@@ -569,8 +597,18 @@ def build_expected_stochastic_bracket(
                 so_winner = str(st_row["winner"]).strip().lower()
                 shootout_cache[(h_team, a_team)] = so_winner
                 shootout_cache[(a_team, h_team)] = so_winner
-        except Exception:
-            pass
+        except (
+                    OSError,
+                    pd.errors.EmptyDataError,
+                    pd.errors.ParserError,
+                    KeyError,
+                    AttributeError,
+                ) as e:
+                    logging.debug(
+                        "Failed to parse shootout cache file '%s': %s",
+                        shootouts_path,
+                        e,
+                    )
 
     live_ko_cache = {}
     results_path = os.path.join("data", "raw", "results.csv")
@@ -580,11 +618,18 @@ def build_expected_stochastic_bracket(
             res_df = pd.read_csv(results_path)
             res_df["date"] = pd.to_datetime(res_df["date"])
 
-            live_matches = res_df[
+            cutoff_date = pd.to_datetime(start_of_tournament) if start_of_tournament else None
+
+            mask = (
                 (res_df["tournament"] == "FIFA World Cup")
                 & (res_df["date"] >= actual_tournament_start)
                 & (pd.notna(res_df["home_score"]))
-            ]
+            )
+
+            if cutoff_date is not None:
+                mask &= (res_df["date"] < cutoff_date)
+
+            live_matches = res_df[mask]
 
             for _, m_row in live_matches.iterrows():
                 h_norm = str(m_row["home_team"]).strip().lower()
@@ -597,8 +642,8 @@ def build_expected_stochastic_bracket(
                     int(m_row["away_score"]),
                     int(m_row["home_score"]),
                 )
-        except Exception:
-            pass
+        except (ValueError, TypeError, KeyError, AttributeError) as e:
+            logging.debug("Failed to populate live knockout cache: %s", e)
 
     match_winners, match_losers, bracket_rows = {}, {}, []
     knockout_list = raw_knockout_template.to_dict(orient="records")
@@ -610,7 +655,15 @@ def build_expected_stochastic_bracket(
         slot_home = row["slot_home"]
         slot_away = row["slot_away"]
 
-        def _resolve_team(slot):
+        def _resolve_team(
+            slot,
+            m_id=m_id,
+            winners=winners,
+            runners=runners,
+            third_place_assignments=third_place_assignments,
+            match_winners=match_winners,
+            match_losers=match_losers,
+        ):
             if "Winner Group" in slot:
                 return winners[slot.replace("Winner Group ", "").strip()]
             if "Runner-up Group" in slot:
@@ -633,9 +686,10 @@ def build_expected_stochastic_bracket(
         act_h = row.get("actual_home_score")
         act_a = row.get("actual_away_score")
 
-        if pd.isna(act_h) or pd.isna(act_a) or str(act_h).strip() == "":
-            if (norm_home, norm_away) in live_ko_cache:
-                act_h, act_a = live_ko_cache[(norm_home, norm_away)]
+        if (
+            pd.isna(act_h) or pd.isna(act_a) or str(act_h).strip() == ""
+        ) and (norm_home, norm_away) in live_ko_cache:
+            act_h, act_a = live_ko_cache[(norm_home, norm_away)]
 
         if (
             pd.notna(act_h)
@@ -715,7 +769,7 @@ def build_expected_stochastic_bracket(
 
             winner = home if prob_h >= prob_a else away
 
-            pred_h_goals, pred_a_goals = int(round(l_h)), int(round(l_a))
+            pred_h_goals, pred_a_goals = round(l_h), round(l_a)
             if pred_h_goals == pred_a_goals:
                 if winner == home:
                     pred_h_goals += 1
